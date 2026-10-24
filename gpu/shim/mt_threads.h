@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-namespace MzThreads {
+namespace MtThreads {
 #ifdef _WIN32
 /// Hardware threads available to the process (its affinity mask).
 inline unsigned Available() {
@@ -52,4 +52,4 @@ inline void MakeBackground() {
 }
 #endif
 
-} // namespace MzThreads
+} // namespace MtThreads

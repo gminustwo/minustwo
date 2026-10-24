@@ -6,14 +6,14 @@
 
 #include <cstdint>
 
-namespace MzVblank {
-/// Follows the display of `native_window` (an HWND) from a thread of its own; once. MZ_PRESENT_TRACE
-/// logs its vblanks (mz_present_trace.h).
+namespace MtVblank {
+/// Follows the display of `native_window` (an HWND) from a thread of its own; once. MT_PRESENT_TRACE
+/// logs its vblanks (mt_present_trace.h).
 void Start(void* native_window);
 
 /// The emulated vblank at `rate` Hz on the display's own: every n-th display vblank while the
 /// display runs at a whole multiple n of the rate and its vblanks come steadily at its mode's rate
-/// (not with VRR, not during a mode change). MZ_VBLANK_LOCK=0 turns it off.
+/// (not with VRR, not during a mode change). MT_VBLANK_LOCK=0 turns it off.
 class Pacer {
 public:
     explicit Pacer(int rate);
@@ -28,4 +28,4 @@ private:
     std::uint64_t last = 0; ///< the display vblank of the last tick
     int reported = -1, reports = 0; ///< the lock state the log last told, and how often it did
 };
-} // namespace MzVblank
+} // namespace MtVblank

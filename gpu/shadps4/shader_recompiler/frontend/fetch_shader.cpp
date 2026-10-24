@@ -4,7 +4,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <vector>
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/assert.h"
 #include "shader_recompiler/frontend/decode.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
@@ -111,7 +111,7 @@ std::optional<FetchShaderData> ParseFetchShader(const Shader::Info& info) {
     };
     thread_local std::unordered_map<const u32*, CachedParse> cache;
     if (const auto it = cache.find(code);
-        !MzToggle::Disabled(MzToggle::FetchShaderCache) && it != cache.end() &&
+        !MtToggle::Disabled(MtToggle::FetchShaderCache) && it != cache.end() &&
         std::memcmp(code, it->second.code.data(), it->second.code.size() * sizeof(u32)) == 0) {
         return it->second.data;
     }

@@ -24,7 +24,7 @@ public:
     SceneTargets(const Instance&, Scheduler&, Runtime&, Lookup);
     ~SceneTargets();
     bool SetSize(SceneResolution::Size);
-    /// minustwo: a size the upscaler's live presets cannot change (render scale, MZ_SCENE_SIZE).
+    /// minustwo: a size the upscaler's live presets cannot change (render scale, MT_SCENE_SIZE).
     void Lock(SceneResolution::Size);
     [[nodiscard]] bool Locked() const { return locked; }
     SceneResolution::Size Size() const { return size; }
@@ -67,7 +67,7 @@ public:
         return !copying && tracked.contains(image_uid);
     }
     void ResolveAll();
-    bool debug = false; ///< MZ_SCENE_DEBUG frame: print resolves and fills
+    bool debug = false; ///< MT_SCENE_DEBUG frame: print resolves and fills
 private:
     struct Entry {
         VideoCore::ImageId source{};

@@ -6,7 +6,7 @@
  * Every entry here is an explicit contract; unknown functions still stop. */
 #define _GNU_SOURCE
 #include "runtime.h"
-#include "gpu/mzgpu.h"
+#include "gpu/mtgpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +71,7 @@ static ABI int32_t user_event(int32_t *event) {
 }
 
 /* ---- SystemService ---- */
-static int language(void) { const char *v=getenv("MZ_LANGUAGE"); return v ? atoi(v) : 1; }
+static int language(void) { const char *v=getenv("MT_LANGUAGE"); return v ? atoi(v) : 1; }
 static ABI int32_t system_param(int32_t id,int32_t *value) {
     if (!value) return SYSTEM_PARAMETER;
     switch (id) {
@@ -307,7 +307,7 @@ static ABI int32_t msg_open(const unsigned char *p) {
     const char *items[2]; int count=0, focus=0;
     switch (msg.type) {
     case MSG_NONE: case MSG_WAIT:
-        mzgpu_toast(msg.text);
+        mtgpu_toast(msg.text);
         dialogs[1].status=DIALOG_RUNNING; dialogs[1].button=0;
         return 0;
     case MSG_OK: items[0]=save_text("OK","OK"); count=1; break;
@@ -322,20 +322,20 @@ static ABI int32_t msg_open(const unsigned char *p) {
     default: items[0]=save_text("OK","OK"); count=1; break;
     }
     dialogs[1].status=DIALOG_RUNNING; dialogs[1].button=0;
-    /* MZ_AUTO_DIALOGS=1 (unattended test runs): the focused button answers at once. */
-    const char *automatic=getenv("MZ_AUTO_DIALOGS");
+    /* MT_AUTO_DIALOGS=1 (unattended test runs): the focused button answers at once. */
+    const char *automatic=getenv("MT_AUTO_DIALOGS");
     if (automatic && *automatic && *automatic!='0') {
         const int cancel=(msg.type==MSG_OK_CANCEL || msg.type==MSG_OK_CANCEL_FOCUS_CANCEL) && focus;
         msg_finish(cancel || msg.type==MSG_WAIT_CANCEL ? 1 : 0,msg.type==MSG_WAIT_CANCEL ? 0 : (uint32_t)focus+1);
         printf("Runtime: MsgDialog answered automatically: button %u\n",dialogs[1].button);
-    } else if (mzgpu_choice_begin(msg.text,items,NULL,count,focus)) msg.choosing=1;
-    else if (msg.type==MSG_WAIT_CANCEL) mzgpu_toast(msg.text); /* no window: it runs until closed */
+    } else if (mtgpu_choice_begin(msg.text,items,NULL,count,focus)) msg.choosing=1;
+    else if (msg.type==MSG_WAIT_CANCEL) mtgpu_toast(msg.text); /* no window: it runs until closed */
     else msg_finish(0,1);
     return 0;
 }
 static ABI int32_t msg_status(void) {
     if (msg.choosing) {
-        const int choice=mzgpu_choice_poll();
+        const int choice=mtgpu_choice_poll();
         if (choice!=-1) {
             const int cancelled=choice<0;
             /* Cancelling answers No, Cancel or the only button, as Circle does on the console. */
@@ -385,7 +385,7 @@ static char save_labels[33][2700], save_icons[33][720], save_question[2800];
 static const char *save_preview_path;
 void runtime_savedata_preview_path(const char *path) { save_preview_path=path; }
 static const char *save_text(const char *english, const char *portuguese) {
-    const char *ui=getenv("MZ_UI_LANGUAGE");
+    const char *ui=getenv("MT_UI_LANGUAGE");
     int pt=ui && *ui ? !strncmp(ui,"pt",2) : language()==7 || language()==17;
     return pt ? portuguese : english;
 }
@@ -450,7 +450,7 @@ static void save_show_list(int focus) {
     }
     const char *title=save_dialog.type==1 ? save_text("Save game","Salvar jogo")
                       : save_dialog.type==2 ? save_text("Load game","Carregar jogo") : save_text("Delete save","Excluir save");
-    save_dialog.choosing=n && mzgpu_choice_begin(title,labels,icons,n,focus) ? 1 : 0;
+    save_dialog.choosing=n && mtgpu_choice_begin(title,labels,icons,n,focus) ? 1 : 0;
     if (!save_dialog.choosing) {
         save_dialog.result=SAVE_RESULT_CANCELED;
         dialogs[2].status=DIALOG_FINISHED; dialogs[2].button=0;
@@ -508,7 +508,7 @@ static ABI int32_t save_open(const unsigned char *p) {
 }
 static ABI int32_t save_status(void) {
     if (save_dialog.choosing) {
-        int choice=mzgpu_choice_poll();
+        int choice=mtgpu_choice_poll();
         if (choice!=-1) {
             if (save_dialog.choosing==2) {
                 if (choice!=0) { save_show_list(save_dialog.selected); return dialog_status(2); }
@@ -522,7 +522,7 @@ static ABI int32_t save_status(void) {
                          save_text("Overwrite this save?","Sobrescrever este save?"),
                          metadata);
                 const char *options[]={save_text("Overwrite","Sobrescrever"),save_text("Cancel","Cancelar")};
-                if (mzgpu_choice_confirm(save_question,options,2,1,save_dialog.new_icon,save_dialog.new_icon_size,
+                if (mtgpu_choice_confirm(save_question,options,2,1,save_dialog.new_icon,save_dialog.new_icon_size,
                                                  save_text("New save","Novo save"),save_text("Preview unavailable","Prévia indisponível"))) {
                     save_dialog.choosing=2; return dialog_status(2);
                 }
@@ -616,19 +616,19 @@ static ABI int32_t ime_init(const ImeParam *param, const void *extended) {
     char initial[512], prompt[256];
     utf16_to_utf8(param->buffer,param->max_length,initial,sizeof(initial));
     utf16_to_utf8(param->title,128,prompt,sizeof(prompt));
-    const char *preset=getenv("MZ_IME_TEXT");
+    const char *preset=getenv("MT_IME_TEXT");
     if (preset) { ime_complete(0,preset); return 0; }
     /* An empty field starts with the user name: a controller alone can accept it (the port
      * has no on-screen keyboard). */
     const char *start=initial[0] ? initial : USER_NAME;
-    if (!mzgpu_text_input_begin(start,prompt[0] ? prompt : "Text")) ime_complete(0,start);
+    if (!mtgpu_text_input_begin(start,prompt[0] ? prompt : "Text")) ime_complete(0,start);
     else printf("Runtime: ImeDialog opened: shown on screen; keyboard Enter or Cross accepts, Esc or Circle cancels\n");
     return 0;
 }
 static ABI int32_t ime_status(void) {
     if (ime.running) {
         char text[512];
-        int state=mzgpu_text_input_poll(text,sizeof(text));
+        int state=mtgpu_text_input_poll(text,sizeof(text));
         if (state) ime_complete(state==1 ? 0 : 1,text);
     }
     return ime.running ? 1 : ime.finished ? 2 : 0; /* Running / Finished / None */
@@ -643,7 +643,7 @@ static ABI int32_t ime_term(void) { memset(&ime,0,sizeof(ime)); return 0; }
 /* ---- Trophies: unlocks are kept on disk and reported back to the game ----
  * The count of trophies and their icons (TROP000.PNG, TROP001.PNG...) come from the game's
  * own sce_sys/trophy/trophy00.trp. The unlocked set is saved in <user dir>/trophies.dat
- * (user dir: MZ_USER_DIR, or "user"). The texts come from <user dir>/trophy_texts.txt or
+ * (user dir: MT_USER_DIR, or "user"). The texts come from <user dir>/trophy_texts.txt or
  * trophy_names.txt when one is there, otherwise from GODZILLA's list built in (English). */
 #define TROPHY_MAX 128
 #define TROPHY_ALREADY_UNLOCKED ((int32_t)0x80551609)
@@ -653,7 +653,7 @@ static int trophy_ready;
 
 static const char *trophy_state_path(void) {
     static char path[512];
-    const char *dir=getenv("MZ_USER_DIR");
+    const char *dir=getenv("MT_USER_DIR");
     snprintf(path,sizeof(path),"%s/trophies.dat",dir && dir[0] ? dir : "user");
     return path;
 }
@@ -747,7 +747,7 @@ static const char *const godzilla_trophies[45][2]={
     {"Crazy for Godzilla","View all entries in the Kaiju Guide."}, /* 44: Bronze */
 };
 static FILE *trophy_open_text(char *path,size_t size) {
-    const char *dir=getenv("MZ_USER_DIR");
+    const char *dir=getenv("MT_USER_DIR");
     static const char *const files[2]={"trophy_texts.txt","trophy_names.txt"};
     for (int i=0;i<2;i++) {
         snprintf(path,size,"%s/%s",dir && dir[0] ? dir : "user",files[i]);
@@ -849,7 +849,7 @@ static void trophy_load_once(void) {
     printf("Runtime: trophies: %u in trophy00.trp, %u already unlocked\n",total,
         (unsigned)(__builtin_popcount(trophy_flags[0])+__builtin_popcount(trophy_flags[1])+__builtin_popcount(trophy_flags[2])+__builtin_popcount(trophy_flags[3])));
     /* The in-game list (F8 / R3+R2) and the notice labels: the texts above, the icons from the TRP. */
-    static MzGpuTrophyInfo infos[TROPHY_MAX];
+    static MtGpuTrophyInfo infos[TROPHY_MAX];
     for (uint32_t i=0;i<total;i++) {
         int id=trophy_ids[i];
         if (!trophy_names[id][0]) snprintf(trophy_names[id],sizeof(trophy_names[id]),"Trophy ID %d",id);
@@ -858,13 +858,13 @@ static void trophy_load_once(void) {
         infos[i].id=id; infos[i].name=trophy_names[id]; infos[i].detail=trophy_details[id];
         infos[i].png=png; infos[i].png_size=png_size;
     }
-    MzGpuTrophyLabels labels={
+    MtGpuTrophyLabels labels={
         trophy_label[0][0] ? trophy_label[0] : 0, trophy_label[1][0] ? trophy_label[1] : 0,
         trophy_label[2][0] ? trophy_label[2] : 0, trophy_label[3][0] ? trophy_label[3] : 0,
         trophy_label[4][0] ? trophy_label[4] : 0, trophy_label[5][0] ? trophy_label[5] : 0,
         trophy_label[6][0] ? trophy_label[6] : 0, trophy_label[7][0] ? trophy_label[7] : 0,
         trophy_label[8][0] ? trophy_label[8] : 0};
-    mzgpu_trophy_setup(&labels,infos,(int)total,(const volatile uint32_t *)trophy_flags);
+    mtgpu_trophy_setup(&labels,infos,(int)total,(const volatile uint32_t *)trophy_flags);
 }
 static ABI int32_t trophy_context(int32_t *ctx,int32_t user,uint32_t label,uint64_t options) {
     (void)user; (void)label; (void)options;
@@ -887,7 +887,7 @@ static void trophy_notify(int32_t id) {
     snprintf(detail,sizeof(detail),"%s",trophy_details[id]);
     int has_icon=trophy_icon(id,&png,&png_size);
     pthread_mutex_unlock(&lock);
-    mzgpu_toast_trophy(notice,detail,has_icon ? png : 0,has_icon ? png_size : 0);
+    mtgpu_toast_trophy(notice,detail,has_icon ? png : 0,has_icon ? png_size : 0);
 }
 /* On a PlayStation the system grants the platinum (id 0) with the last trophy: 1 when every other
  * trophy of the package is unlocked and this call just unlocked the platinum. Lock held. */

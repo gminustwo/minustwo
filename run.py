@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Prepares the GODZILLA image and starts minustwo (Windows and Linux; run.sh wraps it on Linux).
 
-Environment variables (MZ_GAME_DIR, MZ_DATA_DIR, MZ_PATCHES, MZ_MODS_*,
-MZ_USER_DIR, ...). Extra arguments go to minustwo.
-The in-game "Apply and restart" runs this script again through MZ_RESTART_COMMAND;
+Environment variables (MT_GAME_DIR, MT_DATA_DIR, MT_PATCHES, MT_MODS_*,
+MT_USER_DIR, ...). Extra arguments go to minustwo.
+The in-game "Apply and restart" runs this script again through MT_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
 import os
@@ -64,8 +64,8 @@ def parse_cpu_features(output):
 
 
 def isa_rewrite_wanted(missing, env):
-    """MZ_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
-    policy = env.get('MZ_ISA_REWRITE')
+    """MT_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
+    policy = env.get('MT_ISA_REWRITE')
     if policy in ('0', '1'):
         return policy == '1'
     return bool(missing)
@@ -97,9 +97,9 @@ def launch_prefix(env):
     variable), GameMode a command that starts the game."""
     if WINDOWS:
         return []
-    if env.get('MZ_MANGOHUD') == '1':
+    if env.get('MT_MANGOHUD') == '1':
         env.setdefault('MANGOHUD', '1')
-    if env.get('MZ_GAMEMODE') == '1':
+    if env.get('MT_GAMEMODE') == '1':
         if gamemode := shutil.which('gamemoderun'):
             return [gamemode]
         print('GameMode: gamemoderun not found, starting without it', flush=True)
@@ -119,17 +119,17 @@ def main():
     if len(args) >= 2 and args[0] == '--after':
         wait_for(int(args[1]))
         args = args[2:]
-    # As run.sh: relative paths (MZ_GAME_DIR, MZ_DATA_DIR, fsr4_shaders/) are from the port.
+    # As run.sh: relative paths (MT_GAME_DIR, MT_DATA_DIR, fsr4_shaders/) are from the port.
     os.chdir(PORT)
     env = os.environ
     sys.path.insert(0, str(PORT / 'scripts'))
-    data = Path(env.get('MZ_DATA_DIR', PORT))
+    data = Path(env.get('MT_DATA_DIR', PORT))
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
-    env.setdefault('MZ_CONFIG', str(data / 'minustwo.ini'))
+    env.setdefault('MT_CONFIG', str(data / 'minustwo.ini'))
     # Values this script derived on the previous start ("Apply and restart" inherits them) are
     # derived again from the new options.
-    for key in env.pop('MZ_DERIVED', '').split(','):
+    for key in env.pop('MT_DERIVED', '').split(','):
         env.pop(key, None)
     derived = []
     import controller_mappings
@@ -138,22 +138,22 @@ def main():
     import mods
     import patches
     # The enabled mods' patch files: their "Resolution Patch - <size>" entries are render resolutions too
-    # (the launcher and the in-game menu list them; MZ_EXTRA_RESOLUTIONS tells the game).
-    mod_patch_files = mods.enabled_patch_files(env.get('MZ_MODS_DIR', data / 'mods'),
-                                               env.get('MZ_MODS_CONFIG', data / 'mods.json'),
-                                               env.get('MZ_MODS_ENABLED', '1') != '0',
-                                               env.get('MZ_GAME_DIR', PORT.parent / 'CUSA02046'))
+    # (the launcher and the in-game menu list them; MT_EXTRA_RESOLUTIONS tells the game).
+    mod_patch_files = mods.enabled_patch_files(env.get('MT_MODS_DIR', data / 'mods'),
+                                               env.get('MT_MODS_CONFIG', data / 'mods.json'),
+                                               env.get('MT_MODS_ENABLED', '1') != '0',
+                                               env.get('MT_GAME_DIR', PORT.parent / 'CUSA02046'))
     extra_resolutions = [s for s in patches.resolution_names(mod_patch_files) if s not in graphics_options.RESOLUTIONS]
-    env['MZ_EXTRA_RESOLUTIONS'] = ';'.join(extra_resolutions)
-    derived.append('MZ_EXTRA_RESOLUTIONS')
-    graphics, reverted = graphics_options.prepare(env['MZ_CONFIG'], out / 'graphics_state.json', extra_resolutions, env)
+    env['MT_EXTRA_RESOLUTIONS'] = ';'.join(extra_resolutions)
+    derived.append('MT_EXTRA_RESOLUTIONS')
+    graphics, reverted = graphics_options.prepare(env['MT_CONFIG'], out / 'graphics_state.json', extra_resolutions, env)
     if reverted:
         print('Graphics: the last restart never reached the game; previous options restored', flush=True)
     env.update(graphics_options.environment(graphics))
-    if not env.get('MZ_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
-        env['MZ_FSR411_DIR'] = str(data / 'fsr4_411')
+    if not env.get('MT_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
+        env['MT_FSR411_DIR'] = str(data / 'fsr4_411')
 
-    probe = Path(env['MZ_PROBE']) if env.get('MZ_PROBE') else find_executable('minustwo' + EXE_SUFFIX)
+    probe = Path(env['MT_PROBE']) if env.get('MT_PROBE') else find_executable('minustwo' + EXE_SUFFIX)
     if not probe or not probe.is_file():
         fail(f'minustwo{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
@@ -170,23 +170,23 @@ def main():
         sys.exit(20)
     missing = parse_cpu_features(features.stdout)
 
-    game = Path(env.get('MZ_GAME_DIR', PORT.parent / 'CUSA02046'))
+    game = Path(env.get('MT_GAME_DIR', PORT.parent / 'CUSA02046'))
     if not (game / 'eboot.bin').is_file():
-        fail(f'No eboot.bin in {game} (set MZ_GAME_DIR).')
+        fail(f'No eboot.bin in {game} (set MT_GAME_DIR).')
     update_view = None
-    if env.get('MZ_PATCH_DIR'):
+    if env.get('MT_PATCH_DIR'):
         import game_update
         try:
-            update_view = game_update.create_view(game, env['MZ_PATCH_DIR'], out)
+            update_view = game_update.create_view(game, env['MT_PATCH_DIR'], out)
         except (ValueError, OSError) as error:
             fail(str(error))
         game = update_view
-        print(f'Game and update combined from {env["MZ_PATCH_DIR"]}', flush=True)
+        print(f'Game and update combined from {env["MT_PATCH_DIR"]}', flush=True)
     original_game = game.resolve()
     game = Path(run_script('mods.py', game, '--out', out,
-                           '--mods-dir', env.get('MZ_MODS_DIR', data / 'mods'),
-                           '--config', env.get('MZ_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('MZ_MODS_ENABLED', '1'), capture=True).strip())
+                           '--mods-dir', env.get('MT_MODS_DIR', data / 'mods'),
+                           '--config', env.get('MT_MODS_CONFIG', data / 'mods.json'),
+                           '--enabled', env.get('MT_MODS_ENABLED', '1'), capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     try:
         run_script('prepare.py', game, '--out', out)
@@ -200,7 +200,7 @@ def main():
             print(output, end='', flush=True)
             if code == 0:
                 isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
-        run_script('content_profile.py', game, '--out', out, '--sku', env.get('MZ_CONTENT_SKU', 'full'))
+        run_script('content_profile.py', game, '--out', out, '--sku', env.get('MT_CONTENT_SKU', 'full'))
 
         from patches import game_profile_for, patch_requirements, patch_status, selected_patches
         profile = game_profile_for(game)
@@ -214,30 +214,30 @@ def main():
             from PIL import Image
             with Image.open(icon_file) as icon:
                 icon.convert('RGBA').resize((64, 64), Image.LANCZOS).save(out / 'window_icon.bmp')
-            env.setdefault('MZ_WINDOW_ICON', str(out / 'window_icon.bmp'))
+            env.setdefault('MT_WINDOW_ICON', str(out / 'window_icon.bmp'))
         except (ImportError, OSError):
             pass
         # The temporal upscalers and motion vectors are not calibrated for this game: they stay
-        # off unless MZ_EXPERIMENTAL_UPSCALER=1 (then minustwo.ini decides).
-        if env.get('MZ_EXPERIMENTAL_UPSCALER') != '1':
-            env.setdefault('MZ_UPSCALER', 'none')
+        # off unless MT_EXPERIMENTAL_UPSCALER=1 (then minustwo.ini decides).
+        if env.get('MT_EXPERIMENTAL_UPSCALER') != '1':
+            env.setdefault('MT_UPSCALER', 'none')
         patch_xml = profile[1] if profile else None
         if profile and mod_patch_files:
             # The built-in patches plus the enabled mods' (the same file for the selection and the notes).
             patch_xml = patches.merge_patch_files(profile[1], mod_patch_files, out / 'patches-merged.xml')
         if profile:
-            names = selected_patches(patch_xml, profile[2], env.get('MZ_PATCHES', ''), env.get('MZ_PATCHES_ONLY') == '1')
+            names = selected_patches(patch_xml, profile[2], env.get('MT_PATCHES', ''), env.get('MT_PATCHES_ONLY') == '1')
             # A mod's patches that are on by default (isEnabled) stay on when the launcher chose the list.
             names += [n for n in patches.default_enabled(mod_patch_files, profile[2]) if n not in names]
             # minustwo.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
             names = graphics_options.restrict_to_available(names, patches.available_patches(patch_xml, profile[2]))
-            env['MZ_PATCHES'] = ';'.join(names)
-            env['MZ_PATCHES_ONLY'] = '1'
+            env['MT_PATCHES'] = ';'.join(names)
+            env['MT_PATCHES_ONLY'] = '1'
         (out / 'patch_status.json').unlink(missing_ok=True)
-        run_script('patches.py', '--out', out, '--extra', env.get('MZ_PATCHES', ''), '--game-dir', game,
-                   '--patches-dir', env.get('MZ_PATCHES_DIR', data / 'patches'),
-                   '--patches-config', env.get('MZ_PATCHES_CONFIG', data / 'patches.json'),
+        run_script('patches.py', '--out', out, '--extra', env.get('MT_PATCHES', ''), '--game-dir', game,
+                   '--patches-dir', env.get('MT_PATCHES_DIR', data / 'patches'),
+                   '--patches-config', env.get('MT_PATCHES_CONFIG', data / 'patches.json'),
                    *[arg for f in mod_patch_files for arg in ('--mod-patches', f)])
         if profile:
             # Only the patches found in this eboot.bin count: a frame rate patch that was skipped
@@ -245,34 +245,34 @@ def main():
             applied = (patch_status(out) or {}).get('applied', [])
             engine_fps = graphics_options.applied_engine_fps(applied)
             dmem, vblank = patch_requirements(patch_xml, applied, profile[2])
-            for key, value in (('MZ_DMEM_MB', dmem), ('MZ_VBLANK_HZ', vblank)):
+            for key, value in (('MT_DMEM_MB', dmem), ('MT_VBLANK_HZ', vblank)):
                 if value and key not in env:
                     env[key] = str(value)
                     derived.append(key)
-        if 'MZ_VBLANK_HZ' not in env:
-            env['MZ_VBLANK_HZ'] = '60'
-            derived.append('MZ_VBLANK_HZ')
+        if 'MT_VBLANK_HZ' not in env:
+            env['MT_VBLANK_HZ'] = '60'
+            derived.append('MT_VBLANK_HZ')
         # The highest engine rate this launch allows (the menu picks a lower one live). Without the
         # frame rate patch the engine steps 1/60 s per frame: the present thread must not flip
-        # faster (mz_graphics.h PresentLimit), or the game speeds up.
-        env['MZ_ENGINE_FPS'] = str(engine_fps)
-        derived.append('MZ_ENGINE_FPS')
+        # faster (mt_graphics.h PresentLimit), or the game speeds up.
+        env['MT_ENGINE_FPS'] = str(engine_fps)
+        derived.append('MT_ENGINE_FPS')
         print(f'Engine frame rate: {min(int(graphics["engine_fps"]), engine_fps)} FPS, live up to {engine_fps}'
               + ('' if engine_fps > 60 or graphics['engine_fps'] == '60' else
                  ' (the frame rate patch was not found in this eboot.bin)'), flush=True)
-        env['MZ_DERIVED'] = ','.join(derived)
+        env['MT_DERIVED'] = ','.join(derived)
         # The guest memory pool is committed in full at start: a resolution patch above 1080p
         # can need more than 16 GB of RAM, and the game then closes when the page file cannot grow.
         import guest_memory
-        if warning := guest_memory.memory_warning(env.get('MZ_DMEM_MB'), guest_memory.physical_memory_mb(),
-                                                  env.get('MZ_STREAM_MEMORY', 'cached')):
+        if warning := guest_memory.memory_warning(env.get('MT_DMEM_MB'), guest_memory.physical_memory_mb(),
+                                                  env.get('MT_STREAM_MEMORY', 'cached')):
             print(warning, flush=True)
 
         # The in-game restart starts this script again once this process is gone.
         # GPU caches (shaders, pipelines) beside the saves; read before main(), so set here.
-        user_dir = Path(env.get('MZ_USER_DIR', data / 'user')).resolve()
+        user_dir = Path(env.get('MT_USER_DIR', data / 'user')).resolve()
         user_dir.mkdir(parents=True, exist_ok=True)
-        env.setdefault('MZ_GPU_USER_DIR', str(user_dir))
+        env.setdefault('MT_GPU_USER_DIR', str(user_dir))
         from save_backup import backup
         try:
             if made := backup(user_dir):
@@ -284,11 +284,11 @@ def main():
         # the probe replaces itself with the new launch while this process still waits for it.
         after = ['--after', str(os.getpid())] if WINDOWS else []
         restart = [sys.executable, *this, *after, *args]
-        env['MZ_RESTART_COMMAND'] = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
+        env['MT_RESTART_COMMAND'] = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),
                    '--user', str(user_dir),
-                   '--timeout', env.get('MZ_TIMEOUT', '0'), *isa_args, *args]
+                   '--timeout', env.get('MT_TIMEOUT', '0'), *isa_args, *args]
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, creationflags=no_console())
         return process.wait()

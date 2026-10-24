@@ -4,7 +4,7 @@
 #pragma once
 
 #include "video_core/amdgpu/pixel_format.h"
-#include "video_core/amdgpu/mz_msaa.h"
+#include "video_core/amdgpu/mt_msaa.h"
 #include "video_core/amdgpu/tiling.h"
 
 namespace AmdGpu {

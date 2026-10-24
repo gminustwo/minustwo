@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // minustwo: the Vulkan drivers where the game's multisampled images are created single-sampled
-// unless MZ_NO_MSAA says otherwise (mz_msaa.h). Plain C: vk_instance.cpp decides with it
+// unless MT_NO_MSAA says otherwise (mt_msaa.h). Plain C: vk_instance.cpp decides with it
 // and tools/gpu_capabilities.c prints it per GPU (`--list`) for the launcher to show.
 //
 // AMD's Windows driver: the RX 6600 family reads the 2-sample depth buffer wrong and the
@@ -11,6 +11,6 @@
 
 #include <vulkan/vulkan_core.h>
 
-static inline int mz_no_msaa_default(VkDriverId driver) {
+static inline int mt_no_msaa_default(VkDriverId driver) {
     return driver == VK_DRIVER_ID_AMD_PROPRIETARY || driver == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS;
 }

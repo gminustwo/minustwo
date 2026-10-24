@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include "imgui.h"
-#include "mz_ui_language.h"
+#include "mt_ui_language.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -11,7 +11,7 @@
 #include <windows.h>
 #endif
 
-namespace MzUi {
+namespace MtUi {
 struct ChineseFontFile {
     std::filesystem::path path;
     int index = 0;
@@ -73,4 +73,4 @@ inline bool ConfigureChineseFont(ImFontAtlas* atlas, std::string_view language, 
                                       &config, ranges.Data) != nullptr;
     return chinese;
 }
-} // namespace MzUi
+} // namespace MtUi

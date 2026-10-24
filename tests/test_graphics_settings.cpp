@@ -1,4 +1,4 @@
-// minustwo.ini graphics keys (mz_settings.cpp, mz_graphics.h).
+// minustwo.ini graphics keys (mt_settings.cpp, mt_graphics.h).
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -6,11 +6,11 @@
 #include <limits>
 #include <sstream>
 #include <string>
-#include "mz_graphics.h"
-#include "mz_settings.h"
-#include "../gpu/mzgpu.h"
+#include "mt_graphics.h"
+#include "mt_settings.h"
+#include "../gpu/mtgpu.h"
 
-namespace G = MzGraphics;
+namespace G = MtGraphics;
 
 static int SetEnvironment(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -29,7 +29,7 @@ static std::string Read(const char* path) {
 
 int main() {
     assert(G::ParseDisplayMode("borderless") == G::Borderless && G::ParseDisplayMode("bogus") == G::Windowed);
-    // Match refresh rate (window.cpp, mz_vblank.h): display rates 60 FPS divides evenly.
+    // Match refresh rate (window.cpp, mt_vblank.h): display rates 60 FPS divides evenly.
     assert(G::RefreshDivisor(120.0, 60) == 2 && G::RefreshDivisor(119.88, 60) == 2 && G::RefreshDivisor(59.94, 60) == 1);
     assert(G::RefreshDivisor(240.0, 60) == 4 && G::RefreshDivisor(60.0, 60) == 1);
     assert(G::RefreshDivisor(144.0, 60) == 0 && G::RefreshDivisor(143.99, 60) == 0 && G::RefreshDivisor(100.0, 60) == 0);
@@ -101,34 +101,34 @@ int main() {
                "render_resolution=1440p\nengine_fps=240\ndeferred_readback=0\nstale_readback=1\n"
                "fsr1=1\nrcas=0\nrcas_strength=40\nframes_queued=2\nmatch_refresh=0\n";
     }
-    SetEnvironment("MZ_CONFIG", path);
-    SetEnvironment("MZ_ASYNC_SHADERS", "");
-    auto& v = MzSettings::Get();
-    MzSettings::Load();
+    SetEnvironment("MT_CONFIG", path);
+    SetEnvironment("MT_ASYNC_SHADERS", "");
+    auto& v = MtSettings::Get();
+    MtSettings::Load();
     assert(v.display_mode == G::Borderless && !v.vsync && v.fps_limit == 240 && !v.async_shaders);
     assert(!v.match_refresh);
     assert(v.render_resolution == 4 && v.engine_fps == 240 && !v.deferred_readback && v.stale_readback);
-    // FSR 1 left the menus in 2.2.0: a saved fsr1=1 (or MZ_FSR1) no longer turns it on.
+    // FSR 1 left the menus in 2.2.0: a saved fsr1=1 (or MT_FSR1) no longer turns it on.
     assert(!v.fsr1 && !v.rcas && v.rcas_strength == 40 && v.frames_queued == 2);
-    SetEnvironment("MZ_FSR1", "1");
-    MzSettings::Load();
+    SetEnvironment("MT_FSR1", "1");
+    MtSettings::Load();
     assert(!v.fsr1);
-    SetEnvironment("MZ_FSR1", "");
-    assert(!MzSettings::GraphicsNeedRestart());
-    assert(v.applied_engine_fps == 240);  // no MZ_ENGINE_FPS: the configured rate
-    SetEnvironment("MZ_ENGINE_FPS", "60");    // run.py: the frame rate patch did not apply
-    MzSettings::Load();
-    assert(v.engine_fps == 240 && v.applied_engine_fps == 60 && !MzSettings::GraphicsNeedRestart());
-    SetEnvironment("MZ_ENGINE_FPS", "");
+    SetEnvironment("MT_FSR1", "");
+    assert(!MtSettings::GraphicsNeedRestart());
+    assert(v.applied_engine_fps == 240);  // no MT_ENGINE_FPS: the configured rate
+    SetEnvironment("MT_ENGINE_FPS", "60");    // run.py: the frame rate patch did not apply
+    MtSettings::Load();
+    assert(v.engine_fps == 240 && v.applied_engine_fps == 60 && !MtSettings::GraphicsNeedRestart());
+    SetEnvironment("MT_ENGINE_FPS", "");
     v.render_resolution = 0;
-    assert(MzSettings::GraphicsNeedRestart());
+    assert(MtSettings::GraphicsNeedRestart());
     v.render_resolution = 4;
     v.fps_limit = 60;   // live: no restart because of them
     v.engine_fps = 120;
-    assert(!MzSettings::GraphicsNeedRestart());
+    assert(!MtSettings::GraphicsNeedRestart());
     v.engine_fps = 240;
 
-    MzSettings::Save();
+    MtSettings::Save();
     const std::string saved = Read(path);
     for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "fps_limit=60\n", "async_shaders=0\n",
                              "render_resolution=1440p\n", "engine_fps=240\n", "deferred_readback=0\n",
@@ -141,27 +141,27 @@ int main() {
         std::ofstream out(path);
         out << "render_resolution=8K\n";
     }
-    MzSettings::Load();
+    MtSettings::Load();
     assert(v.render_resolution == G::ParseResolution("8K"));
-    MzSettings::Save();
+    MtSettings::Save();
     assert(Read(path).find("render_resolution=8K\n") != std::string::npos);
 
     {
-        // The resolutions of the enabled mods' patch files (run.py: MZ_EXTRA_RESOLUTIONS) follow the built-in
+        // The resolutions of the enabled mods' patch files (run.py: MT_EXTRA_RESOLUTIONS) follow the built-in
         // ones and keep their names through a load and a save; repeated or built-in names are not added twice.
-        SetEnvironment("MZ_EXTRA_RESOLUTIONS", "3840x1080;2880x1200;;2880x1200;4K;3440x1440");
+        SetEnvironment("MT_EXTRA_RESOLUTIONS", "3840x1080;2880x1200;;2880x1200;4K;3440x1440");
         const auto names = G::ResolutionNames();
         assert(names.size() == 25 && names[22] == "8K" && names[23] == "3840x1080" && names[24] == "2880x1200");
         {
             std::ofstream out(path);
             out << "render_resolution=2880x1200\n";
         }
-        MzSettings::Load();
+        MtSettings::Load();
         assert(v.render_resolution == 24);
-        MzSettings::Save();
+        MtSettings::Save();
         assert(Read(path).find("render_resolution=2880x1200\n") != std::string::npos);
-        SetEnvironment("MZ_EXTRA_RESOLUTIONS", "");  // the mod is off: its resolution is unknown, so native
-        MzSettings::Load();
+        SetEnvironment("MT_EXTRA_RESOLUTIONS", "");  // the mod is off: its resolution is unknown, so native
+        MtSettings::Load();
         assert(v.render_resolution == 0 && G::ResolutionNames().size() == G::Resolutions.size());
     }
 
@@ -170,9 +170,9 @@ int main() {
         out << "display_mode=huge\nfps_limit=7\nrender_resolution=invalid\nengine_fps=1\n"
                "rcas_strength=250\nframes_queued=9\n";
     }
-    SetEnvironment("MZ_ASYNC_SHADERS", "1");  // the environment still wins at start
+    SetEnvironment("MT_ASYNC_SHADERS", "1");  // the environment still wins at start
     v.async_shaders = false;
-    MzSettings::Load();
+    MtSettings::Load();
     assert(v.display_mode == G::Windowed && v.fps_limit == 0 && v.render_resolution == 0 && v.engine_fps == 60);
     assert(v.rcas_strength == 75 && v.frames_queued == 1);
     assert(v.async_shaders);

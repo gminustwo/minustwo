@@ -4,7 +4,7 @@
 // motion vectors in render pixels (previous - current) and the jitter offset.
 //
 // The model is per preset (native, quality, balanced, performance, ultraperf) and per output
-// tier; its SPIR-V passes and weights come from tools/fetch_fsr4_assets.sh (MZ_FSR4_DIR overrides
+// tier; its SPIR-V passes and weights come from tools/fetch_fsr4_assets.sh (MT_FSR4_DIR overrides
 // the fsr4_shaders directory). A preset change rebuilds the model graph.
 
 #pragma once
@@ -34,7 +34,7 @@ public:
         vk::CommandBuffer cmdbuf;
         Image color, depth, motion, output;
         u32 render_width, render_height;
-        int preset; ///< MzSettings::Preset
+        int preset; ///< MtSettings::Preset
         std::array<float, 2> jitter;
         float frame_ms, near_plane, far_plane, vertical_fov;
         float sharpness;

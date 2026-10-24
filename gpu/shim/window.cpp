@@ -9,10 +9,10 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "sdl_window.h"
-#include "mz_overlay.h"
-#include "mz_graphics.h"
-#include "mz_settings.h"
-#include "mz_vblank.h"
+#include "mt_overlay.h"
+#include "mt_graphics.h"
+#include "mt_settings.h"
+#include "mt_vblank.h"
 
 namespace Frontend {
 
@@ -23,12 +23,12 @@ void ToggleMousePause() {
     mouse_paused.store(!mouse_paused.load(std::memory_order_relaxed), std::memory_order_relaxed);
 }
 
-// minustwo: the display the window opens on. MZ_MONITOR is an index into SDL_GetDisplays() (the same
+// minustwo: the display the window opens on. MT_MONITOR is an index into SDL_GetDisplays() (the same
 // order a launcher's list would use); absent or empty means the primary display. An invalid,
 // negative or out-of-range value falls back to the primary with a diagnostic. SDL_WINDOWPOS_CENTERED
 // is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so the primary stays the safe default on every path.
 static SDL_DisplayID MonitorDisplay() {
-    auto& settings = MzSettings::Get();
+    auto& settings = MtSettings::Get();
     int detected = 0;
     if (SDL_DisplayID* list = SDL_GetDisplays(&detected)) {
         settings.monitors.clear();
@@ -38,11 +38,11 @@ static SDL_DisplayID MonitorDisplay() {
         }
         SDL_free(list);
     }
-    const char* value = std::getenv("MZ_MONITOR");
-    const int index = MzGraphics::ParseMonitor(value ? value : "");
-    if (index == MzGraphics::PrimaryMonitor) {
+    const char* value = std::getenv("MT_MONITOR");
+    const int index = MtGraphics::ParseMonitor(value ? value : "");
+    if (index == MtGraphics::PrimaryMonitor) {
         if (value && value[0]) {
-            LOG_WARNING(Frontend, "MZ_MONITOR \"{}\" is not a monitor index; using the primary display", value);
+            LOG_WARNING(Frontend, "MT_MONITOR \"{}\" is not a monitor index; using the primary display", value);
         }
         return SDL_GetPrimaryDisplay();
     }
@@ -55,7 +55,7 @@ static SDL_DisplayID MonitorDisplay() {
     }
     if (index < 0 || index >= count || std::find(settings.monitors.begin(), settings.monitors.end(), index) == settings.monitors.end()) {
         settings.monitor = settings.startup_monitor = -1;
-        LOG_WARNING(Frontend, "MZ_MONITOR {} is out of range for {} display(s); using the primary display", value, count);
+        LOG_WARNING(Frontend, "MT_MONITOR {} is out of range for {} display(s); using the primary display", value, count);
         SDL_free(displays);
         return SDL_GetPrimaryDisplay();
     }
@@ -69,9 +69,9 @@ static SDL_DisplayID MonitorDisplay() {
 // restoring to that size shrunk to fit. The picture is scaled to the window either way. True when shrunk.
 static bool StartSize(s32& width, s32& height, SDL_DisplayID display) {
     constexpr int title_room = 48;
-    const std::vector<std::string> names = MzGraphics::ResolutionNames();
-    const int index = std::clamp(MzSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
-    const auto [w, h] = MzGraphics::ResolutionSize(names[index]);
+    const std::vector<std::string> names = MtGraphics::ResolutionNames();
+    const int index = std::clamp(MtSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
+    const auto [w, h] = MtGraphics::ResolutionSize(names[index]);
     double scale = 1.0;
     SDL_Rect usable{};
     if (SDL_GetDisplayUsableBounds(display, &usable) && usable.w > 0 && usable.h > title_room) {
@@ -103,7 +103,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_DestroyProperties(props);
     ASSERT_MSG(window, "Failed to create window: {}", SDL_GetError());
     // minustwo: the game's own icon (run.py converts sce_sys/icon0.png to BMP, SDL's built-in format).
-    if (const char* icon_path = std::getenv("MZ_WINDOW_ICON")) {
+    if (const char* icon_path = std::getenv("MT_WINDOW_ICON")) {
         if (SDL_Surface* icon = SDL_LoadBMP(icon_path)) {
             SDL_SetWindowIcon(window, icon);
             SDL_DestroySurface(icon);
@@ -116,7 +116,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     if (driver && !std::strcmp(driver, "windows")) {
         window_info.type = WindowSystemType::Windows;
         window_info.render_surface = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
-        MzVblank::Start(window_info.render_surface);
+        MtVblank::Start(window_info.render_surface);
     } else
 #endif
     if (driver && !std::strcmp(driver, "x11")) {
@@ -130,13 +130,13 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     } else {
         UNREACHABLE_MSG("Unsupported SDL video driver {}", driver ? driver : "(none)");
     }
-    // minustwo: MZ_FULLSCREEN=1 (older launchers) still asks for fullscreen.
-    if (const char* fullscreen = std::getenv("MZ_FULLSCREEN"); fullscreen && fullscreen[0] == '1' &&
-        MzSettings::Get().display_mode == MzGraphics::Windowed) {
-        MzSettings::Get().display_mode = MzGraphics::Borderless;
+    // minustwo: MT_FULLSCREEN=1 (older launchers) still asks for fullscreen.
+    if (const char* fullscreen = std::getenv("MT_FULLSCREEN"); fullscreen && fullscreen[0] == '1' &&
+        MtSettings::Get().display_mode == MtGraphics::Windowed) {
+        MtSettings::Get().display_mode = MtGraphics::Borderless;
     }
-    ApplyDisplayMode(MzSettings::Get().display_mode);
-    // minustwo: the game has no mouse; the in-game menu draws its own cursor (MzOverlay::SetOpen).
+    ApplyDisplayMode(MtSettings::Get().display_mode);
+    // minustwo: the game has no mouse; the in-game menu draws its own cursor (MtOverlay::SetOpen).
     SDL_HideCursor();
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -146,8 +146,8 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 }
 
 // "Match refresh rate": the display's mode at the desktop size with a refresh rate that is a whole
-// multiple of 60 (MzGraphics::RefreshFor60), when the desktop's is not (144 Hz). 60 FPS frames then
-// last the same number of refreshes, locked to them (mz_vblank.h); at 144 Hz they last 2 or 3.
+// multiple of 60 (MtGraphics::RefreshFor60), when the desktop's is not (144 Hz). 60 FPS frames then
+// last the same number of refreshes, locked to them (mt_vblank.h); at 144 Hz they last 2 or 3.
 // A copy: the modes live in the list's own allocation (the log once said "238039711037318496256 Hz").
 static std::optional<SDL_DisplayMode> RefreshFor60(SDL_DisplayID display, const SDL_DisplayMode* desktop) {
     if (!desktop) return std::nullopt;
@@ -163,37 +163,37 @@ static std::optional<SDL_DisplayMode> RefreshFor60(SDL_DisplayID display, const 
         }
     }
     SDL_free(modes);
-    const int best = MzGraphics::RefreshFor60(rates, desktop->refresh_rate);
+    const int best = MtGraphics::RefreshFor60(rates, desktop->refresh_rate);
     return best >= 0 ? std::optional{candidates[best]} : std::nullopt;
 }
 
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
 // mode; borderless and fullscreen at a refresh rate for 60 FPS instead when the desktop's is not
-// one (MzSettings::match_refresh): SDL switches the mode back when the game ends. Borderless then
+// one (MtSettings::match_refresh): SDL switches the mode back when the game ends. Borderless then
 // stays up when it loses focus, as without the switch. Window thread only (SDL). The swapchain
 // follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
-    match_refresh = MzSettings::Get().match_refresh;
-    if (mode == MzGraphics::Windowed) {
+    match_refresh = MtSettings::Get().match_refresh;
+    if (mode == MtGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
-        std::printf("Window: %s\n", MzGraphics::DisplayModeNames[mode]);
+        std::printf("Window: %s\n", MtGraphics::DisplayModeNames[mode]);
     } else {
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
         const std::optional<SDL_DisplayMode> fit = match_refresh ? RefreshFor60(display, desktop) : std::nullopt;
         const SDL_DisplayMode* refresh = fit ? &*fit : nullptr;
-        const SDL_DisplayMode* exclusive = refresh ? refresh : mode == MzGraphics::Fullscreen ? desktop : nullptr;
-        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, mode == MzGraphics::Borderless ? "0" : "auto");
+        const SDL_DisplayMode* exclusive = refresh ? refresh : mode == MtGraphics::Fullscreen ? desktop : nullptr;
+        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, mode == MtGraphics::Borderless ? "0" : "auto");
         if (!SDL_SetWindowFullscreenMode(window, exclusive)) {
             LOG_WARNING(Frontend, "Fullscreen mode: {}", SDL_GetError());
         }
         SDL_SetWindowFullscreen(window, true);
         if (refresh) {
             std::printf("Window: %s at %.2f Hz (the desktop's %.2f Hz is not a multiple of 60)\n",
-                        MzGraphics::DisplayModeNames[mode], refresh->refresh_rate, desktop->refresh_rate);
+                        MtGraphics::DisplayModeNames[mode], refresh->refresh_rate, desktop->refresh_rate);
         } else {
-            std::printf("Window: %s\n", MzGraphics::DisplayModeNames[mode]);
+            std::printf("Window: %s\n", MtGraphics::DisplayModeNames[mode]);
         }
     }
     SDL_SyncWindow(window);
@@ -221,7 +221,7 @@ void WindowSDL::UpdateTextTitle() {
     const std::string title = text_active ? base_title + " \u2014 " + text_prompt + ": " + text + "_  (Enter = OK, Esc = cancel)"
                                           : base_title;
     SDL_SetWindowTitle(window, title.c_str());
-    MzOverlay::SetTextEntry(text_active, text_prompt, text);
+    MtOverlay::SetTextEntry(text_active, text_prompt, text);
 }
 
 bool WindowSDL::PollEvents() {
@@ -235,10 +235,10 @@ bool WindowSDL::PollEvents() {
         }
     }
     if (!text_active) {
-        MzOverlay::UpdateTextInput(window);
+        MtOverlay::UpdateTextInput(window);
     }
-    if (const int mode = MzSettings::Get().display_mode;
-        mode != display_mode || MzSettings::Get().match_refresh != match_refresh) {
+    if (const int mode = MtSettings::Get().display_mode;
+        mode != display_mode || MtSettings::Get().match_refresh != match_refresh) {
         ApplyDisplayMode(mode);
     }
     SDL_Event event;
@@ -270,7 +270,7 @@ bool WindowSDL::PollEvents() {
             UpdateTextTitle();
             continue;
         }
-        if (MzOverlay::HandleEvent(event)) {
+        if (MtOverlay::HandleEvent(event)) {
             continue;
         }
         switch (event.type) {
@@ -328,8 +328,8 @@ bool WindowSDL::PollEvents() {
     // another window or the game's pause menu (the pause key) get it back. Taken back, it starts
     // at the window's centre; let go by the pause key, the system cursor shows.
     const bool paused = mouse_paused.load(std::memory_order_relaxed);
-    const bool lock = MzSettings::Get().mouse_lock.load(std::memory_order_relaxed) && !text_active && !paused &&
-                      !MzOverlay::CapturesInput() && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
+    const bool lock = MtSettings::Get().mouse_lock.load(std::memory_order_relaxed) && !text_active && !paused &&
+                      !MtOverlay::CapturesInput() && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
     if (lock != mouse_locked) {
         if (lock) SDL_WarpMouseInWindow(window, width / 2.0f, height / 2.0f);
         if (SDL_SetWindowRelativeMouseMode(window, lock)) mouse_locked = lock;

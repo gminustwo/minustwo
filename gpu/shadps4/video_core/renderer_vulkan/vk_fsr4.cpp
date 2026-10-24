@@ -12,7 +12,7 @@
 
 #include "ffx_vk_fsr4_v07.h"
 #include "ffx_vk_fsr4_v07_assets.h"
-#include "mz_settings.h"
+#include "mt_settings.h"
 #include "video_core/renderer_vulkan/fsr411/fsr411.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -22,7 +22,7 @@ namespace Vulkan {
 namespace {
 
 std::string AssetDir() {
-    const char* dir = std::getenv("MZ_FSR4_DIR");
+    const char* dir = std::getenv("MT_FSR4_DIR");
     return dir && dir[0] ? dir : "fsr4_shaders";
 }
 
@@ -121,8 +121,8 @@ struct Fsr4Upscaler::Impl {
         std::array<std::vector<u8>, FFX_FSR4_VK_PASS_COUNT> code;
         std::vector<u8> initializer, weights;
         // minustwo: tools/fsr4_optimize.sh puts fixed or faster passes into opt/ (post through
-        // shared memory, pass 11 without out-of-bounds writes); MZ_FSR4_OPT=0 keeps the originals.
-        const char* opt_env = std::getenv("MZ_FSR4_OPT");
+        // shared memory, pass 11 without out-of-bounds writes); MT_FSR4_OPT=0 keeps the originals.
+        const char* opt_env = std::getenv("MT_FSR4_OPT");
         const bool use_opt = !(opt_env && opt_env[0] == '0');
         u32 optimized = 0;
         const auto load = [&](const char* name, std::vector<u8>& data) {
@@ -237,7 +237,7 @@ struct Fsr4Upscaler::Impl {
             return false;
         }
         if (!fsr411) {
-            const char* env = std::getenv("MZ_FSR411_DIR");
+            const char* env = std::getenv("MT_FSR411_DIR");
             fsr411 = std::make_unique<Fsr411::Upscaler>(instance.GetPhysicalDevice(), instance.GetDevice(),
                                                         env && env[0] ? env : "fsr4_411");
         }
@@ -276,7 +276,7 @@ struct Fsr4Upscaler::Impl {
     }
 
     bool Record(const Frame& f) {
-        if (MzSettings::Get().upscaler == MzSettings::UpscalerFsr411) {
+        if (MtSettings::Get().upscaler == MtSettings::UpscalerFsr411) {
             return Record411(f);
         }
         if (fatal) {

@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace MzPng {
+namespace MtPng {
 
 struct Image {
     int width = 0, height = 0;
@@ -18,4 +18,4 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out);
 /// Reads the file and decodes it; false when it is missing or bad.
 bool LoadRgba(const char* path, Image& out);
 
-} // namespace MzPng
+} // namespace MtPng

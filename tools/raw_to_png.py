@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Converts the raw frame dumps written with MZ_FRAME_DUMP_TRIGGER (out/dump/<name>_<n>_<w>x<h>.raw,
+"""Converts the raw frame dumps written with MT_FRAME_DUMP_TRIGGER (out/dump/<name>_<n>_<w>x<h>.raw,
 32-bit pixels) into PNG files beside them.
 
     python tools/raw_to_png.py [out/dump] [--bgra]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_vblank.h"
+#include "mt_vblank.h"
 
 #include <algorithm>
 #include <chrono>
@@ -13,10 +13,10 @@
 #include <windows.h>
 #endif
 #include "common/thread.h"
-#include "mz_graphics.h"
-#include "mz_present_trace.h"
+#include "mt_graphics.h"
+#include "mt_present_trace.h"
 
-namespace MzVblank {
+namespace MtVblank {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Ms = std::chrono::duration<double, std::milli>;
@@ -48,7 +48,7 @@ void Note(Clock::time_point now) {
     last_time = now;
 }
 
-// The divisor of `rate` (mz_graphics.h RefreshDivisor) while the last Window vblanks came steadily,
+// The divisor of `rate` (mt_graphics.h RefreshDivisor) while the last Window vblanks came steadily,
 // each within a fifth of their mean, and at the mode's rate: with VRR the display refreshes when
 // the game presents, so its vblanks would follow the game instead of pacing it. 0 otherwise.
 // Under the lock.
@@ -61,7 +61,7 @@ int SteadyDivisor(int rate, double* hz) {
         if (std::abs(interval - mean) > 0.2 * mean) return 0;
     }
     *hz = 1000.0 / mean;
-    return std::abs(*hz - mode_hz) <= 1.5 ? MzGraphics::RefreshDivisor(*hz, rate) : 0;
+    return std::abs(*hz - mode_hz) <= 1.5 ? MtGraphics::RefreshDivisor(*hz, rate) : 0;
 }
 
 #ifdef _WIN32
@@ -140,8 +140,8 @@ void Follow(HWND window, OpenFn open, WaitFn wait, CloseFn close) {
         }
         Note(Clock::now());
         cv.notify_all();
-        if (MzPresentTrace::Enabled()) {
-            std::printf("PresentTrace: vblank %.3f\n", MzPresentTrace::NowMs());
+        if (MtPresentTrace::Enabled()) {
+            std::printf("PresentTrace: vblank %.3f\n", MtPresentTrace::NowMs());
         }
     }
 }
@@ -169,7 +169,7 @@ void Start(void* native_window) {
 }
 
 Pacer::Pacer(int rate_) : rate(rate_) {
-    const char* value = std::getenv("MZ_VBLANK_LOCK");
+    const char* value = std::getenv("MT_VBLANK_LOCK");
     enabled = !(value && value[0] == '0');
 }
 
@@ -207,4 +207,4 @@ bool Pacer::Wait() {
     last = count - target < std::uint64_t(n) ? target : count;
     return true;
 }
-} // namespace MzVblank
+} // namespace MtVblank

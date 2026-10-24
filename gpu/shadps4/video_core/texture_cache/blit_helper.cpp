@@ -253,7 +253,7 @@ void BlitHelper::CopyBetweenMsImages(u32 width, u32 height, u32 num_samples,
 void BlitHelper::CreateShaders() {
     const auto device = instance.GetDevice();
     fs_tri_vertex = Vulkan::CompileSPV(FS_TRI_VERT, device);
-    // minustwo: MZ_LIGHTING_TEST=msdepth selects the sample-fallback variant.
+    // minustwo: MT_LIGHTING_TEST=msdepth selects the sample-fallback variant.
     color_to_ms_depth_frag = Vulkan::LightingTest::Current().msdepth
                                  ? Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_FALLBACK_FRAG, device)
                                  : Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_FRAG, device);

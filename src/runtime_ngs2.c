@@ -6,7 +6,7 @@
  * What is mixed: waveform blocks with repeats and loops, pitch, envelopes, port volumes, matrices
  * and patches between voices, block-end callbacks. What passes through unchanged: filters,
  * distortion, compressors, limiters and EQ; reverb voices are silent (their send would otherwise
- * double the dry signal). MZ_NGS2_TRACE=1 logs racks, parameters and events as the game sends them.
+ * double the dry signal). MT_NGS2_TRACE=1 logs racks, parameters and events as the game sends them.
  *
  * Handles are opaque numbers (type in the top byte), never host pointers. One recursive lock per
  * process serializes control and rendering: callbacks into the game run under it. */
@@ -195,7 +195,7 @@ static System *systems;
 static uint32_t next_serial=1;
 static size_t renders, voices_played, blocks_finished, decode_errors;
 static int trace=-1;
-static int tracing(void) { if (trace<0) { const char *v=getenv("MZ_NGS2_TRACE"); trace=v && *v && *v!='0'; } return trace; }
+static int tracing(void) { if (trace<0) { const char *v=getenv("MT_NGS2_TRACE"); trace=v && *v && *v!='0'; } return trace; }
 
 static Handle make_handle(int type) { return (Handle)type<<56 | next_serial++; }
 static int handle_type(Handle h) { return (int)(h>>56); }

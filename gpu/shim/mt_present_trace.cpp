@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_present_trace.h"
+#include "mt_present_trace.h"
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
 
-namespace MzPresentTrace {
+namespace MtPresentTrace {
 namespace {
 const char* Path() {
     static const char* path = [] {
-        const char* v = std::getenv("MZ_PRESENT_TRACE");
+        const char* v = std::getenv("MT_PRESENT_TRACE");
         return v && v[0] ? v : nullptr;
     }();
     return path;
@@ -44,4 +44,4 @@ void WriteSamples(std::uint64_t seq, double made_ms, std::uint32_t texel_bytes, 
     std::fwrite(data, 1, size, file);
     std::fflush(file);
 }
-} // namespace MzPresentTrace
+} // namespace MtPresentTrace

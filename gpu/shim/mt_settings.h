@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minustwo: user settings changed at run time from the in-game menu (mz_overlay.h) and kept
-// in minustwo.ini (MZ_CONFIG overrides the path). Environment variables override the file at
+// minustwo: user settings changed at run time from the in-game menu (mt_overlay.h) and kept
+// in minustwo.ini (MT_CONFIG overrides the path). Environment variables override the file at
 // start. Readers load the atomics every frame; writers are the menu and Load().
 
 #pragma once
@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace MzSettings {
+namespace MtSettings {
 
 enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
                       UpscalerTaa = 4, UpscalerDlss = 5, UpscalerCount };
@@ -39,13 +39,13 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
-    /// Performance overlay (mz_perf_stats.h): items shown, font size and background opacity
+    /// Performance overlay (mt_perf_stats.h): items shown, font size and background opacity
     /// in percent, corner (0 top left, 1 top right, 2 bottom left, 3 bottom right), layout
     /// (0 one line, 1 one item per line). menu_tab: the menu's last tab.
     std::atomic<unsigned> overlay_items{7};
     std::atomic<int> overlay_scale{100}, overlay_corner{1}, overlay_opacity{50}, overlay_layout{0};
     std::atomic<int> menu_tab{0};
-    // Graphics (mz_graphics.h). Live: applied on the next frame.
+    // Graphics (mt_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};
     /// Borderless and fullscreen on a display whose refresh rate is not a multiple of 60 (144 Hz):
@@ -84,14 +84,14 @@ struct Values {
     std::atomic<int> engine_fps{60};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
-    /// MzGraphics::Anisotropies; the samplers read startup_anisotropy.
+    /// MtGraphics::Anisotropies; the samplers read startup_anisotropy.
     std::atomic<int> anisotropy{0};
     int startup_anisotropy = 0;
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
     int startup_render_resolution = 0;
-    /// The engine rate this launch really runs at (run.py's MZ_ENGINE_FPS): 60 when the frame
+    /// The engine rate this launch really runs at (run.py's MT_ENGINE_FPS): 60 when the frame
     /// rate patch does not apply to this game build.
     std::atomic<int> applied_engine_fps{60};
     /// The game's maximum frame rate, read every frame (src/probe.c finds it): as a float and
@@ -110,11 +110,11 @@ struct Values {
     /// Why FSR 4 cannot run (assets, device features), or null. Set by the renderer.
     std::atomic<const char*> fsr4_problem{nullptr};
     std::atomic<bool> fsr4_supported{false}, fsr411_supported{false};
-    /// DLSS (mz_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
+    /// DLSS (mt_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
 
-    /// Startup settings for the explicit MZ_RENDER_RES compatibility patch only.
+    /// Startup settings for the explicit MT_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
     int startup_upscaler = UpscalerFsr3;
     bool startup_object_motion = true;
@@ -151,4 +151,4 @@ float PresetScale(int preset);
 const char* PresetName(int preset);
 const char* UpscalerName(int upscaler);
 
-} // namespace MzSettings
+} // namespace MtSettings

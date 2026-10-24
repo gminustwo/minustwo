@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_copy.h"
-#include "mz_threads.h"
+#include "mt_copy.h"
+#include "mt_threads.h"
 
 #include <algorithm>
 #include <atomic>
@@ -13,10 +13,10 @@
 #include <thread>
 #include <vector>
 
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/thread.h"
 
-namespace MzCopy {
+namespace MtCopy {
 namespace {
 
 thread_local bool in_copy_thread = false;
@@ -28,8 +28,8 @@ public:
     Pool() {
         // Copies are on the critical path (fences wait for them): normal priority, a quarter
         // of the hardware threads available to the process (Steam Deck 2).
-        unsigned count = std::clamp(MzThreads::Available() / 4, 1u, 4u);
-        if (const char* env = std::getenv("MZ_COPY_THREADS")) {
+        unsigned count = std::clamp(MtThreads::Available() / 4, 1u, 4u);
+        if (const char* env = std::getenv("MT_COPY_THREADS")) {
             count = static_cast<unsigned>(std::clamp(std::atoi(env), 0, 16));
         }
         epochs.emplace_back();
@@ -246,7 +246,7 @@ unsigned long long Yields() {
 }
 
 bool Enabled() {
-    return GetPool().Enabled() && !MzToggle::Disabled(MzToggle::ParallelCopies);
+    return GetPool().Enabled() && !MtToggle::Disabled(MtToggle::ParallelCopies);
 }
 
 void Async(std::function<void()> task) {
@@ -312,4 +312,4 @@ void ParallelFor(std::size_t count, const std::function<void(std::size_t)>& task
     GetPool().Run(count, task);
 }
 
-} // namespace MzCopy
+} // namespace MtCopy

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mz_copy.h"
+#include "mt_copy.h"
 
 #include <deque>
 #include <boost/container/small_vector.hpp>
@@ -135,9 +135,9 @@ private:
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
 
-    /// minustwo: batched small copies on the copy threads (MzCopy::QueueCopy).
-    static void RunGuestCopy(const MzCopy::Item& item);
-    void SmallGuestCopy(const MzCopy::Item& item);
+    /// minustwo: batched small copies on the copy threads (MtCopy::QueueCopy).
+    static void RunGuestCopy(const MtCopy::Item& item);
+    void SmallGuestCopy(const MtCopy::Item& item);
 
     const Buffer* UploadCopies(const Buffer* arena, std::span<vk::BufferCopy> copies,
                                size_t total_size_bytes);

@@ -1,8 +1,8 @@
-"""The voice lines of a run traced with MZ_NGS2_TRACE=1: each stream a sampler voice played, its
+"""The voice lines of a run traced with MT_NGS2_TRACE=1: each stream a sampler voice played, its
 sample count, the parts the game appended, the events after it started and how far it got
 ("full" when it decoded every sample).
 
-    python tools/autoplay.py --game <folder> --seconds 580 --env MZ_NGS2_TRACE=1 \
+    python tools/autoplay.py --game <folder> --seconds 580 --env MT_NGS2_TRACE=1 \
         --out out/vtrace $(cat tools/prologue_inputs.txt)
     python tools/voice_report.py out/vtrace/run.log
 """

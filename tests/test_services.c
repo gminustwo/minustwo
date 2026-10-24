@@ -4,17 +4,17 @@
 #include <assert.h>
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
-int mzgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
-int mzgpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
+int mtgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
+int mtgpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
 static char last_toast[256];
-void mzgpu_toast(const char *text) { snprintf(last_toast,sizeof(last_toast),"%s",text ? text : ""); }
+void mtgpu_toast(const char *text) { snprintf(last_toast,sizeof(last_toast),"%s",text ? text : ""); }
 static char last_trophy[256], last_trophy_detail[256];
-void mzgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {
+void mtgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {
     (void)png; (void)png_size;
     snprintf(last_trophy,sizeof(last_trophy),"%s",title ? title : "");
     snprintf(last_trophy_detail,sizeof(last_trophy_detail),"%s",detail ? detail : "");
 }
-void mzgpu_trophy_setup(const MzGpuTrophyLabels *labels, const MzGpuTrophyInfo *items,
+void mtgpu_trophy_setup(const MtGpuTrophyLabels *labels, const MtGpuTrophyInfo *items,
                                 int count, const volatile uint32_t *unlocked) {
     (void)labels; (void)items; (void)count; (void)unlocked;
 }
@@ -38,21 +38,21 @@ static unsigned char preview_bytes[8];
 static char shown_title[3000], shown_items[33][3000];
 static unsigned char save_param[RUNTIME_SAVE_PARAM_SIZE];
 static int save_param_available;
-int mzgpu_choice_begin(const char *title, const char *const *items, const char *const *images, int count, int focus) {
+int mtgpu_choice_begin(const char *title, const char *const *items, const char *const *images, int count, int focus) {
     (void)images;
     choice_count=count; choice_focus=focus; choice_next=-1;
     snprintf(shown_title,sizeof(shown_title),"%s",title);
     for (int i=0;i<count && i<33;++i) snprintf(shown_items[i],sizeof(shown_items[i]),"%s",items[i]);
     return choice_available && count>0;
 }
-int mzgpu_choice_poll(void) { return choice_next; }
-int mzgpu_choice_confirm(const char *title, const char *const *items, int count, int focus,
+int mtgpu_choice_poll(void) { return choice_next; }
+int mtgpu_choice_confirm(const char *title, const char *const *items, int count, int focus,
                                  const unsigned char *png, uint64_t size, const char *caption, const char *unavailable) {
     assert(caption && *caption && unavailable && *unavailable);
     ++preview_calls; preview_size=size;
     memset(preview_bytes,0,sizeof(preview_bytes));
     if (png && size) memcpy(preview_bytes,png,size<sizeof(preview_bytes) ? (size_t)size : sizeof(preview_bytes));
-    return mzgpu_choice_begin(title,items,NULL,count,focus);
+    return mtgpu_choice_begin(title,items,NULL,count,focus);
 }
 int runtime_savedata_param(int32_t user, const char *dir, void *param) {
     (void)user; (void)dir;
@@ -97,12 +97,12 @@ int main(void) {
     assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING && !strcmp(last_toast,"Create save data?"));
     assert(msg_result(result)==DIALOG_NOT_FINISHED);
     assert(msg_close()==0 && msg_status()==DIALOG_FINISHED);
-    /* MZ_AUTO_DIALOGS answers with the focused button (No when No has the focus). */
-    _putenv("MZ_AUTO_DIALOGS=1");
+    /* MT_AUTO_DIALOGS answers with the focused button (No when No has the focus). */
+    _putenv("MT_AUTO_DIALOGS=1");
     user.type=7;
     assert(msg_open(param)==0 && msg_status()==DIALOG_FINISHED && msg_result(result)==0);
     memcpy(&value,result+8,4); assert(value==2);
-    _putenv("MZ_AUTO_DIALOGS=");
+    _putenv("MT_AUTO_DIALOGS=");
     memset(param+64,0,8);
     param[56]=2;
     assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING);
@@ -275,9 +275,9 @@ int main(void) {
 
     /* Trophies: nothing unlocked (a user dir without trophies.dat or texts; unlocks are not saved). */
 #ifdef _WIN32
-    _putenv("MZ_USER_DIR=services-test-no-user-dir");
+    _putenv("MT_USER_DIR=services-test-no-user-dir");
 #else
-    setenv("MZ_USER_DIR","services-test-no-user-dir",1);
+    setenv("MT_USER_DIR","services-test-no-user-dir",1);
 #endif
     uint32_t flags[4]={~0u,~0u,~0u,~0u}, count=7;
     assert(trophy_unlock_state(1,1,flags,&count)==0 && !flags[0] && !flags[3] && count==0);
@@ -292,19 +292,19 @@ int main(void) {
 
     float ratio=0; assert(safe_area(&ratio)==0 && ratio==1.0f && safe_area(NULL)==SYSTEM_PARAMETER);
 
-    /* System parameter 1: language ID from MZ_LANGUAGE (default 1 = English US, 16 = Polish) */
+    /* System parameter 1: language ID from MT_LANGUAGE (default 1 = English US, 16 = Polish) */
     int32_t lang=0;
     assert(system_param(1,&lang)==0 && lang==1);
 #ifdef _WIN32
-    _putenv("MZ_LANGUAGE=16");
+    _putenv("MT_LANGUAGE=16");
 #else
-    setenv("MZ_LANGUAGE","16",1);
+    setenv("MT_LANGUAGE","16",1);
 #endif
     assert(system_param(1,&lang)==0 && lang==16);
 #ifdef _WIN32
-    _putenv("MZ_LANGUAGE=");
+    _putenv("MT_LANGUAGE=");
 #else
-    unsetenv("MZ_LANGUAGE");
+    unsetenv("MT_LANGUAGE");
 #endif
     assert(system_param(1,&lang)==0 && lang==1);
 

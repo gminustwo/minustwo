@@ -26,8 +26,8 @@
 #include "common/scope_exit.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "common/thread.h"
-#include "mz_overlay.h"
-#include "mz_toggles.h"
+#include "mt_overlay.h"
+#include "mt_toggles.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
@@ -49,8 +49,8 @@ static constexpr u32 PipelineKeyVersion = 5u; // minustwo: Info layout (ImageRes
 namespace Vulkan {
 
 namespace {
-// minustwo: the test knobs that change recompiled SPIR-V (MZ_LIGHTING_TEST=dref,
-// MZ_AMD_PATHS_OFF=shaderext) get their own shader binary cache version.
+// minustwo: the test knobs that change recompiled SPIR-V (MT_LIGHTING_TEST=dref,
+// MT_AMD_PATHS_OFF=shaderext) get their own shader binary cache version.
 u32 CurrentShaderBinaryVersion() {
     return LightingTest::ShaderBinaryVersion(
         Serialization::ShaderBinaryVersion,
@@ -292,7 +292,7 @@ bool StoreShared(const std::filesystem::path& file, const Key& global, const Key
 }
 bool Store(const std::filesystem::path& file, const Key& global, const Key& pipeline,
            u64 graphics_hash, const std::vector<Binary>& binaries) {
-    if (MzToggle::Disabled(MzToggle::SharedBinaries)) {
+    if (MtToggle::Disabled(MtToggle::SharedBinaries)) {
         return Save(file, Encode(global, pipeline, graphics_hash, binaries));
     }
     return StoreShared(file, global, pipeline, graphics_hash, binaries);
@@ -416,8 +416,8 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
         const auto ns = u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 std::chrono::steady_clock::now() - started)
                                 .count());
-        extern std::atomic<u64> g_mz_pipeline_driver_ns;
-        g_mz_pipeline_driver_ns += ns;
+        extern std::atomic<u64> g_mt_pipeline_driver_ns;
+        g_mt_pipeline_driver_ns += ns;
         if (enabled) {
             (restored ? binary_restore_ns : binary_compile_ns) += ns;
             ++(restored ? binary_restore_calls : binary_compile_calls);
@@ -596,7 +596,7 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
     return result;
 }
 
-// minustwo: MZ_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
+// minustwo: MT_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
 // order on the calling thread (program_cache and its permutation checks are not thread-safe);
 // only the pipeline objects, the slow part, are built here. The runtime compiler builds
 // pipelines on worker threads the same way (vk_pipeline_cache.cpp).
@@ -651,7 +651,7 @@ struct PipelineCache::WarmupPool {
         return jobs.empty() && !running;
     }
     static u32 Threads() {
-        const char* env = std::getenv("MZ_PARALLEL_WARMUP");
+        const char* env = std::getenv("MT_PARALLEL_WARMUP");
         if (!env || !*env || *env == '0') {
             return 0;
         }
@@ -1145,9 +1145,9 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
 void PipelineCache::StartOnDemand() {
     const bool compatible = CheckCacheProfile();
     auto& db = Storage::DataBase::Instance();
-    // Launcher: "Reuse compiled shaders from disk" (MZ_DISK_SHADERS), on by default.
-    const bool disk_on = EmulatorSettingsImpl::Flag("MZ_DISK_SHADERS", true) &&
-                         !MzToggle::Disabled(MzToggle::DiskShaders);
+    // Launcher: "Reuse compiled shaders from disk" (MT_DISK_SHADERS), on by default.
+    const bool disk_on = EmulatorSettingsImpl::Flag("MT_DISK_SHADERS", true) &&
+                         !MtToggle::Disabled(MtToggle::DiskShaders);
     if (db.IsOpened() && db.ConcurrentReads() && !disk_on) {
         // This session numbers permutations by first use again: the store is rebuilt at the
         // next start with the bit on.
@@ -1168,8 +1168,8 @@ void PipelineCache::StartOnDemand() {
             std::printf("Pipeline startup: shader store rebuilt for on-demand reads\n");
         } else {
             IndexDiskShaders();
-            // Launcher: "Read the shader cache into memory at start" (MZ_SHADER_PREFETCH).
-            if (EmulatorSettingsImpl::Flag("MZ_SHADER_PREFETCH", true)) {
+            // Launcher: "Read the shader cache into memory at start" (MT_SHADER_PREFETCH).
+            if (EmulatorSettingsImpl::Flag("MT_SHADER_PREFETCH", true)) {
                 StartDiskPrefetch();
             }
         }
@@ -1182,7 +1182,7 @@ void PipelineCache::StartOnDemand() {
 }
 
 bool PipelineCache::DiskShadersActive() const {
-    return disk_shaders && !MzToggle::Disabled(MzToggle::DiskShaders);
+    return disk_shaders && !MtToggle::Disabled(MtToggle::DiskShaders);
 }
 
 void PipelineCache::IndexDiskShaders() {
@@ -1255,10 +1255,10 @@ void PipelineCache::StartDiskPrefetch() {
         u64 programs = 0, bytes = 0;
         for (const auto& [hash, indices] : work) {
             if (stop.stop_requested()) {
-                MzOverlay::SetShaderPrefetch(0, 0);
+                MtOverlay::SetShaderPrefetch(0, 0);
                 return;
             }
-            MzOverlay::SetShaderPrefetch(done++, total);
+            MtOverlay::SetShaderPrefetch(done++, total);
             {
                 std::scoped_lock lock{prefetch->mutex};
                 if (prefetch->claimed.contains(hash)) {
@@ -1275,7 +1275,7 @@ void PipelineCache::StartDiskPrefetch() {
                 ++programs;
             }
         }
-        MzOverlay::SetShaderPrefetch(total, total);
+        MtOverlay::SetShaderPrefetch(total, total);
         std::printf("Disk shaders: prefetch read %llu programs (%.1f MB) in %.0f ms\n",
                     static_cast<unsigned long long>(programs), bytes / 1048576.0,
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
@@ -1284,14 +1284,14 @@ void PipelineCache::StartDiskPrefetch() {
     }};
 }
 
-// minustwo (MzToggle::SharedBinaries): files written before shared storage (or with the bit off)
+// minustwo (MtToggle::SharedBinaries): files written before shared storage (or with the bit off)
 // are rewritten once, on a lowest-priority thread, so the folder shrinks without a cache loss.
 struct PipelineCache::BinaryConversion {
     std::jthread thread;
 };
 
 void PipelineCache::StartBinaryConversion() {
-    if (MzToggle::Disabled(MzToggle::SharedBinaries) ||
+    if (MtToggle::Disabled(MtToggle::SharedBinaries) ||
         !instance.GetPipelineBinaryGlobalKey().keySize ||
         !EmulatorSettings.IsPipelineCacheEnabled()) {
         return;
@@ -1417,7 +1417,7 @@ bool PipelineCache::NewPipelineKey(const std::string& name) {
 }
 
 void PipelineCache::ReportDiskShaders() {
-    if (disk_shaders && !disk_store_untrusted && MzToggle::Disabled(MzToggle::DiskShaders)) {
+    if (disk_shaders && !disk_store_untrusted && MtToggle::Disabled(MtToggle::DiskShaders)) {
         // Switched off live: later permutations follow first-use order again (see StartOnDemand).
         Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "disk_shaders",
                                            std::vector<u8>{0});
@@ -1678,7 +1678,7 @@ void PipelineCache::PumpWarmUp() {
     warm.last_batch = now;
     ++warm.batches;
     const u32 done = warm.done + warm.pool->failed;
-    MzOverlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
+    MtOverlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
 
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
     for (auto& entry : warm.read.Take(32)) {
@@ -1768,17 +1768,17 @@ void PipelineCache::PumpWarmUp() {
                 binary_key_ns.load() / 1e9, binary_load_ns.load() / 1e9,
                 binary_handles_ns.load() / 1e9, binary_restore_ns.load() / 1e9,
                 binary_compile_ns.load() / 1e9);
-    extern std::atomic<u64> g_mz_pipeline_total_ns, g_mz_pipeline_driver_ns;
-    extern std::atomic<u32> g_mz_pipelines_built;
-    const u32 built = std::max(1u, g_mz_pipelines_built.load());
+    extern std::atomic<u64> g_mt_pipeline_total_ns, g_mt_pipeline_driver_ns;
+    extern std::atomic<u32> g_mt_pipelines_built;
+    const u32 built = std::max(1u, g_mt_pipelines_built.load());
     std::printf("Pipeline build time: %u graphics pipelines, %.1f ms each (driver %.1f ms, the rest "
                 "%.1f ms), %.1f s in all\n",
-                built, g_mz_pipeline_total_ns / 1e6 / built, g_mz_pipeline_driver_ns / 1e6 / built,
-                (g_mz_pipeline_total_ns - g_mz_pipeline_driver_ns) / 1e6 / built,
-                g_mz_pipeline_total_ns / 1e9);
+                built, g_mt_pipeline_total_ns / 1e6 / built, g_mt_pipeline_driver_ns / 1e6 / built,
+                (g_mt_pipeline_total_ns - g_mt_pipeline_driver_ns) / 1e6 / built,
+                g_mt_pipeline_total_ns / 1e9);
     // The idle threads stay parked (StopWarmUp).
     warm.finished = true;
-    MzOverlay::SetBackgroundLoading(0, 0);
+    MtOverlay::SetBackgroundLoading(0, 0);
     Storage::DataBase::Instance().FinishPreload();
 }
 
@@ -1792,7 +1792,7 @@ void PipelineCache::StopWarmUp() {
     // while the game ran crashed in ntdll (RtlWakeAllConditionVariable). Join them once the
     // cause is known.
     background = nullptr;
-    MzOverlay::SetBackgroundLoading(0, 0);
+    MtOverlay::SetBackgroundLoading(0, 0);
 }
 
 void PipelineCache::Sync() {

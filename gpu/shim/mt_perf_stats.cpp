@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_perf_stats.h"
+#include "mt_perf_stats.h"
 
 #include <chrono>
 #include <mutex>
@@ -14,7 +14,7 @@
 #include <psapi.h>
 #endif
 
-namespace MzPerfStats {
+namespace MtPerfStats {
 
 namespace {
 
@@ -144,4 +144,4 @@ Sample Latest() {
     return latest;
 }
 
-} // namespace MzPerfStats
+} // namespace MtPerfStats

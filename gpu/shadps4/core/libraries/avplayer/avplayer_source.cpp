@@ -53,7 +53,7 @@ static bool IsStreamSupported(AVStream* stream) {
            codec_id == AV_CODEC_ID_AAC;
 }
 
-static int AvTrace(); // minustwo: MZ_AVPLAYER_TRACE (below)
+static int AvTrace(); // minustwo: MT_AVPLAYER_TRACE (below)
 
 AvPlayerSource::AvPlayerSource(AvPlayerStateCallback& state) : m_state(state) {}
 
@@ -129,11 +129,11 @@ s32 AvPlayerSource::GetStreamCount() {
     return m_streams.size();
 }
 
-// minustwo: MZ_AVPLAYER_TRACE=1 logs every audio pull and video frame release with the wall time;
+// minustwo: MT_AVPLAYER_TRACE=1 logs every audio pull and video frame release with the wall time;
 // 2 also every time the game asks for a video frame.
 static int AvTrace() {
     static const int level = [] {
-        const char* v = std::getenv("MZ_AVPLAYER_TRACE");
+        const char* v = std::getenv("MT_AVPLAYER_TRACE");
         return v ? std::atoi(v) : 0;
     }();
     return level;

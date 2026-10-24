@@ -11,9 +11,9 @@
 #endif
 #include <functional>
 
-#include "mz_copy.h"
+#include "mt_copy.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "video_core/renderer_vulkan/vk_wait_diagnostics.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -21,7 +21,7 @@
 #include "imgui/renderer/texture_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
-#include "mz_threads.h"
+#include "mt_threads.h"
 
 namespace Vulkan {
 
@@ -29,8 +29,8 @@ std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
-    // minustwo: MZ_VK_RECORD_THREAD=0 records on the calling thread.
-    const char* env = std::getenv("MZ_VK_RECORD_THREAD");
+    // minustwo: MT_VK_RECORD_THREAD=0 records on the calling thread.
+    const char* env = std::getenv("MT_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
         record_chunk = AcquireChunk();
         recorder_thread = std::jthread(std::bind_front(&Scheduler::RecorderThread, this));
@@ -58,11 +58,11 @@ Scheduler::~Scheduler() {
 
 bool Scheduler::FullBarriers() {
     static const bool enabled = [] {
-        const char* env = std::getenv("MZ_FULL_BARRIERS");
+        const char* env = std::getenv("MT_FULL_BARRIERS");
         const bool on = env && env[0] == '1';
         if (on) {
             // In last_run.log whatever the GPU log level, so a tester's log shows the mode.
-            std::printf("GPU: full barriers on (MZ_FULL_BARRIERS=1)\n");
+            std::printf("GPU: full barriers on (MT_FULL_BARRIERS=1)\n");
         }
         return on;
     }();
@@ -173,7 +173,7 @@ void Scheduler::EndRendering() {
 
 void Scheduler::TraceDirectRecording(void* caller) {
     static const bool enabled = [] {
-        const char* env = std::getenv("MZ_RECORDER_TRACE");
+        const char* env = std::getenv("MT_RECORDER_TRACE");
         return env && env[0] == '1';
     }();
     if (!enabled) {
@@ -224,10 +224,10 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         signal();
         return;
     }
-    MzCopy::FlushBatch();
+    MtCopy::FlushBatch();
     deferred_signals_issued.fetch_add(1, std::memory_order_relaxed);
     Record([signal = std::move(signal), done = deferred_signals_done](vk::CommandBuffer) mutable {
-        MzCopy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
+        MtCopy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
             signal();
             done->fetch_add(1, std::memory_order_release);
         });
@@ -238,29 +238,29 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
 void Scheduler::WaitDeferredSignals() {
     const u64 issued = deferred_signals_issued.load(std::memory_order_relaxed);
     if (deferred_signals_done->load(std::memory_order_acquire) >= issued ||
-        MzToggle::Disabled(MzToggle::OrderedGuestWrites)) {
+        MtToggle::Disabled(MtToggle::OrderedGuestWrites)) {
         return;
     }
-    MzStats::WaitTimer timer{MzStats::host_copies_wait_ns};
+    MtStats::WaitTimer timer{MtStats::host_copies_wait_ns};
     KickRecording(true);
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
         // Helps the copy threads the signals wait for.
-        MzCopy::WaitAsync();
+        MtCopy::WaitAsync();
         std::this_thread::yield();
     }
 }
 
 void Scheduler::WaitHostCopies() {
     if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
-        MzStats::WaitTimer timer{MzStats::host_copies_wait_ns};
-        MzStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
+        MtStats::WaitTimer timer{MtStats::host_copies_wait_ns};
+        MtStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
         while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
             std::this_thread::yield();
         }
     }
-    MzStats::WaitTimer timer{MzStats::copy_threads_wait_ns};
-    MzCopy::WaitAsync();
+    MtStats::WaitTimer timer{MtStats::copy_threads_wait_ns};
+    MtCopy::WaitAsync();
 }
 
 void Scheduler::KickRecording(bool force) {
@@ -303,7 +303,7 @@ void Scheduler::SyncRecording() {
         return;
     }
     KickRecording(true);
-    MzStats::WaitTimer timer{MzStats::sync_recording_ns};
+    MtStats::WaitTimer timer{MtStats::sync_recording_ns};
     std::unique_lock lk{recorder_mutex};
     recorder_idle_cv.wait(lk, [this] { return recorder_queue.empty() && !recorder_busy; });
 }
@@ -315,7 +315,7 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
         // hardware threads (Steam Deck: 8) the spin would take time from guest threads.
         static const auto spin_time = std::chrono::microseconds(
-            MzThreads::Available() >= 12 ? 200 : 20);
+            MtThreads::Available() >= 12 ? 200 : 20);
         const auto spin_until = std::chrono::steady_clock::now() + spin_time;
         for (u32 spins = 1; queued_chunks.load(std::memory_order_acquire) == 0; ++spins) {
             __builtin_ia32_pause();
@@ -389,7 +389,7 @@ void Scheduler::Wait(u64 tick, std::source_location caller, u64 submit_ns) {
         SubmitInfo info{};
         Flush(info);
     }
-    MzStats::WaitTimer timer{MzStats::tick_wait_ns};
+    MtStats::WaitTimer timer{MtStats::tick_wait_ns};
     const auto submitted = diagnose ? std::chrono::steady_clock::now() : start;
     work_semaphore.Wait(tick);
     if (diagnose) {
@@ -412,7 +412,7 @@ void Scheduler::PopPendingOperations() {
         return;
     }
     if (!work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
-        if ((++pending_polls & 31) != 0 && !MzToggle::Disabled(MzToggle::PendingPollLimit)) {
+        if ((++pending_polls & 31) != 0 && !MtToggle::Disabled(MtToggle::PendingPollLimit)) {
             return;
         }
         work_semaphore.Refresh();

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // minustwo: in-game settings menu (Dear ImGui), drawn by the presenter into the swapchain image
 // after the game frame, at display resolution. Insert (keyboard) or R3+L2 (gamepad) opens it;
-// while it is open the game gets no pad/keyboard input. Settings live in mz_settings.h.
+// while it is open the game gets no pad/keyboard input. Settings live in mt_settings.h.
 
 #pragma once
 
 #include <string>
 #include <vector>
 #include "common/types.h"
-#include "mz_png.h"
+#include "mt_png.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
 union SDL_Event;
@@ -18,7 +18,7 @@ namespace Vulkan {
 class Instance;
 }
 
-namespace MzOverlay {
+namespace MtOverlay {
 
 /// Present thread, once: the ImGui context and its Vulkan backend.
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count);
@@ -61,8 +61,8 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
 /// cancels (Esc/Circle). `pictures`: one per item (empty = none), drawn beside its text.
 /// PollChoice: -1 while open, -2 cancelled, else the chosen index.
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
-                 std::vector<MzPng::Image> pictures, int focus,
-                 const std::string& preview_label = {}, MzPng::Image preview = {});
+                 std::vector<MtPng::Image> pictures, int focus,
+                 const std::string& preview_label = {}, MtPng::Image preview = {});
 int PollChoice();
 
-} // namespace MzOverlay
+} // namespace MtOverlay

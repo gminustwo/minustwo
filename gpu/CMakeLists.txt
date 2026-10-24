@@ -1,7 +1,7 @@
 # minustwo GPU library: shadPS4 video core + shader recompiler + Gnm/VideoOut
 # drivers, adapted to the native_probe runtime through shims in shim/.
 cmake_minimum_required(VERSION 3.24)
-project(mzgpu LANGUAGES C CXX)
+project(mtgpu LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -11,32 +11,32 @@ endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
 
-# minustwo: link-time optimization (MZ_LTO, default on) and profile-guided optimization
-# (MZ_PGO: off, generate = instrumented build writing into MZ_PGO_DIR, use = build with that
-# profile). Covers mzgpu and the static libraries linked into it. No -march: the same build
+# minustwo: link-time optimization (MT_LTO, default on) and profile-guided optimization
+# (MT_PGO: off, generate = instrumented build writing into MT_PGO_DIR, use = build with that
+# profile). Covers mtgpu and the static libraries linked into it. No -march: the same build
 # runs on the Steam Deck.
-option(MZ_LTO "Link-time optimization of mzgpu" ON)
-set(MZ_PGO "off" CACHE STRING "Profile-guided optimization: off, generate, use")
-set(MZ_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Profile directory")
-if (MZ_LTO)
+option(MT_LTO "Link-time optimization of mtgpu" ON)
+set(MT_PGO "off" CACHE STRING "Profile-guided optimization: off, generate, use")
+set(MT_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Profile directory")
+if (MT_LTO)
     include(CheckIPOSupported)
-    check_ipo_supported(RESULT mz_ipo_ok OUTPUT mz_ipo_error)
-    if (mz_ipo_ok)
+    check_ipo_supported(RESULT mt_ipo_ok OUTPUT mt_ipo_error)
+    if (mt_ipo_ok)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
     else()
-        message(WARNING "LTO unavailable: ${mz_ipo_error}")
+        message(WARNING "LTO unavailable: ${mt_ipo_error}")
     endif()
 endif()
-if (MZ_PGO STREQUAL "generate")
+if (MT_PGO STREQUAL "generate")
     # Atomic counters: the GPU, recording, preparation and copy threads run the same code.
-    add_compile_options(-fprofile-generate=${MZ_PGO_DIR} -fprofile-update=atomic)
-    add_link_options(-fprofile-generate=${MZ_PGO_DIR})
-    add_compile_definitions(MZ_PGO_GENERATE)
-elseif (MZ_PGO STREQUAL "use")
+    add_compile_options(-fprofile-generate=${MT_PGO_DIR} -fprofile-update=atomic)
+    add_link_options(-fprofile-generate=${MT_PGO_DIR})
+    add_compile_definitions(MT_PGO_GENERATE)
+elseif (MT_PGO STREQUAL "use")
     # Partial training keeps unprofiled code optimized normally; counters from concurrent
     # threads can be slightly inconsistent (correction). Functions changed since the profile
-    # (or built differently for it, mzgpu_init) are compiled without it.
-    add_compile_options(-fprofile-use=${MZ_PGO_DIR} -fprofile-partial-training
+    # (or built differently for it, mtgpu_init) are compiled without it.
+    add_compile_options(-fprofile-use=${MT_PGO_DIR} -fprofile-partial-training
                         -fprofile-correction -Wno-missing-profile -Wno-coverage-mismatch)
 endif()
 
@@ -148,63 +148,63 @@ file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
 # Windows: a DLL cannot leave the runtime_* symbols for minustwo.exe to resolve, so the
 # library is static there and linked into the executable.
 if (WIN32)
-    set(MZGPU_KIND STATIC)
+    set(MTGPU_KIND STATIC)
 else()
-    set(MZGPU_KIND SHARED)
+    set(MTGPU_KIND SHARED)
 endif()
-add_library(mzgpu ${MZGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+add_library(mtgpu ${MTGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
     shadps4/core/libraries/videodec/video_utils.cpp)
-add_dependencies(mzgpu host_shaders)
+add_dependencies(mtgpu host_shaders)
 # In-game settings menu: Dear ImGui (third_party/imgui, MIT) with its Vulkan backend, and an
 # embedded Cyrillic font (third_party/fonts).
-target_sources(mzgpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
+target_sources(mtgpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp third_party/imgui/imgui_widgets.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp)
-target_include_directories(mzgpu PRIVATE third_party/imgui third_party/imgui/backends)
-target_compile_definitions(mzgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-    MZ_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
-set_source_files_properties(shim/mz_overlay.cpp PROPERTIES
+target_include_directories(mtgpu PRIVATE third_party/imgui third_party/imgui/backends)
+target_compile_definitions(mtgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+    MT_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
+set_source_files_properties(shim/mt_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
-target_include_directories(mzgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
-target_compile_definitions(mzgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
-target_compile_options(mzgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
+target_include_directories(mtgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+target_compile_definitions(mtgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
+target_compile_options(mtgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against minustwo.
 if (NOT WIN32)
-    target_link_options(mzgpu PRIVATE -Wl,--allow-shlib-undefined)
+    target_link_options(mtgpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
-target_link_libraries(mzgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
-target_link_libraries(mzgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
+target_link_libraries(mtgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
+target_link_libraries(mtgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
     tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
-target_include_directories(mzgpu PRIVATE third_party/xbyak)
+target_include_directories(mtgpu PRIVATE third_party/xbyak)
 if (WIN32)
     # Guest code is entered with the System V ABI; NOMINMAX/WIN32_LEAN_AND_MEAN keep
     # <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
-    target_compile_definitions(mzgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_compile_options(mzgpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/mz_win_compat.h)
-    target_link_libraries(mzgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm pdh)
+    target_compile_definitions(mtgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(mtgpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/mt_win_compat.h)
+    target_link_libraries(mtgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm pdh)
 else()
-    target_link_libraries(mzgpu PUBLIC PkgConfig::X11)
+    target_link_libraries(mtgpu PUBLIC PkgConfig::X11)
 endif()
 
-# minustwo (Windows): mzgpu is a static library there, so the loader and the HLE runtime are
+# minustwo (Windows): mtgpu is a static library there, so the loader and the HLE runtime are
 # linked here, where CMake knows its dependencies (build.sh builds them with ninja).
 if (WIN32)
     enable_language(RC)
-    file(GLOB MZ_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
-    file(GLOB MZ_ATRAC9 CONFIGURE_DEPENDS ../third_party/LibAtrac9/C/src/*.c)
-    add_library(atrac9 STATIC ${MZ_ATRAC9})
+    file(GLOB MT_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
+    file(GLOB MT_ATRAC9 CONFIGURE_DEPENDS ../third_party/LibAtrac9/C/src/*.c)
+    add_library(atrac9 STATIC ${MT_ATRAC9})
     target_compile_options(atrac9 PRIVATE -w)
     set_target_properties(atrac9 PROPERTIES C_STANDARD 99 INTERPROCEDURAL_OPTIMIZATION OFF)
-    add_executable(minustwo ../src/probe.c ${MZ_RUNTIME} ../src/compat_win.c ../src/cpu_check.c ../src/vulkan_smoke.c
+    add_executable(minustwo ../src/probe.c ${MT_RUNTIME} ../src/compat_win.c ../src/cpu_check.c ../src/vulkan_smoke.c
         ../src/isa_rewrite.c ../src/isa_emulate.c
         ../packaging/windows/minustwo.rc)
     set_target_properties(minustwo PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(minustwo PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
     target_include_directories(minustwo PRIVATE .. ../src)
-    target_link_libraries(minustwo PRIVATE mzgpu atrac9 PkgConfig::FREETYPE onecore bcrypt ws2_32 -pthread)
+    target_link_libraries(minustwo PRIVATE mtgpu atrac9 PkgConfig::FREETYPE onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
     target_link_options(minustwo PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
@@ -273,11 +273,11 @@ add_executable(pipeline-binary-cache-test EXCLUDE_FROM_ALL ../tests/test_pipelin
     ../tests/test_gpu_runtime_stubs.cpp)
 target_compile_definitions(pipeline-binary-cache-test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(pipeline-binary-cache-test PRIVATE shim shadps4 third_party/gcn/include)
-target_link_libraries(pipeline-binary-cache-test PRIVATE mzgpu)
+target_link_libraries(pipeline-binary-cache-test PRIVATE mtgpu)
 target_compile_options(pipeline-binary-cache-test PRIVATE -fPIC)
 if (WIN32)
     target_sources(pipeline-binary-cache-test PRIVATE ../src/compat_win.c)
-    target_compile_definitions(pipeline-binary-cache-test PRIVATE sigjmp_buf=mz_jmp_buf)
+    target_compile_definitions(pipeline-binary-cache-test PRIVATE sigjmp_buf=mt_jmp_buf)
     target_compile_options(pipeline-binary-cache-test PRIVATE
         -include ${CMAKE_CURRENT_SOURCE_DIR}/../src/compat_win.h)
     target_link_libraries(pipeline-binary-cache-test PRIVATE onecore)
@@ -286,11 +286,11 @@ add_executable(pipeline-binary-initialization-test EXCLUDE_FROM_ALL
     ../tests/test_pipeline_binary_initialization.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_compile_definitions(pipeline-binary-initialization-test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(pipeline-binary-initialization-test PRIVATE shim shadps4 third_party/gcn/include)
-target_link_libraries(pipeline-binary-initialization-test PRIVATE mzgpu)
+target_link_libraries(pipeline-binary-initialization-test PRIVATE mtgpu)
 target_compile_options(pipeline-binary-initialization-test PRIVATE -fPIC)
 if (WIN32)
     target_sources(pipeline-binary-initialization-test PRIVATE ../src/compat_win.c)
-    target_compile_definitions(pipeline-binary-initialization-test PRIVATE sigjmp_buf=mz_jmp_buf)
+    target_compile_definitions(pipeline-binary-initialization-test PRIVATE sigjmp_buf=mt_jmp_buf)
     target_compile_options(pipeline-binary-initialization-test PRIVATE
         -include ${CMAKE_CURRENT_SOURCE_DIR}/../src/compat_win.h)
     target_link_libraries(pipeline-binary-initialization-test PRIVATE onecore)
@@ -302,8 +302,8 @@ target_compile_options(motion-history-test PRIVATE -UNDEBUG -Wall -Wextra -Werro
 target_include_directories(motion-history-test PRIVATE ..)
 add_executable(motion-shader-test EXCLUDE_FROM_ALL ../tests/test_motion_shaders.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(motion-shader-test PRIVATE shim shadps4 third_party/gcn/include)
-target_link_libraries(motion-shader-test PRIVATE mzgpu)
-add_executable(png-decode-test EXCLUDE_FROM_ALL ../tests/test_png_decode.cpp shim/mz_png.cpp)
+target_link_libraries(motion-shader-test PRIVATE mtgpu)
+add_executable(png-decode-test EXCLUDE_FROM_ALL ../tests/test_png_decode.cpp shim/mt_png.cpp)
 target_compile_options(png-decode-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(png-decode-test PRIVATE PkgConfig::FFMPEG)
 add_executable(aliasing-test EXCLUDE_FROM_ALL ../tests/test_aliasing.cpp
@@ -372,28 +372,28 @@ target_include_directories(scene-resolution-test PRIVATE shim shadps4 third_part
 target_compile_options(scene-resolution-test PRIVATE -UNDEBUG -fPIC)
 set_source_files_properties(../tests/test_scene_resolution.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
-target_link_libraries(scene-resolution-test PRIVATE mzgpu)
+target_link_libraries(scene-resolution-test PRIVATE mtgpu)
 add_executable(taa-shader-test EXCLUDE_FROM_ALL ../tests/test_taa_shader.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(taa-shader-test PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include)
 target_compile_options(taa-shader-test PRIVATE -UNDEBUG -fPIC)
 set_source_files_properties(../tests/test_taa_shader.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
-target_link_libraries(taa-shader-test PRIVATE mzgpu)
+target_link_libraries(taa-shader-test PRIVATE mtgpu)
 add_dependencies(taa-shader-test host_shaders)
 
 add_executable(camera-motion-test EXCLUDE_FROM_ALL ../tests/test_camera_motion.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(camera-motion-test PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include)
 target_compile_options(camera-motion-test PRIVATE -UNDEBUG -fPIC)
-target_link_libraries(camera-motion-test PRIVATE mzgpu)
+target_link_libraries(camera-motion-test PRIVATE mtgpu)
 add_dependencies(camera-motion-test host_shaders)
 
 # minustwo: FSR 4 benchmark outside the game (tools/fsr4_bench.cpp): ninja -C out/gpu fsr4-bench.
 add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_support.cpp
-    shim/mz_settings.cpp)
+    shim/mt_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
-    shim/mz_settings.cpp)
+    shim/mt_settings.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)
 target_compile_options(perf-overlay-test PRIVATE -UNDEBUG)
 add_executable(readback-queue-test EXCLUDE_FROM_ALL ../tests/test_readback_queue.cpp)
@@ -403,7 +403,7 @@ add_executable(wait-diagnostics-test EXCLUDE_FROM_ALL ../tests/test_wait_diagnos
 target_include_directories(wait-diagnostics-test PRIVATE shadps4)
 target_compile_options(wait-diagnostics-test PRIVATE -UNDEBUG)
 add_executable(graphics-settings-test EXCLUDE_FROM_ALL ../tests/test_graphics_settings.cpp
-    shim/mz_settings.cpp)
+    shim/mt_settings.cpp)
 target_include_directories(graphics-settings-test PRIVATE shim)
 target_compile_options(graphics-settings-test PRIVATE -UNDEBUG)
 add_executable(readback-sources-test EXCLUDE_FROM_ALL ../tests/test_readback_sources.cpp)
@@ -420,7 +420,7 @@ target_include_directories(fsr4-bench PRIVATE shadps4/video_core/renderer_vulkan
 target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan::fsr4-v07-assets Vulkan::Vulkan)
 
 add_executable(swapchain-focus-test EXCLUDE_FROM_ALL ../tests/test_swapchain_focus.cpp
-    shim/window.cpp shim/mz_settings.cpp)
+    shim/window.cpp shim/mt_settings.cpp)
 target_include_directories(swapchain-focus-test PRIVATE shim shadps4)
 target_link_libraries(swapchain-focus-test PRIVATE PkgConfig::SDL3 Vulkan::Vulkan fmt::fmt)
 target_compile_options(swapchain-focus-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

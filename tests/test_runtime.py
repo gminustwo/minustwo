@@ -47,7 +47,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(r.returncode,0,r.stdout+r.stderr)
 
     def test_guest_memory_failure_exits_with_error(self):
-        r = self.run_case('--guest-memory-fail', env={'MZ_FAIL_GUEST_MEMORY': '1450'})
+        r = self.run_case('--guest-memory-fail', env={'MT_FAIL_GUEST_MEMORY': '1450'})
         self.assertEqual(r.returncode, 21)
         self.assertIn('cannot create', r.stderr)
         self.assertIn('error 1450', r.stderr)

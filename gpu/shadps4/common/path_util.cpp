@@ -85,8 +85,8 @@ static std::optional<std::filesystem::path> GetBundleParentDirectory() {
 #endif
 
 static auto UserPaths = [] {
-    // minustwo: the port keeps GPU caches where MZ_GPU_USER_DIR points.
-    const char* port_dir = std::getenv("MZ_GPU_USER_DIR");
+    // minustwo: the port keeps GPU caches where MT_GPU_USER_DIR points.
+    const char* port_dir = std::getenv("MT_GPU_USER_DIR");
     auto user_dir = port_dir ? std::filesystem::path(port_dir) : std::filesystem::current_path() / PORTABLE_DIR;
     if (!std::filesystem::exists(user_dir)) {
         // If it doesn't exist, use the standard path for the platform instead.
@@ -103,7 +103,7 @@ static auto UserPaths = [] {
         }
 #elif _WIN32
         // minustwo: never shadPS4's %APPDATA% folder (an installed shadPS4 owns it); this runs
-        // before main, so the portable folder is created here (run.py sets MZ_GPU_USER_DIR).
+        // before main, so the portable folder is created here (run.py sets MT_GPU_USER_DIR).
         std::filesystem::create_directories(user_dir);
 #endif
     }

@@ -23,8 +23,8 @@ use lib $FindBin::Bin;
 use Fsr4SpirvCrossFixes;
 $src = Fsr4SpirvCrossFixes::signed_unpack($src);
 
-my %slot = (rw_recurrent_0 => ['mz_rec', 'vec4'], rw_history_color => ['mz_hist', 'vec4'],
-            rw_mlsr_output_color => ['mz_out', 'vec4']);
+my %slot = (rw_recurrent_0 => ['mt_rec', 'vec4'], rw_history_color => ['mt_hist', 'vec4'],
+            rw_mlsr_output_color => ['mt_out', 'vec4']);
 for my $image (sort keys %slot) {
     my ($array, $type) = @{$slot{$image}};
     my $n = ($src =~ s/imageStore\($image, ivec2\((_\d+)\), /$array\[minustwoLocal($1)\] = $type(/g);
@@ -32,9 +32,9 @@ for my $image (sort keys %slot) {
 }
 my $decl = <<'GLSL';
 // minustwo: the workgroup's 16x16 output block, stored in contiguous rows after the loop.
-shared vec4 mz_rec[256];
-shared vec4 mz_hist[256];
-shared vec4 mz_out[256];
+shared vec4 mt_rec[256];
+shared vec4 mt_hist[256];
+shared vec4 mt_out[256];
 uint minustwoLocal(uvec2 p)
 {
     uvec2 l = p - gl_WorkGroupID.xy * 16u;
@@ -51,9 +51,9 @@ my $flush = <<'GLSL';
     {
         uint minustwoI = gl_LocalInvocationIndex + 64u * minustwoK;
         ivec2 minustwoP = ivec2(minustwoBase + uvec2(minustwoI % 16u, minustwoI / 16u));
-        imageStore(rw_recurrent_0, minustwoP, mz_rec[minustwoI]);
-        imageStore(rw_history_color, minustwoP, mz_hist[minustwoI]);
-        imageStore(rw_mlsr_output_color, minustwoP, mz_out[minustwoI]);
+        imageStore(rw_recurrent_0, minustwoP, mt_rec[minustwoI]);
+        imageStore(rw_history_color, minustwoP, mt_hist[minustwoI]);
+        imageStore(rw_mlsr_output_color, minustwoP, mt_out[minustwoI]);
     }
 }
 GLSL

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -71,14 +71,14 @@ struct PageManager::Impl {
         // minustwo: the draw recording thread handles its faults inline too (vk_draw_pipe.h).
         const auto is_gpu_thread = rasterizer->IsGpuSideThread();
         if (is_gpu_thread) {
-            MzStats::gpu_signal_faults.fetch_add(1, std::memory_order_relaxed);
+            MtStats::gpu_signal_faults.fetch_add(1, std::memory_order_relaxed);
         }
         if (Common::IsWriteError(context)) {
-            MzStats::Timer timer{MzStats::t_write_faults};
+            MtStats::Timer timer{MtStats::t_write_faults};
             return rasterizer->OnWriteFault(addr, is_gpu_thread);
         } else {
-            MzStats::read_faults.fetch_add(1, std::memory_order_relaxed);
-            MzStats::Timer timer{MzStats::t_read_faults};
+            MtStats::read_faults.fetch_add(1, std::memory_order_relaxed);
+            MtStats::Timer timer{MtStats::t_read_faults};
             return rasterizer->ReadMemory(addr, 8, is_gpu_thread);
         }
         return false;
@@ -236,7 +236,7 @@ struct PageManager::Impl {
 // per-frame buffers and the GPU thread re-protects uploaded pages, every page fault in the
 // process (copy threads included) waits for it. UFFDIO_WRITEPROTECT changes page table bits
 // under the lock for reading. Read protection (readbacks) still uses mprotect: userfaultfd
-// write-protection cannot deny reads. MZ_UFFD=1.
+// write-protection cannot deny reads. MT_UFFD=1.
 struct UffdImpl : public PageManager::Impl {
 private:
     std::jthread ufd_thread;
@@ -356,7 +356,7 @@ public:
             const VAddr addr = msg.arg.pagefault.address;
             const auto ptid = msg.arg.pagefault.feat.ptid;
             {
-                MzStats::Timer timer{MzStats::t_write_faults};
+                MtStats::Timer timer{MtStats::t_write_faults};
                 rasterizer->OnWriteFault(addr, rasterizer->IsGpuSideThreadId(ptid));
             }
             // Protect() clears with DONTWAKE (it may run for pages nobody waits on).
@@ -392,7 +392,7 @@ struct SignalImpl : public PageManager::Impl {
 
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
-    if (std::getenv("MZ_UFFD") && std::getenv("MZ_UFFD")[0] == '1') {
+    if (std::getenv("MT_UFFD") && std::getenv("MT_UFFD")[0] == '1') {
         try {
             impl = std::make_unique<UffdImpl>(rasterizer_);
             LOG_INFO(Config, "Memory tracking method: userfaultfd");

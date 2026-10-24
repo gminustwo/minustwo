@@ -17,7 +17,7 @@
 #include "sdl_window.h"
 
 // Stubs for overlay functions referenced by WindowSDL when linked in tests
-namespace MzOverlay {
+namespace MtOverlay {
     bool HandleEvent(const SDL_Event&) { return false; }
     void UpdateTextInput(SDL_Window*) {}
     bool CapturesInput() { return false; }

@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 
 #include "video_core/host_shaders/camera_motion_comp.h"
 #include "video_core/host_shaders/camera_motion_debug_comp.h"
@@ -51,11 +51,11 @@ std::array<float, 12> Multiply(const std::array<float, 12>& a, const std::array<
 CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
                            VideoCore::TextureCache& texture_cache_, Runtime& runtime_)
     : instance{instance_}, scheduler{scheduler_}, texture_cache{texture_cache_}, runtime{runtime_} {
-    const char* env = std::getenv("MZ_DEBUG_MOTION");
+    const char* env = std::getenv("MT_DEBUG_MOTION");
     debug_overlay = env && env[0] == '1';
-    const char* upscaler = std::getenv("MZ_UPSCALER");
+    const char* upscaler = std::getenv("MT_UPSCALER");
     // The upscaler can be switched on from the menu at any time: the camera is always tracked
-    // unless MZ_UPSCALER=none.
+    // unless MT_UPSCALER=none.
     for_upscaler = !(upscaler && std::strcmp(upscaler, "none") == 0);
     const auto device = instance.GetDevice();
     if (for_upscaler) {
@@ -300,10 +300,10 @@ void CameraMotion::Overlay(VideoCore::ImageId frame) {
         .size = {float(color.info.size.width), float(color.info.size.height)},
         .jitter = jitter,
         .previous_jitter = previous_jitter,
-        .mode = MzToggle::Disabled(1u << 20)   ? 1u
-                : MzToggle::Disabled(1u << 21) ? 2u
-                : MzToggle::Disabled(1u << 22) ? 3u
-                : MzToggle::Disabled(1u << 23) ? 4u
+        .mode = MtToggle::Disabled(1u << 20)   ? 1u
+                : MtToggle::Disabled(1u << 21) ? 2u
+                : MtToggle::Disabled(1u << 22) ? 3u
+                : MtToggle::Disabled(1u << 23) ? 4u
                                                : 0u,
     };
     static u32 log_counter = 0;

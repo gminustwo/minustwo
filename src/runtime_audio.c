@@ -4,7 +4,7 @@
  * bursts (whenever the device pulls a quantum) lets it overtake the mixer and
  * play stale halves - a click every 10.7 ms. The lowest SDL queue level of
  * each window is steered to two buffers (silence prefill on underrun, ±3%
- * cadence corrections), which also absorbs device clock drift. Without an audio device (headless runs, MZ_AUDIO=none)
+ * cadence corrections), which also absorbs device clock drift. Without an audio device (headless runs, MT_AUDIO=none)
  * ports only follow the clock. */
 #define _GNU_SOURCE
 #include "runtime.h"
@@ -37,9 +37,9 @@ typedef struct {
     int64_t adjust_ns; int window_min, window_count; /* queue level control */
     uint64_t last_output_us;
     pthread_mutex_t lock;
-    FILE *dump;                     /* MZ_AUDIO_DUMP: raw converted PCM per port */
+    FILE *dump;                     /* MT_AUDIO_DUMP: raw converted PCM per port */
     int stats;
-    uint64_t stat_start_ns, stat_last_ns, stat_max_gap_ns; /* MZ_AUDIO_STATS */
+    uint64_t stat_start_ns, stat_last_ns, stat_max_gap_ns; /* MT_AUDIO_STATS */
     unsigned stat_starved, stat_buffers; int stat_min_queued;
 } Port;
 typedef struct { uint16_t output; uint8_t channel, reserved; int16_t volume; uint16_t reroute; uint64_t flag, reserved64[2]; } PortState;
@@ -62,7 +62,7 @@ static void sleep_until(uint64_t deadline) {
 }
 static int sdl_audio(void) {
     if (sdl_ready<0) {
-        const char *mode=getenv("MZ_AUDIO");
+        const char *mode=getenv("MT_AUDIO");
         sdl_ready = (!mode || strcmp(mode,"none")) && SDL_InitSubSystem(SDL_INIT_AUDIO);
         printf("Runtime: audio backend %s\n", sdl_ready ? SDL_GetCurrentAudioDriver() : "timer (silent)");
     }
@@ -191,8 +191,8 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
         if (p->stream) SDL_ResumeAudioStreamDevice(p->stream);
         else fprintf(stderr,"Runtime: SDL audio stream failed (%s); port %d uses the timer sink\n",SDL_GetError(),id);
     }
-    p->stats=getenv("MZ_AUDIO_STATS")!=NULL;
-    const char *dump=getenv("MZ_AUDIO_DUMP");
+    p->stats=getenv("MT_AUDIO_STATS")!=NULL;
+    const char *dump=getenv("MT_AUDIO_DUMP");
     if (dump) {
         char path[4096];
         snprintf(path,sizeof(path),"%s.port%d.%dch.%s",dump,id,p->downmix ? 2 : p->channels,p->is_float ? "f32" : "s16");
@@ -312,9 +312,9 @@ static ABI int32_t audio_volume(int32_t handle, int32_t flags, const int32_t *vo
         p->volume[c]=volume[c];
     }
     pthread_mutex_unlock(&p->lock);
-    /* MZ_AUDIO_TRACE=1: the volumes the game sets (VOLUME_0DB is full). */
+    /* MT_AUDIO_TRACE=1: the volumes the game sets (VOLUME_0DB is full). */
     static int trace=-1;
-    if (trace<0) { const char *e=getenv("MZ_AUDIO_TRACE"); trace=e && e[0]=='1'; }
+    if (trace<0) { const char *e=getenv("MT_AUDIO_TRACE"); trace=e && e[0]=='1'; }
     if (trace) printf("Audio trace: port %d volume flags 0x%x: %d %d\n",(int)(p-ports),flags,volume[0],volume[1]);
     return 0;
 }

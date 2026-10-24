@@ -10,8 +10,8 @@
 #include <ranges>
 #include <string>
 #include <unordered_set>
-#include "mz_overlay.h"
-#include "mz_threads.h"
+#include "mt_overlay.h"
+#include "mt_threads.h"
 
 #include "common/hash.h"
 #include "common/thread.h"
@@ -23,7 +23,7 @@
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
-#include "mz_settings.h"
+#include "mt_settings.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -375,9 +375,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
-        // minustwo: older NVIDIA (Pascal) has no barycentrics; MZ_INTERP_INT_FIX=0/1 overrides.
+        // minustwo: older NVIDIA (Pascal) has no barycentrics; MT_INTERP_INT_FIX=0/1 overrides.
         .needs_integer_interpolation_fix = [&] {
-            if (const char* env = std::getenv("MZ_INTERP_INT_FIX")) {
+            if (const char* env = std::getenv("MT_INTERP_INT_FIX")) {
                 return env[0] == '1';
             }
             return !instance.IsFragmentShaderBarycentricSupported() &&
@@ -397,10 +397,10 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
     // minustwo: the compiler threads always exist; the in-game menu switches async compilation live
-    // (MzSettings::async_shaders, MZ_ASYNC_SHADERS at start).
+    // (MtSettings::async_shaders, MT_ASYNC_SHADERS at start).
     {
-        const auto count = std::clamp(MzThreads::Available() / 2, 1u, 6u);
-        const auto capture_count = std::min(2u, std::max(1u, MzThreads::Available() / 4));
+        const auto count = std::clamp(MtThreads::Available() / 2, 1u, 6u);
+        const auto capture_count = std::min(2u, std::max(1u, MtThreads::Available() / 4));
         for (unsigned i = 0; i < count; ++i) {
             auto [result, worker_cache] = instance.GetDevice().createPipelineCacheUnique({});
             ASSERT_MSG(result == vk::Result::eSuccess, "Failed to create compiler pipeline cache");
@@ -426,13 +426,13 @@ PipelineCache::~PipelineCache() {
     FinishCompilations();
 }
 
-// minustwo: shader/pipeline compile time on the GPU thread, reported by MZ_FRAME_STATS.
-std::atomic<u64> g_mz_compile_ns;
-std::atomic<u32> g_mz_compiles;
-std::atomic<u64> g_mz_capture_ns, g_mz_async_ns, g_mz_compile_wait_ns;
-std::atomic<u64> g_mz_snapshot_ns, g_mz_guest_wait_ns;
-std::atomic<u32> g_mz_pool_reuses;
-std::atomic<u32> g_mz_pending_draws;
+// minustwo: shader/pipeline compile time on the GPU thread, reported by MT_FRAME_STATS.
+std::atomic<u64> g_mt_compile_ns;
+std::atomic<u32> g_mt_compiles;
+std::atomic<u64> g_mt_capture_ns, g_mt_async_ns, g_mt_compile_wait_ns;
+std::atomic<u64> g_mt_snapshot_ns, g_mt_guest_wait_ns;
+std::atomic<u32> g_mt_pool_reuses;
+std::atomic<u32> g_mt_pending_draws;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -451,10 +451,10 @@ struct PhaseTimer {
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_mz_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        g_mt_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count());
-        ++g_mz_compiles;
+        ++g_mt_compiles;
     }
 };
 } // namespace
@@ -468,7 +468,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     if (!compiler->HasCapacity()) {
         return false;
     }
-    PhaseTimer snapshot{g_mz_snapshot_ns};
+    PhaseTimer snapshot{g_mt_snapshot_ns};
     auto build = std::make_shared<AsyncShaderCompilation>();
     build->device = instance.GetDevice();
     build->code.assign(params.code.begin(), params.code.end());
@@ -490,11 +490,11 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     snapshot.Stop();
     AsyncJob<bool> capture_job;
     if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-        PhaseTimer capture{g_mz_capture_ns};
+        PhaseTimer capture{g_mt_capture_ns};
         auto [pools, reused] = compiler_pools.Acquire();
         build->pools = std::move(pools);
         if (reused) {
-            ++g_mz_pool_reuses;
+            ++g_mt_pool_reuses;
         }
         // minustwo: the GPU thread waits until all guest reads and specialization are captured.
         build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
@@ -506,7 +506,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         return false;
     }
     {
-        PhaseTimer waiting{g_mz_guest_wait_ns};
+        PhaseTimer waiting{g_mt_guest_wait_ns};
         capture_job.Wait();
     }
     if (!capture_job.Poll()) {
@@ -521,7 +521,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
-        PhaseTimer compile{g_mz_async_ns};
+        PhaseTimer compile{g_mt_async_ns};
         Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch};
         auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, build->runtime, *build->ir,
                                                     build->binding);
@@ -544,14 +544,14 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     return queued;
 }
 
-// minustwo: the corner note on shader translations (MzOverlay), when anything changed. Runs at
+// minustwo: the corner note on shader translations (MtOverlay), when anything changed. Runs at
 // the start of each lookup, so a compile started by the previous draw shows from the next one.
 void PipelineCache::ReportCompiles() {
     const u32 pending = u32(pending_programs.size());
     if (compiles_started == compiles_reported && pending == pending_reported) {
         return;
     }
-    MzOverlay::NoteShaderCompiles(pending, u32(compiles_started - compiles_reported));
+    MtOverlay::NoteShaderCompiles(pending, u32(compiles_started - compiles_reported));
     compiles_reported = compiles_started;
     pending_reported = pending;
 }
@@ -656,7 +656,7 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && MzSettings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && MtSettings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
@@ -676,7 +676,7 @@ void PipelineCache::ReportCompilerStats() {
                     "%.1f ms, compile %.1f ms; pools retained %zu, reused %u\n",
                     capture_compiler->Depth(), compiler->Depth(),
                     capture_compiler->QueueWaitNs() / 1e6, compiler->QueueWaitNs() / 1e6,
-                    compiler_pools.Retained(), g_mz_pool_reuses.exchange(0));
+                    compiler_pools.Retained(), g_mt_pool_reuses.exchange(0));
     }
 }
 
@@ -739,7 +739,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     sel.draw_indirect_params = params;
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
-            ++g_mz_pending_draws;
+            ++g_mt_pending_draws;
         }
         return nullptr;
     }
@@ -749,7 +749,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             return found->second.get();
         }
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
-            PhaseTimer capture{g_mz_snapshot_ns};
+            PhaseTimer capture{g_mt_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
             build->selection.regs = nullptr;
@@ -766,7 +766,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
-                PhaseTimer compile{g_mz_async_ns};
+                PhaseTimer compile{g_mt_async_ns};
                 auto& s = build->selection;
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
@@ -778,7 +778,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_mz_pending_draws;
+        ++g_mt_pending_draws;
         return nullptr;
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
@@ -926,10 +926,10 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
                 }
             }
         }
-        // MZ_MOTION_SELECT_LOG=1: each G-buffer vertex shader once, with its buffer sizes
+        // MT_MOTION_SELECT_LOG=1: each G-buffer vertex shader once, with its buffer sizes
         // and the selection, to find animated models that the size rule leaves out.
         static const bool select_log = [] {
-            const char* value = std::getenv("MZ_MOTION_SELECT_LOG");
+            const char* value = std::getenv("MT_MOTION_SELECT_LOG");
             return value && value[0] == '1';
         }();
         if (select_log && vs) {
@@ -950,7 +950,7 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
         }
         // Keep the old broad path available for visual A/B tests.
         static const bool all_motion = [] {
-            const char* value = std::getenv("MZ_OBJECT_MOTION_ALL");
+            const char* value = std::getenv("MT_OBJECT_MOTION_ALL");
             return value && value[0] == '1';
         }();
         if (all_motion) {
@@ -1250,7 +1250,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                !EmulatorSettings.IsShaderCollect();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
-            PhaseTimer waiting{g_mz_compile_wait_ns};
+            PhaseTimer waiting{g_mt_compile_wait_ns};
             it_pgm->second->pending->job.Wait();
         }
         PublishShaders();

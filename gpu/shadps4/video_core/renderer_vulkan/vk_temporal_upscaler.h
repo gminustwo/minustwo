@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // minustwo: temporal upscaling of the HDR scene color (docs/upscaler.md). Off for MinusTwo
-// until its scene color, depth and camera constants are found (run.py). MZ_UPSCALER=fsr3
+// until its scene color, depth and camera constants are found (run.py). MT_UPSCALER=fsr3
 // runs FSR 3.1 (FireBurn/FSR-Vulkan, native Vulkan) on the scene color right before the
 // post-processing combine pass, with the scene depth and camera motion vectors, and writes the
 // result back so the game's own post, tonemap and UI continue unchanged (Native AA preset).
@@ -8,7 +8,7 @@
 // Guest targets stay at 1920x1080. Host scene targets use output/preset dimensions,
 // resized at frame boundaries. At 1080p HDR reconstruction precedes post; other outputs
 // reconstruct tonemapped scene proxies before output-size UI/display composition.
-// MZ_RENDER_RES retains the older startup-patched guest-resolution path.
+// MT_RENDER_RES retains the older startup-patched guest-resolution path.
 
 #pragma once
 
@@ -164,9 +164,9 @@ private:
     void CreatePipelines();
     /// Records the reactive mask pass; false when there is no snapshot this frame.
     bool RecordReactive(vk::ImageView color_view);
-    /// FSR 4 is selected, possible in this session (not MZ_RENDER_RES) and has not failed.
+    /// FSR 4 is selected, possible in this session (not MT_RENDER_RES) and has not failed.
     [[nodiscard]] bool UseFsr4() const;
-    /// minustwo: DLSS selected and the bridge is ready (NVIDIA RTX, mz_dlss.dll).
+    /// minustwo: DLSS selected and the bridge is ready (NVIDIA RTX, mt_dlss.dll).
     [[nodiscard]] bool UseDlss() const;
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
     bool RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
@@ -197,7 +197,7 @@ private:
     u64 trigger_hash = 0x9a9cf8a9;
     VideoCore::ImageId scene_color{};
     bool done_this_frame = false;
-    u32 preset_file_frames = 0; ///< MZ_PRESET_FILE polling
+    u32 preset_file_frames = 0; ///< MT_PRESET_FILE polling
     int applied_output = -1;
     bool snapshot_taken = false;
     bool opaque_valid = false;

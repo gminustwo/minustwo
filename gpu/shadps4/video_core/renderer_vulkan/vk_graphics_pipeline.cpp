@@ -25,8 +25,8 @@ namespace Vulkan {
 using Shader::Backend::SPIRV::AuxShaderType;
 
 // minustwo: where pipeline construction time goes (reported when the background warm-up ends).
-std::atomic<u64> g_mz_pipeline_total_ns, g_mz_pipeline_driver_ns;
-std::atomic<u32> g_mz_pipelines_built;
+std::atomic<u64> g_mt_pipeline_total_ns, g_mt_pipeline_driver_ns;
+std::atomic<u32> g_mt_pipelines_built;
 namespace {
 using Clock = std::chrono::steady_clock;
 u64 NsSince(Clock::time_point start) {
@@ -140,7 +140,7 @@ GraphicsPipeline::GraphicsPipeline(
         sdata.multisampling = {
             .rasterizationSamples = LiverpoolToVK::NumSamples(
                 key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
-            // minustwo: MZ_LIGHTING_TEST=shading keeps sample shading off (vk_lighting_test.h).
+            // minustwo: MT_LIGHTING_TEST=shading keeps sample shading off (vk_lighting_test.h).
             .sampleShadingEnable = !LightingTest::Current().shading &&
                                    (fs_info.addr_flags.persp_sample_ena ||
                                     fs_info.addr_flags.linear_sample_ena),
@@ -456,8 +456,8 @@ GraphicsPipeline::GraphicsPipeline(
         square_pipeline = std::move(square);
         SetObjectName(device, *square_pipeline, "Graphics Pipeline {} squaring pass", debug_str);
     }
-    g_mz_pipeline_total_ns += NsSince(started);
-    ++g_mz_pipelines_built;
+    g_mt_pipeline_total_ns += NsSince(started);
+    ++g_mt_pipelines_built;
 }
 
 GraphicsPipeline::~GraphicsPipeline() = default;

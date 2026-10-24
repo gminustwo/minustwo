@@ -79,7 +79,7 @@ public:
         active = false;
     }
 
-    /// Cycles the GPU thread waited in Join() and the helper spent in tasks (MZ_FRAME_STATS).
+    /// Cycles the GPU thread waited in Join() and the helper spent in tasks (MT_FRAME_STATS).
     u64 wait_cycles = 0;
     std::atomic<u64> task_cycles{0};
 

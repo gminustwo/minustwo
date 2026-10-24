@@ -43,14 +43,14 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   refresh, and the decoder used to overwrite it with a later frame (the picture went back and forth).
 - **Even frame pacing**: *Match refresh rate* (on by default) runs a display whose refresh rate is not a multiple of
   60 (144 Hz) at 120 Hz in Borderless and Fullscreen, and the emulated 60 Hz vblank ticks on every 2nd vblank of the
-  display itself (`gpu/shim/mz_vblank.cpp`, D3DKMT), so every frame lasts exactly two refreshes. With VRR, or a
+  display itself (`gpu/shim/mt_vblank.cpp`, D3DKMT), so every frame lasts exactly two refreshes. With VRR, or a
   display whose vblanks do not come steadily, it stays on its timer.
 - **libSceFont** on FreeType: the game renders its subtitles glyph by glyph from the FOT-NewCinemaB font it ships,
   and the PS4 system font set is stood in for by Windows' fonts (`src/runtime_font.c`).
 - Kernel event flags, the offline PSN, matchmaking, Rudp, friend list, error dialog, broadcasting, screenshot and
   Share Play contracts the game needs to start, and message dialogs shown over the game for you to answer.
 - The add-ons (the pre-order early unlocks and the diorama figure sets, whose content is in the base game) are
-  reported as owned. Turn it off in the launcher, or with `MZ_UNLOCK_ADDONS=0`.
+  reported as owned. Turn it off in the launcher, or with `MT_UNLOCK_ADDONS=0`.
 - Keyboard and mouse defaults for GODZILLA's controls, mouse camera.
 - The God of War III specific parts of SpartanPort (cheats, QTE helpers, orb multipliers, button-icon and pause-menu
   patching) are removed.
@@ -74,7 +74,7 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
   FreeSync or a 60 or 120 Hz desktop mode gives even motion.
 - Ngs2 effects (the custom submixer's effect modules, filters, distortion, the mastering EQ) pass the sound unchanged;
   only the volumes, routing and a limiter are applied.
-- The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MZ_SYSTEM_FONT` to other font
+- The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MT_SYSTEM_FONT` to other font
   files (separated by `;`) if you prefer.
 - Online features (rankings, matchmaking) are offline: the game sees a console that is not signed in to PSN.
 - Only the US release (CUSA02046 01.01) has been tested.
@@ -131,7 +131,7 @@ bash packaging/windows/package.sh   # dist/minustwo-windows/ and its zip (needs 
 Without the launcher, from a plain Windows Python:
 
 ```powershell
-$env:MZ_GAME_DIR = 'D:\Games\CUSA02046'
+$env:MT_GAME_DIR = 'D:\Games\CUSA02046'
 python run.py
 ```
 
@@ -149,15 +149,15 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
 - `python tools/autoplay.py --game <folder> --seconds 200 --press 125:cross --hold 160-190:ly=0` plays the game
   unattended: scripted pad input, answered dialogs, a screen dump every few seconds (`out/autoplay/sheet.png`) and the
   loudness of every audio output.
-- `MZ_NGS2_TRACE=1` logs the game's racks, voices, parameters and mixer levels; `MZ_AUDIO_TRACE=1` the sound files it
-  opens; `MZ_AVPLAYER_TRACE=1` (2: also every request) when the movie player hands out frames; `MZ_FONT_TRACE=1` its
-  font calls; `MZ_FRAME_STATS=1` frame rate and pacing; `MZ_CAPTURE_TRIGGER=<file>` records every pass of the next
-  frame; `MZ_SCENE_DEBUG=<file>` (created while the game runs) prints which passes of one frame are drawn above
-  1080p and why the others are not; `MZ_SCENE_SIZE=<width>x<height>` overrides the render resolution.
-- `MZ_PRESENT_TRACE=<file>` samples every frame the game shows into `<file>` and logs its flip, its present and every
+- `MT_NGS2_TRACE=1` logs the game's racks, voices, parameters and mixer levels; `MT_AUDIO_TRACE=1` the sound files it
+  opens; `MT_AVPLAYER_TRACE=1` (2: also every request) when the movie player hands out frames; `MT_FONT_TRACE=1` its
+  font calls; `MT_FRAME_STATS=1` frame rate and pacing; `MT_CAPTURE_TRIGGER=<file>` records every pass of the next
+  frame; `MT_SCENE_DEBUG=<file>` (created while the game runs) prints which passes of one frame are drawn above
+  1080p and why the others are not; `MT_SCENE_SIZE=<width>x<height>` overrides the render resolution.
+- `MT_PRESENT_TRACE=<file>` samples every frame the game shows into `<file>` and logs its flip, its present and every
   display vblank; `python tools/present_report.py <run.log> <file> <movie.mp4>` matches those frames to the movie's
-  own and tells how long each movie frame stayed on screen (with `MZ_AVPLAYER_TRACE=1`, only while the movie plays).
-  `MZ_VBLANK_LOCK=0` keeps the emulated vblank on its timer instead of the display's vblanks.
+  own and tells how long each movie frame stayed on screen (with `MT_AVPLAYER_TRACE=1`, only while the movie plays).
+  `MT_VBLANK_LOCK=0` keeps the emulated vblank on its timer instead of the display's vblanks.
 - `out/minustwo.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports

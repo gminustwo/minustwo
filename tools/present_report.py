@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Movie pacing as it reached the screen, from an MZ_PRESENT_TRACE run.
+"""Movie pacing as it reached the screen, from an MT_PRESENT_TRACE run.
 
     python tools/present_report.py out/ptrace/run.log out/ptrace.bin D:/Games/ps4/CUSA02046-GODZILLA/01_op_en.mp4
 
@@ -22,7 +22,7 @@ COLS, ROWS = 48, 27
 
 
 def movie_span(path):
-    """First and last video frame hand-out of an MZ_AVPLAYER_TRACE=1 log (same clock), or None."""
+    """First and last video frame hand-out of an MT_AVPLAYER_TRACE=1 log (same clock), or None."""
     pat = re.compile(r"AvPlayer trace: ([\d.]+) ms video ")
     times = [float(m.group(1)) for line in open(path, encoding="utf-8", errors="replace")
              if (m := pat.match(line))]
@@ -101,7 +101,7 @@ def main():
     args = ap.parse_args()
 
     flips, presents, vblanks = read_log(args.log)
-    # With MZ_AVPLAYER_TRACE=1 only what was drawn while the movie played (logos and menus can
+    # With MT_AVPLAYER_TRACE=1 only what was drawn while the movie played (logos and menus can
     # look like a dark movie frame).
     game = read_samples(args.samples)
     if span := movie_span(args.log):

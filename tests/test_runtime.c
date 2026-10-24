@@ -4,9 +4,9 @@
 
 /* The settings menu of the GPU library restarts through probe.c, which tests do not link. */
 void runtime_restart(void) { abort(); }
-#include "gpu/mzgpu.h"
-__attribute__((weak)) void mzgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) { (void)title; (void)detail; (void)png; (void)png_size; }
-__attribute__((weak)) void mzgpu_trophy_setup(const MzGpuTrophyLabels *labels, const MzGpuTrophyInfo *items, int count, const volatile uint32_t *unlocked) { (void)labels; (void)items; (void)count; (void)unlocked; }
+#include "gpu/mtgpu.h"
+__attribute__((weak)) void mtgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) { (void)title; (void)detail; (void)png; (void)png_size; }
+__attribute__((weak)) void mtgpu_trophy_setup(const MtGpuTrophyLabels *labels, const MtGpuTrophyInfo *items, int count, const volatile uint32_t *unlocked) { (void)labels; (void)items; (void)count; (void)unlocked; }
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

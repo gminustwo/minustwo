@@ -12,10 +12,10 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
-#include "mz_overlay.h"
-#include "mz_settings.h"
-#include "mz_graphics.h"
-#include "mz_present_trace.h"
+#include "mt_overlay.h"
+#include "mt_settings.h"
+#include "mt_graphics.h"
+#include "mt_present_trace.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
@@ -265,7 +265,7 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         vmaDestroyBuffer(allocator, buffer, allocation);
         if (!converted) {
             LOG_ERROR(Render_Vulkan, "Screenshot: unsupported format {}", vk::to_string(format));
-            MzOverlay::ShowNotice("Screenshot failed: unsupported image format");
+            MtOverlay::ShowNotice("Screenshot failed: unsupported image format");
             return;
         }
         size_t png_size = 0;
@@ -286,10 +286,10 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         }
         if (saved) {
             std::printf("Screenshot: %s (%ux%u)\n", Common::FS::PathToUTF8String(path).c_str(), width, height);
-            MzOverlay::ShowNotice("Screenshot saved: " + Common::FS::PathToUTF8String(path.filename()));
+            MtOverlay::ShowNotice("Screenshot saved: " + Common::FS::PathToUTF8String(path.filename()));
         } else {
             LOG_ERROR(Render_Vulkan, "Screenshot: cannot write {}", Common::FS::PathToUTF8String(path));
-            MzOverlay::ShowNotice("Screenshot failed: cannot write the file");
+            MtOverlay::ShowNotice("Screenshot failed: cannot write the file");
         }
     });
 }
@@ -320,12 +320,12 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
 
     fsr_pass.Create(device, instance.GetAllocator(), num_images);
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
-    MzOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
+    MtOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
 
-    const bool binary_cache = EmulatorSettingsImpl::Flag("MZ_PIPELINE_BINARIES", true) &&
+    const bool binary_cache = EmulatorSettingsImpl::Flag("MT_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
-    const bool capture_only = EmulatorSettingsImpl::Flag("MZ_PIPELINE_BINARY_ISOLATED", false) &&
-                              EmulatorSettingsImpl::Flag("MZ_PIPELINE_CAPTURE_ONLY", false);
+    const bool capture_only = EmulatorSettingsImpl::Flag("MT_PIPELINE_BINARY_ISOLATED", false) &&
+                              EmulatorSettingsImpl::Flag("MT_PIPELINE_CAPTURE_ONLY", false);
     if (UseOnDemandPipelines(binary_cache, instance.GetPipelineBinaryGlobalKey().keySize != 0,
                             capture_only)) {
         rasterizer->GetPipelineCache().StartOnDemand();
@@ -335,12 +335,12 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     // minustwo: by default the cached pipelines load while the game runs (a corner note shows the
     // progress). Otherwise rebuilding them takes up to minutes before the first game frame:
     // show what is happening instead of a black window.
-    const char* background_warmup = std::getenv("MZ_BACKGROUND_WARMUP");
+    const char* background_warmup = std::getenv("MT_BACKGROUND_WARMUP");
     if ((!background_warmup || *background_warmup != '0') &&
         rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
     }
-    MzOverlay::SetLoading(true, 0, 0);
+    MtOverlay::SetLoading(true, 0, 0);
     PresentLoadingFrame();
     auto last = std::chrono::steady_clock::now();
     rasterizer->GetPipelineCache().WarmUp([&](u32 done, u32 total) {
@@ -349,10 +349,10 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
             return;
         }
         last = now;
-        MzOverlay::SetLoading(true, done, total);
+        MtOverlay::SetLoading(true, done, total);
         PresentLoadingFrame();
     });
-    MzOverlay::SetLoading(false, 0, 0);
+    MtOverlay::SetLoading(false, 0, 0);
 
 }
 
@@ -514,7 +514,7 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
     return {};
 }
 
-// minustwo: raw copy of an image for MZ_FRAME_DUMP_TRIGGER, written once the GPU is done.
+// minustwo: raw copy of an image for MT_FRAME_DUMP_TRIGGER, written once the GPU is done.
 static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                     vk::Image image, vk::ImageLayout layout, u32 w, u32 h, const char* name,
                     int index) {
@@ -534,7 +534,7 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     cmdbuf.copyImageToBuffer(image, layout, buffer,
                              vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                                  .imageExtent = {w, h, 1}});
-    const char* dir = std::getenv("MZ_DUMP_DIR");
+    const char* dir = std::getenv("MT_DUMP_DIR");
     char path[512];
     std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
                   index, w, h);
@@ -549,11 +549,11 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     });
 }
 
-// minustwo: MZ_PRESENT_TRACE (mz_present_trace.h): the finished frame at Cols x Rows points,
+// minustwo: MT_PRESENT_TRACE (mt_present_trace.h): the finished frame at Cols x Rows points,
 // written once the GPU is done.
 static void TraceSamples(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                          const Frame& frame) {
-    using MzPresentTrace::Cols, MzPresentTrace::Rows;
+    using MtPresentTrace::Cols, MtPresentTrace::Rows;
     const u32 texel = frame.format == vk::Format::eR16G16B16A16Sfloat ? 8 : 4;
     const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                        .size = VkDeviceSize(Cols) * Rows * texel,
@@ -589,19 +589,19 @@ static void TraceSamples(const Instance& instance, Scheduler& scheduler, vk::Com
     cmdbuf.copyImageToBuffer(frame.image, vk::ImageLayout::eGeneral, buffer, regions);
     scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
                                       size = buffer_ci.size, texel, seq = frame.trace_seq,
-                                      made = MzPresentTrace::NowMs()] {
+                                      made = MtPresentTrace::NowMs()] {
         vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
-        MzPresentTrace::WriteSamples(seq, made, texel, info.pMappedData, size);
+        MtPresentTrace::WriteSamples(seq, made, texel, info.pMappedData, size);
         vmaDestroyBuffer(allocator, buffer, allocation);
     });
 }
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
-    // minustwo: MZ_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
-    // guest display buffer and presented image are written to MZ_DUMP_DIR (default out/dump)
+    // minustwo: MT_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
+    // guest display buffer and presented image are written to MT_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
-    static const char* frame_dump_trigger = std::getenv("MZ_FRAME_DUMP_TRIGGER");
+    static const char* frame_dump_trigger = std::getenv("MT_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
     // minustwo: scaled upscaler presets: the output-size display buffer drawn by the port.
@@ -709,17 +709,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
 
     // minustwo: FSR 1, RCAS and its strength come from the in-game menu, every frame.
-    const auto& graphics = MzSettings::Get();
+    const auto& graphics = MtSettings::Get();
     fsr_settings.enable = graphics.fsr1;
     fsr_settings.use_rcas = graphics.rcas;
-    fsr_settings.rcas_attenuation = MzGraphics::RcasAttenuation(graphics.rcas_strength);
-    MzSettings::Get().image_width = int(image_size.width);
-    MzSettings::Get().image_height = int(image_size.height);
-    MzSettings::Get().window_width = int(frame->width);
-    MzSettings::Get().window_height = int(frame->height);
-    MzSettings::Get().rcas_applied =
+    fsr_settings.rcas_attenuation = MtGraphics::RcasAttenuation(graphics.rcas_strength);
+    MtSettings::Get().image_width = int(image_size.width);
+    MtSettings::Get().image_height = int(image_size.height);
+    MtSettings::Get().window_width = int(frame->width);
+    MtSettings::Get().window_height = int(frame->height);
+    MtSettings::Get().rcas_applied =
         fsr_settings.use_rcas &&
-        MzGraphics::FsrPassRuns(fsr_settings.enable, true, int(image_size.width), int(image_size.height),
+        MtGraphics::FsrPassRuns(fsr_settings.enable, true, int(image_size.width), int(image_size.height),
                                   int(frame->width), int(frame->height));
     image_view = fsr_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
                                  fsr_settings, frame->is_hdr);
@@ -744,7 +744,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         ++frame_dump_index;
     }
     frame->trace_seq = 0;
-    if (MzPresentTrace::Enabled()) {
+    if (MtPresentTrace::Enabled()) {
         static u64 trace_seq = 0;
         frame->trace_seq = ++trace_seq;
         TraceSamples(instance, draw_scheduler, cmdbuf, *frame);
@@ -756,13 +756,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     SubmitInfo info{};
     draw_scheduler.Flush(info);
 
-    // minustwo: the GPU command thread runs at most MZ_FRAMES_AHEAD (default 1) guest frames
+    // minustwo: the GPU command thread runs at most MT_FRAMES_AHEAD (default 1) guest frames
     // ahead of the GPU: it waits here for the frame that many flips back. When the GPU is the
     // bottleneck it finishes frames at an even rate; without this bound the command thread ran
     // ahead and then blocked wherever a resource ran out, so flips (and the guest's frame
     // timing) came in bursts: 12.5/25 ms alternation at 80 FPS. 0 turns it off.
-    // The in-game menu changes it live (MzSettings::frames_queued; MZ_FRAMES_AHEAD at start).
-    const u32 frames_ahead = u32(std::max(0, MzSettings::Get().frames_queued.load()));
+    // The in-game menu changes it live (MtSettings::frames_queued; MT_FRAMES_AHEAD at start).
+    const u32 frames_ahead = u32(std::max(0, MtSettings::Get().frames_queued.load()));
     if (!frames_ahead) {
         recent_frame_ticks.clear();
     } else {
@@ -898,7 +898,7 @@ void Presenter::PresentLoadingFrame() {
                            range);
     barrier(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eColorAttachmentWrite);
-    MzOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+    MtOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
     barrier(vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits::eColorAttachmentWrite, {});
     SubmitInfo info{};
@@ -1021,7 +1021,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             CaptureScreenshot(instance, scheduler, cmdbuf, *frame);
         }
         // minustwo: the settings menu / FPS counter over the frame, at display resolution.
-        const bool overlay = MzOverlay::Visible();
+        const bool overlay = MtOverlay::Visible();
         const std::array post_barriers{
             vk::ImageMemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -1051,7 +1051,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                                vk::PipelineStageFlagBits::eAllCommands,
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
-            MzOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+            MtOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
             const vk::ImageMemoryBarrier to_present{
                 .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
                 .dstAccessMask = vk::AccessFlagBits::eNone,
@@ -1089,9 +1089,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     }
 
-    if (MzPresentTrace::Enabled()) {
+    if (MtPresentTrace::Enabled()) {
         std::printf("PresentTrace: %s %llu %.3f\n", is_reusing_frame ? "redraw" : "present",
-                    static_cast<unsigned long long>(frame->trace_seq), MzPresentTrace::NowMs());
+                    static_cast<unsigned long long>(frame->trace_seq), MtPresentTrace::NowMs());
     }
     free_frame();
     if (!is_reusing_frame && is_game_frame) {

@@ -4,7 +4,7 @@
 #include <string_view>
 #include <utility>
 
-namespace MzUi {
+namespace MtUi {
 inline std::atomic<bool> chinese{false}; // Published after a CJK font has been loaded.
 inline bool WantsChinese(std::string_view language) {
     return language == "zh" || language.starts_with("zh-") || language.starts_with("zh_");
@@ -153,4 +153,4 @@ inline const char* Tr(const char* text) {
     }
     return text;
 }
-} // namespace MzUi
+} // namespace MtUi

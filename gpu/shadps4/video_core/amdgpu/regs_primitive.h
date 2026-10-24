@@ -4,7 +4,7 @@
 #pragma once
 
 #include "common/types.h"
-#include "video_core/amdgpu/mz_msaa.h"
+#include "video_core/amdgpu/mt_msaa.h"
 
 namespace AmdGpu {
 

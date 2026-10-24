@@ -15,11 +15,11 @@
 #include <sys/resource.h>
 #endif
 #include "common/assert.h"
-#include "mz_toggles.h"
-#include "mz_settings.h"
-#include "mz_graphics.h"
-#include "mz_present_trace.h"
-#include "mz_vblank.h"
+#include "mt_toggles.h"
+#include "mt_settings.h"
+#include "mt_graphics.h"
+#include "mt_present_trace.h"
+#include "mt_vblank.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -39,11 +39,11 @@ extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
 
 namespace Vulkan {
-extern std::atomic<u64> g_mz_compile_ns;
-extern std::atomic<u32> g_mz_compiles;
-extern std::atomic<u64> g_mz_capture_ns, g_mz_async_ns, g_mz_compile_wait_ns;
-extern std::atomic<u64> g_mz_snapshot_ns, g_mz_guest_wait_ns;
-extern std::atomic<u32> g_mz_pending_draws;
+extern std::atomic<u64> g_mt_compile_ns;
+extern std::atomic<u32> g_mt_compiles;
+extern std::atomic<u64> g_mt_capture_ns, g_mt_async_ns, g_mt_compile_wait_ns;
+extern std::atomic<u64> g_mt_snapshot_ns, g_mt_guest_wait_ns;
+extern std::atomic<u32> g_mt_pending_draws;
 } // namespace Vulkan
 
 namespace Libraries::VideoOut {
@@ -75,7 +75,7 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
     main_port.resolution.full_height = height;
     main_port.resolution.pane_width = width;
     main_port.resolution.pane_height = height;
-    const char* separate = std::getenv("MZ_PRESENT_THREAD");
+    const char* separate = std::getenv("MT_PRESENT_THREAD");
     separate_swap = !(separate && separate[0] == '0');
     if (separate_swap) {
         swap_thread = std::jthread([&](std::stop_token token) { SwapThread(token); });
@@ -303,10 +303,10 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 }
 
 void VideoOutDriver::Flip(const Request& req) {
-    if (MzPresentTrace::Enabled()) {
+    if (MtPresentTrace::Enabled()) {
         std::printf("PresentTrace: flip %llu %.3f\n",
                     static_cast<unsigned long long>(req.frame ? req.frame->trace_seq : 0),
-                    MzPresentTrace::NowMs());
+                    MtPresentTrace::NowMs());
     }
     // Update HDR status before presenting, then present the frame (minustwo: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
@@ -316,8 +316,8 @@ void VideoOutDriver::Flip(const Request& req) {
     Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left
                                                 : 0);
 
-    // minustwo: MZ_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
-    static const bool frame_stats = EmulatorSettingsImpl::Flag("MZ_FRAME_STATS", false);
+    // minustwo: MT_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
+    static const bool frame_stats = EmulatorSettingsImpl::Flag("MT_FRAME_STATS", false);
     if (frame_stats) {
         using Clock = std::chrono::steady_clock;
         static Clock::time_point window_start = Clock::now(), last = window_start;
@@ -332,18 +332,18 @@ void VideoOutDriver::Flip(const Request& req) {
         // Stall diagnostics: what happened during a long frame.
         static u64 last_gpu_ns, last_images, last_image_bytes, last_buffer_bytes;
         static u64 last_t[6], last_minflt, last_sigf, last_pc, last_pp, last_rc, last_rp;
-        const u64 pc = MzStats::protect_calls.load(), pp = MzStats::protect_pages.load(),
-                  rc = MzStats::protect_revoke_calls.load(), rp = MzStats::protect_revoke_pages.load();
-        const u64 minflt = MzStats::gpu_minor_faults.load(), sigf = MzStats::gpu_signal_faults.load();
+        const u64 pc = MtStats::protect_calls.load(), pp = MtStats::protect_pages.load(),
+                  rc = MtStats::protect_revoke_calls.load(), rp = MtStats::protect_revoke_pages.load();
+        const u64 minflt = MtStats::gpu_minor_faults.load(), sigf = MtStats::gpu_signal_faults.load();
         static u64 last_copy_cpu, last_copy_sys, last_copy_flt;
-        const u64 copy_cpu = MzStats::t_copy_cpu.load(), copy_sys = MzStats::copy_sys_us.load(),
-                  copy_flt = MzStats::copy_minflt.load();
+        const u64 copy_cpu = MtStats::t_copy_cpu.load(), copy_sys = MtStats::copy_sys_us.load(),
+                  copy_flt = MtStats::copy_minflt.load();
         static u64 last_proc_flt, last_copy_ns, last_copy_bytes, last_rf, last_trf, last_twf;
-        const u64 rf = MzStats::read_faults.load(), trf = MzStats::t_read_faults.load(),
-                  twf = MzStats::t_write_faults.load();
-        // minustwo: every frame over 40 ms (MZ_STALL_MS) after the first, at most 10 per 5 s window.
+        const u64 rf = MtStats::read_faults.load(), trf = MtStats::t_read_faults.load(),
+                  twf = MtStats::t_write_faults.load();
+        // minustwo: every frame over 40 ms (MT_STALL_MS) after the first, at most 10 per 5 s window.
         static const double stall_ms = [] {
-            const char* value = std::getenv("MZ_STALL_MS");
+            const char* value = std::getenv("MT_STALL_MS");
             return value ? std::atof(value) : 40.0;
         }();
         static bool primed = false;
@@ -354,10 +354,10 @@ void VideoOutDriver::Flip(const Request& req) {
         // Waits and work inside the long frame (window counters are reset every 5 s, so the
         // previous values are reset with them).
         static u64 last_wait[7];
-        const u64 wait_now[7] = {MzStats::t_readback_wait.load(), MzStats::tick_wait_ns.load(),
-                                 MzStats::sync_recording_ns.load(), MzStats::host_copies_wait_ns.load(),
-                                 u64(Vulkan::g_mz_compile_ns.load()), u64(Vulkan::g_mz_compiles.load()),
-                                 MzStats::t_gc.load()};
+        const u64 wait_now[7] = {MtStats::t_readback_wait.load(), MtStats::tick_wait_ns.load(),
+                                 MtStats::sync_recording_ns.load(), MtStats::host_copies_wait_ns.load(),
+                                 u64(Vulkan::g_mt_compile_ns.load()), u64(Vulkan::g_mt_compiles.load()),
+                                 MtStats::t_gc.load()};
         if (stall) {
             std::printf("Stall: %.1f ms frame; waits: readback %.1f ms, GPU ticks %.1f ms, "
                         "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms; GC %.1f ms\n",
@@ -375,27 +375,27 @@ void VideoOutDriver::Flip(const Request& req) {
         last_rf = rf;
         last_trf = trf;
         last_twf = twf;
-        const u64 copy_ns = MzStats::t_copy.load(), copy_bytes = MzStats::copy_bytes.load();
+        const u64 copy_ns = MtStats::t_copy.load(), copy_bytes = MtStats::copy_bytes.load();
         u64 proc_flt = 0;
 #ifndef _WIN32
         if (rusage usage{}; getrusage(RUSAGE_SELF, &usage) == 0) {
             proc_flt = usage.ru_minflt;
         }
 #endif
-        const u64 t_now[6] = {MzStats::t_resident.load(), MzStats::t_protect.load(),
-                              MzStats::t_image_create.load(), MzStats::t_refresh.load(),
-                              MzStats::t_staging.load(), MzStats::t_host_wait.load()};
+        const u64 t_now[6] = {MtStats::t_resident.load(), MtStats::t_protect.load(),
+                              MtStats::t_image_create.load(), MtStats::t_refresh.load(),
+                              MtStats::t_staging.load(), MtStats::t_host_wait.load()};
         static u64 last_draws, last_dispatches, last_subs, last_sys, last_user, last_invol, last_vol;
-        const u64 draws = MzStats::draws.load(), dispatches = MzStats::dispatches.load(),
-                  subs = MzStats::submissions.load(), sys_us = MzStats::gpu_sys_us.load(),
-                  user_us = MzStats::gpu_user_us.load(), invol = MzStats::gpu_invol_switches.load(),
-                  vol = MzStats::gpu_vol_switches.load();
+        const u64 draws = MtStats::draws.load(), dispatches = MtStats::dispatches.load(),
+                  subs = MtStats::submissions.load(), sys_us = MtStats::gpu_sys_us.load(),
+                  user_us = MtStats::gpu_user_us.load(), invol = MtStats::gpu_invol_switches.load(),
+                  vol = MtStats::gpu_vol_switches.load();
         u64 gpu_ns = 0;
 #ifdef _WIN32
         // minustwo: Windows has no per-thread clock id; the thread's user + kernel time instead.
         static HANDLE gpu_thread = nullptr;
         if (!gpu_thread) {
-            if (const unsigned long id = MzStats::gpu_thread_id.load()) {
+            if (const unsigned long id = MtStats::gpu_thread_id.load()) {
                 gpu_thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, id);
             }
         }
@@ -407,15 +407,15 @@ void VideoOutDriver::Flip(const Request& req) {
             gpu_ns = ns(kernel) + ns(user);
         }
 #else
-        if (const int clock = MzStats::gpu_thread_clock.load(); clock != -1) {
+        if (const int clock = MtStats::gpu_thread_clock.load(); clock != -1) {
             timespec ts{};
             clock_gettime(static_cast<clockid_t>(clock), &ts);
             gpu_ns = u64(ts.tv_sec) * 1000000000ull + u64(ts.tv_nsec);
         }
 #endif
-        const u64 images = MzStats::images_registered.load();
-        const u64 image_bytes = MzStats::image_upload_bytes.load();
-        const u64 buffer_bytes = MzStats::buffer_upload_bytes.load();
+        const u64 images = MtStats::images_registered.load();
+        const u64 image_bytes = MtStats::image_upload_bytes.load();
+        const u64 buffer_bytes = MtStats::buffer_upload_bytes.load();
         if (stall) {
             std::printf("       GPU thread on CPU %.1f ms; %llu images registered, "
                         "%.1f MB image uploads, %.1f MB buffer uploads\n",
@@ -482,21 +482,21 @@ void VideoOutDriver::Flip(const Request& req) {
         ++frames;
         const double window = std::chrono::duration<double>(now - window_start).count();
         if (window >= 5.0) {
-            const u32 compiles = Vulkan::g_mz_compiles.exchange(0);
-            const u64 compile_ns = Vulkan::g_mz_compile_ns.exchange(0);
-            const double capture_ms = Vulkan::g_mz_capture_ns.exchange(0) / 1e6;
-            const double async_ms = Vulkan::g_mz_async_ns.exchange(0) / 1e6;
-            const double wait_ms = Vulkan::g_mz_compile_wait_ns.exchange(0) / 1e6;
-            const double snapshot_ms = Vulkan::g_mz_snapshot_ns.exchange(0) / 1e6;
-            const double guest_wait_ms = Vulkan::g_mz_guest_wait_ns.exchange(0) / 1e6;
-            const u32 pending_draws = Vulkan::g_mz_pending_draws.exchange(0);
+            const u32 compiles = Vulkan::g_mt_compiles.exchange(0);
+            const u64 compile_ns = Vulkan::g_mt_compile_ns.exchange(0);
+            const double capture_ms = Vulkan::g_mt_capture_ns.exchange(0) / 1e6;
+            const double async_ms = Vulkan::g_mt_async_ns.exchange(0) / 1e6;
+            const double wait_ms = Vulkan::g_mt_compile_wait_ns.exchange(0) / 1e6;
+            const double snapshot_ms = Vulkan::g_mt_snapshot_ns.exchange(0) / 1e6;
+            const double guest_wait_ms = Vulkan::g_mt_guest_wait_ns.exchange(0) / 1e6;
+            const u32 pending_draws = Vulkan::g_mt_pending_draws.exchange(0);
             const u64 direct = Vulkan::Scheduler::direct_recordings.exchange(0);
-            const u64 faults = MzStats::tracker_faults.exchange(0);
+            const u64 faults = MtStats::tracker_faults.exchange(0);
             // GPU command thread CPU time per draw: comparable between builds even when the scene
             // (and so the frame rate) differs a little.
             static u64 window_draws = 0, window_gpu_us = 0;
-            const u64 all_draws = MzStats::draws.load();
-            const u64 gpu_us = MzStats::gpu_user_us.load() + MzStats::gpu_sys_us.load();
+            const u64 all_draws = MtStats::draws.load();
+            const u64 gpu_us = MtStats::gpu_user_us.load() + MtStats::gpu_sys_us.load();
             const double us_per_draw = all_draws > window_draws
                                            ? double(gpu_us - window_gpu_us) / (all_draws - window_draws)
                                            : 0.0;
@@ -515,16 +515,16 @@ void VideoOutDriver::Flip(const Request& req) {
                         compile_ns / 1e6, capture_ms, async_ms, wait_ms, snapshot_ms, guest_wait_ms,
                         pending_draws,
                         static_cast<unsigned long long>(direct),
-                        faults / window, static_cast<long long>(MzStats::hot_pages.load()),
+                        faults / window, static_cast<long long>(MtStats::hot_pages.load()),
                         us_per_draw, draws_per_frame,
-                        MzStats::gpu_idle_ns.exchange(0) / (window * 1e7),
-                        MzStats::sync_recording_ns.exchange(0) / (window * 1e7),
-                        MzStats::host_copies_wait_ns.exchange(0) / (window * 1e7),
-                        frames ? double(MzStats::host_copy_waits.exchange(0)) / frames : 0.0,
-                        MzStats::copy_threads_wait_ns.exchange(0) / (window * 1e7),
-                        MzStats::tick_wait_ns.exchange(0) / (window * 1e7),
-                        frames ? double(MzStats::reduced_draws.exchange(0)) / frames : 0.0,
-                        frames ? double(MzStats::scene_draws.exchange(0)) / frames : 0.0);
+                        MtStats::gpu_idle_ns.exchange(0) / (window * 1e7),
+                        MtStats::sync_recording_ns.exchange(0) / (window * 1e7),
+                        MtStats::host_copies_wait_ns.exchange(0) / (window * 1e7),
+                        frames ? double(MtStats::host_copy_waits.exchange(0)) / frames : 0.0,
+                        MtStats::copy_threads_wait_ns.exchange(0) / (window * 1e7),
+                        MtStats::tick_wait_ns.exchange(0) / (window * 1e7),
+                        frames ? double(MtStats::reduced_draws.exchange(0)) / frames : 0.0,
+                        frames ? double(MtStats::scene_draws.exchange(0)) / frames : 0.0);
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
@@ -668,18 +668,18 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     // minustwo: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
-    // minustwo: the in-game menu changes the limit and the engine rate live (MzSettings::fps_limit,
+    // minustwo: the in-game menu changes the limit and the engine rate live (MtSettings::fps_limit,
     // engine_fps); the uncapped presets keep their fixed limit, still capped by the engine rate.
-    // MZ_FPS_LIMIT (measurements) is used as given.
-    const bool measured_limit = std::getenv("MZ_FPS_LIMIT") != nullptr;
+    // MT_FPS_LIMIT (measurements) is used as given.
+    const bool measured_limit = std::getenv("MT_FPS_LIMIT") != nullptr;
     const int vblank_hz = int(EmulatorSettings.GetVblankFrequency());
     const auto current_limit = [&] {
         if (measured_limit) {
             return EmulatorSettings.GetFrameLimit();
         }
         const int limit = vblank_hz == 480 ? int(EmulatorSettings.GetFrameLimit())
-                                           : MzSettings::Get().fps_limit.load();
-        return u32(MzGraphics::PresentLimit(limit, MzSettings::EngineFpsNow(), vblank_hz));
+                                           : MtSettings::Get().fps_limit.load();
+        return u32(MtGraphics::PresentLimit(limit, MtSettings::EngineFpsNow(), vblank_hz));
     };
     u32 frame_limit = current_limit();
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
@@ -702,12 +702,12 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
     bool immediate_flips = frame_limit != 0;
     // minustwo: on a display at a whole multiple of the vblank rate (120 Hz) the vblank ticks on
-    // its own vblanks (mz_vblank.h): on the timer alone the two clocks drift apart and a frame
+    // its own vblanks (mt_vblank.h): on the timer alone the two clocks drift apart and a frame
     // lasts 1 or 3 refreshes now and then. Not with a frame limit (flips between ticks).
-    MzVblank::Pacer pacer{vblank_hz};
+    MtVblank::Pacer pacer{vblank_hz};
 
     while (!token.stop_requested()) {
-        MzSettings::SyncEngineFps();
+        MtSettings::SyncEngineFps();
         if (const u32 limit = current_limit(); limit != frame_limit) {
             frame_limit = limit;
             frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_png.h"
+#include "mt_png.h"
 
 #include <cstdio>
 #include <cstring>
@@ -9,7 +9,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-namespace MzPng {
+namespace MtPng {
 
 namespace {
 constexpr int kMaxSide = 4096; // save icons are 228x128; anything far larger is not one
@@ -73,4 +73,4 @@ bool LoadRgba(const char* path, Image& out) {
     return DecodeRgba(bytes.data(), bytes.size(), out);
 }
 
-} // namespace MzPng
+} // namespace MtPng

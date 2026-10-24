@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_settings.h"
-#include "mz_graphics.h"
-#include "../mzgpu.h"
+#include "mt_settings.h"
+#include "mt_graphics.h"
+#include "../mtgpu.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,14 +14,14 @@
 #include <string_view>
 #include <vector>
 
-namespace MzSettings {
+namespace MtSettings {
 
 namespace {
 
 constexpr const char* GlyphStyles[] = {"off", "xbox", "nintendo", "keyboard", "auto"};
 
 const char* Path() {
-    const char* env = std::getenv("MZ_CONFIG");
+    const char* env = std::getenv("MT_CONFIG");
     return env && env[0] ? env : "minustwo.ini";
 }
 
@@ -42,7 +42,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         }
     }
     if (key == "monitor") {
-        v.monitor = MzGraphics::ParseMonitor(value);
+        v.monitor = MtGraphics::ParseMonitor(value);
     } else if (key == "hdr") {
         v.hdr = i != 0;
     } else if (key == "overlay_scale") {
@@ -94,13 +94,13 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "show_fps") {
         v.show_fps = i != 0;
     } else if (key == "display_mode") {
-        v.display_mode = MzGraphics::ParseDisplayMode(value);
+        v.display_mode = MtGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
         v.vsync = i != 0;
     } else if (key == "match_refresh") {
         v.match_refresh = i != 0;
     } else if (key == "fps_limit") {
-        v.fps_limit = MzGraphics::ParseFpsLimit(i);
+        v.fps_limit = MtGraphics::ParseFpsLimit(i);
     } else if (key == "async_shaders") {
         v.async_shaders = i != 0;
     } else if (key == "fsr1") {
@@ -110,19 +110,19 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "rcas") {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
-        v.rcas_strength = MzGraphics::ParseRcasStrength(value.empty() ? -1 : i);
+        v.rcas_strength = MtGraphics::ParseRcasStrength(value.empty() ? -1 : i);
     } else if (key == "frames_queued") {
-        v.frames_queued = MzGraphics::ParseFramesQueued(value.empty() ? -1 : i);
+        v.frames_queued = MtGraphics::ParseFramesQueued(value.empty() ? -1 : i);
     } else if (key == "render_resolution") {
-        v.render_resolution = MzGraphics::ParseResolution(value);
+        v.render_resolution = MtGraphics::ParseResolution(value);
     } else if (key == "engine_fps") {
-        v.engine_fps = MzGraphics::ParseEngineFps(i);
+        v.engine_fps = MtGraphics::ParseEngineFps(i);
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
         v.stale_readback = i != 0;
     } else if (key == "anisotropy") {
-        v.anisotropy = MzGraphics::ParseAnisotropy(i);
+        v.anisotropy = MtGraphics::ParseAnisotropy(i);
     } else if (key == "glyph_style") {
         v.glyph_style = 0;
         for (int style = 0; style < 5; ++style) if (value == GlyphStyles[style]) v.glyph_style = style;
@@ -177,25 +177,25 @@ void Load() {
         std::printf("Settings: %s\n", Path());
     }
     // Environment overrides (scripts, A/B tests).
-    if (const char* env = std::getenv("MZ_UPSCALER")) {
+    if (const char* env = std::getenv("MT_UPSCALER")) {
         v.upscaler = UpscalerOff;
         for (int u = 0; u < UpscalerCount; ++u) {
             if (std::strcmp(env, UpscalerName(u)) == 0) v.upscaler = u;
         }
     }
     const std::pair<const char*, const char*> env_keys[] = {
-        {"MZ_FSR_SHARPNESS", "sharpness"},        {"MZ_JITTER", "jitter"},
-        {"MZ_REACTIVE", "reactive"},              {"MZ_REACTIVE_SCALE", "reactive_scale"},
-        {"MZ_REACTIVE_THRESHOLD", "reactive_threshold"}, {"MZ_REACTIVE_MAX", "reactive_max"},
-        {"MZ_UPSCALE_PRESET", "preset"},            {"MZ_OBJECT_MOTION", "object_motion"},
-        {"MZ_ASYNC_SHADERS", "async_shaders"},      {"MZ_DEFERRED_READBACK", "deferred_readback"},
-        {"MZ_STALE_READBACK", "stale_readback"},     {"MZ_FSR1", "fsr1"},
-        {"MZ_RCAS", "rcas"},                        {"MZ_FRAMES_AHEAD", "frames_queued"},
-        {"MZ_ANISOTROPY", "anisotropy"},            {"MZ_VIBRATION", "vibration"},
-        {"MZ_MOUSE_PROMPT_DISTANCE", "mouse_prompt_distance"}, {"MZ_MOUSE_LOCK", "mouse_lock"},
-        {"MZ_MOUSE_AIM_STYLE", "mouse_aim_style"}, {"MZ_MOUSE_AIM_SENSITIVITY", "mouse_aim_sensitivity"},
-        {"MZ_MONITOR", "monitor"}, {"MZ_HDR", "hdr"},
-        {"MZ_GLYPH_STYLE", "glyph_style"},
+        {"MT_FSR_SHARPNESS", "sharpness"},        {"MT_JITTER", "jitter"},
+        {"MT_REACTIVE", "reactive"},              {"MT_REACTIVE_SCALE", "reactive_scale"},
+        {"MT_REACTIVE_THRESHOLD", "reactive_threshold"}, {"MT_REACTIVE_MAX", "reactive_max"},
+        {"MT_UPSCALE_PRESET", "preset"},            {"MT_OBJECT_MOTION", "object_motion"},
+        {"MT_ASYNC_SHADERS", "async_shaders"},      {"MT_DEFERRED_READBACK", "deferred_readback"},
+        {"MT_STALE_READBACK", "stale_readback"},     {"MT_FSR1", "fsr1"},
+        {"MT_RCAS", "rcas"},                        {"MT_FRAMES_AHEAD", "frames_queued"},
+        {"MT_ANISOTROPY", "anisotropy"},            {"MT_VIBRATION", "vibration"},
+        {"MT_MOUSE_PROMPT_DISTANCE", "mouse_prompt_distance"}, {"MT_MOUSE_LOCK", "mouse_lock"},
+        {"MT_MOUSE_AIM_STYLE", "mouse_aim_style"}, {"MT_MOUSE_AIM_SENSITIVITY", "mouse_aim_sensitivity"},
+        {"MT_MONITOR", "monitor"}, {"MT_HDR", "hdr"},
+        {"MT_GLYPH_STYLE", "glyph_style"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -211,8 +211,8 @@ void Load() {
     v.startup_monitor = v.monitor;
     v.startup_hdr = v.hdr;
     v.startup_glyph_style = v.glyph_style;
-    const char* applied = std::getenv("MZ_ENGINE_FPS");
-    v.applied_engine_fps = applied && applied[0] ? MzGraphics::ParseEngineFps(std::atoi(applied))
+    const char* applied = std::getenv("MT_ENGINE_FPS");
+    v.applied_engine_fps = applied && applied[0] ? MtGraphics::ParseEngineFps(std::atoi(applied))
                                                  : v.engine_fps.load();
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
@@ -248,7 +248,7 @@ int CycleEngineFps() {
     if (!v.engine_fps_global || v.applied_engine_fps <= 60) {
         return 0;
     }
-    v.engine_fps = MzGraphics::NextEngineFps(EngineFpsNow(), v.applied_engine_fps);
+    v.engine_fps = MtGraphics::NextEngineFps(EngineFpsNow(), v.applied_engine_fps);
     Save();
     return v.engine_fps;
 }
@@ -284,13 +284,13 @@ void ConfigureDlssSupport(bool available, const char* problem) {
     v.dlss_problem = available || kept.empty() ? nullptr : kept.c_str();
     if (v.upscaler == UpscalerDlss && !available) {
         std::printf("Upscaler: DLSS unavailable (%s); falling back to FSR 3.1\n",
-                    kept.empty() ? "mz_dlss.dll or nvngx_dlss.dll missing" : kept.c_str());
+                    kept.empty() ? "mt_dlss.dll or nvngx_dlss.dll missing" : kept.c_str());
         v.upscaler = UpscalerFsr3;
     }
 }
 
 bool FixedRenderSession() {
-    const char* size = std::getenv("MZ_RENDER_RES");
+    const char* size = std::getenv("MT_RENDER_RES");
     return size && size[0];
 }
 
@@ -338,13 +338,13 @@ void Save() {
                  int(v.overlay_items >> 3 & 1), int(v.overlay_items >> 4 & 1), int(v.overlay_items >> 5 & 1),
                  int(v.overlay_items >> 6 & 1), v.overlay_scale.load(), v.overlay_corner.load(),
                  v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
-    const std::vector<std::string> resolution_names = MzGraphics::ResolutionNames();
+    const std::vector<std::string> resolution_names = MtGraphics::ResolutionNames();
     std::fprintf(file,
                  "display_mode=%s\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
                  "render_resolution=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
-                 MzGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
+                 MtGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
                  resolution_names[std::clamp(v.render_resolution.load(), 0, int(resolution_names.size()) - 1)].c_str(),
@@ -380,4 +380,4 @@ const char* UpscalerName(int upscaler) {
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 
-} // namespace MzSettings
+} // namespace MtSettings

@@ -275,8 +275,8 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     _set_error_mode(_OUT_TO_STDERR);
 #endif
-    // MZ_TEST_TOGGLES: MzToggle bits for this run (2305843009213693952: version 1 files).
-    if (const char* toggles = std::getenv("MZ_TEST_TOGGLES")) {
+    // MT_TEST_TOGGLES: MtToggle bits for this run (2305843009213693952: version 1 files).
+    if (const char* toggles = std::getenv("MT_TEST_TOGGLES")) {
         runtime_disabled_optimizations = std::strtoull(toggles, nullptr, 10);
     }
     if (argc == 4 && std::string_view(argv[1]) == "--verify") { // original and converted copies

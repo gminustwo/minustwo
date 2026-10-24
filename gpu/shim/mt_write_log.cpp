@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_write_log.h"
+#include "mt_write_log.h"
 
 #include <array>
 #include <atomic>
@@ -15,7 +15,7 @@
 #endif
 #include <x86intrin.h>
 
-namespace MzWriteLog {
+namespace MtWriteLog {
 namespace {
 struct Entry {
     std::uint64_t address, size, first, tsc;
@@ -38,7 +38,7 @@ void Record(std::uint64_t address, const void* data, std::uint64_t size, Source 
 
 int Mode() {
     static const int mode = [] {
-        const char* env = std::getenv("MZ_WRITE_LOG");
+        const char* env = std::getenv("MT_WRITE_LOG");
         return env ? std::atoi(env) : 0;
     }();
     return mode;
@@ -82,10 +82,10 @@ void Record(std::uint64_t address, const void* data, std::uint64_t size, Source 
         }
     }
 }
-} // namespace MzWriteLog
+} // namespace MtWriteLog
 
-extern "C" void mzgpu_dump_guest_writes(void* ucontext) {
-    using namespace MzWriteLog;
+extern "C" void mtgpu_dump_guest_writes(void* ucontext) {
+    using namespace MtWriteLog;
     if (Mode() == 0) {
         return;
     }

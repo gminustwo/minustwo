@@ -53,7 +53,7 @@ public:
                  vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
                  std::optional<VideoCore::SubresourceRange> subres_range = {});
 
-    /// MZ_GPU_PROFILE: a profiler segment for a transfer of `image` while it lives; the
+    /// MT_GPU_PROFILE: a profiler segment for a transfer of `image` while it lives; the
     /// segment it interrupted continues afterwards.
     class TransferMark {
     public:

@@ -18,7 +18,7 @@
 #include <thread>
 #include <queue>
 
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/assert.h"
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -639,7 +639,7 @@ private:
     /// it back from that core. Requesting ownership a few lines ahead overlaps those
     /// transfers instead of stalling on each (RecordPrefetch).
     void PrefetchAhead() const {
-        if (!MzToggle::Disabled(MzToggle::RecordPrefetch)) {
+        if (!MtToggle::Disabled(MtToggle::RecordPrefetch)) {
             __builtin_prefetch(storage + used + 384, 1, 3);
             __builtin_prefetch(storage + used + 448, 1, 3);
         }
@@ -701,7 +701,7 @@ public:
     /// Ends current rendering scope.
     void EndRendering();
 
-    /// minustwo: MZ_FULL_BARRIERS=1 records a full memory barrier around every render pass and
+    /// minustwo: MT_FULL_BARRIERS=1 records a full memory barrier around every render pass and
     /// every compute dispatch, to tell a missing barrier from everything else.
     static bool FullBarriers();
     static void RecordFullBarrier(vk::CommandBuffer cmdbuf);
@@ -735,7 +735,7 @@ public:
         return current_cmdbuf;
     }
 
-    /// MZ_RECORDER_TRACE=1: prints the most frequent CommandBuffer() callers every 2000 calls.
+    /// MT_RECORDER_TRACE=1: prints the most frequent CommandBuffer() callers every 2000 calls.
     static void TraceDirectRecording(void* caller);
 
     /// Records `func(vk::CommandBuffer)` in order with other commands. The closure must own
@@ -746,7 +746,7 @@ public:
             func(current_cmdbuf);
             return;
         }
-        if (MzToggle::Disabled(MzToggle::ThreadedRecording)) {
+        if (MtToggle::Disabled(MtToggle::ThreadedRecording)) {
             SyncRecording();
             direct_mode = true;
             func(current_cmdbuf);
@@ -763,7 +763,7 @@ public:
     /// True when Record() defers commands (and RecordData() copies into chunks).
     [[nodiscard]] bool IsRecordingDeferred() const noexcept {
         return recording_threaded && !direct_mode &&
-               !MzToggle::Disabled(MzToggle::ThreadedRecording);
+               !MtToggle::Disabled(MtToggle::ThreadedRecording);
     }
 
     /// Makes room for `bytes` of RecordData() plus the command that uses them in the current
@@ -802,7 +802,7 @@ public:
     void SyncRecording();
 
     /// minustwo: guest memory copies on the recording thread (small ones, RecordHostCopy) or the
-    /// copy threads (MzCopy::Async) must be done before the guest learns the GPU is past them
+    /// copy threads (MtCopy::Async) must be done before the guest learns the GPU is past them
     /// (it may then rewrite the memory, e.g. UI vertices: flickering) and before the
     /// submission that reads them. Waits for all.
     void WaitHostCopies();
@@ -820,7 +820,7 @@ public:
 
     /// minustwo: runs `signal` once the guest memory copies issued so far are done, without
     /// waiting here: the recording thread reaches it after the copies queued before it and hands
-    /// it to the copy threads' completion (MzCopy::AfterCopies).
+    /// it to the copy threads' completion (MtCopy::AfterCopies).
     void SignalAfterHostCopies(std::function<void()> signal);
 
     /// minustwo: before a guest-visible write that is not deferred (WriteData, end-of-shader
@@ -839,7 +839,7 @@ public:
         return !(is_rendering && render_state == state);
     }
 
-    /// CommandBuffer() calls that waited for a recording thread (MZ_FRAME_STATS).
+    /// CommandBuffer() calls that waited for a recording thread (MT_FRAME_STATS).
     static inline std::atomic<u64> direct_recordings{0};
 
     /// Returns the current command buffer tick.

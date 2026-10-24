@@ -1,13 +1,13 @@
-#include "mz_write_log.h"
+#include "mt_write_log.h"
 // minustwo: glue between the C loader and the vendored shadPS4 video core.
-#include "mz_overlay.h"
-#include "mz_png.h"
-#include "mz_settings.h"
-#include "mz_copy.h"
+#include "mt_overlay.h"
+#include "mt_png.h"
+#include "mt_settings.h"
+#include "mt_copy.h"
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -21,7 +21,7 @@
 #include <thread>
 #include <vector>
 #include <SDL3/SDL.h>
-#include "../mzgpu.h"
+#include "../mtgpu.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/libraries/kernel/orbis_error.h"
@@ -78,7 +78,7 @@ void SymbolsResolver::AddSymbol(const char* nid, const char* library, const char
 namespace Core {
 class Emulator {
 public:
-    static void FillElfInfo(const MzGpuConfig& config) {
+    static void FillElfInfo(const MtGpuConfig& config) {
         auto& info = Common::ElfInfo::Instance();
         info.initialized = true;
         info.game_serial = config.serial ? config.serial : "UNKNOWN";
@@ -124,16 +124,16 @@ static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
     // minustwo: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
-    if (size < 4 * Chunk || !MzCopy::Enabled()) {
+    if (size < 4 * Chunk || !MtCopy::Enabled()) {
         return CopySparseSerial(source, dest, size);
     }
-    MzCopy::ParallelFor((size + Chunk - 1) / Chunk, [&](std::size_t i) {
+    MtCopy::ParallelFor((size + Chunk - 1) / Chunk, [&](std::size_t i) {
         const u64 offset = i * Chunk;
         CopySparseSerial(source + offset, dest + offset, std::min(Chunk, size - offset));
     });
 }
 bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
-    MzWriteLog::Note(reinterpret_cast<uintptr_t>(address), data, size, MzWriteLog::Backing);
+    MtWriteLog::Note(reinterpret_cast<uintptr_t>(address), data, size, MtWriteLog::Backing);
     const bool written = runtime_memory_write_backing(reinterpret_cast<uintptr_t>(address), data, size) != 0;
     // The write skipped page tracking: textures over it must reload (#138).
     // ponytail: fence and label writes (<= 8 bytes) never hold texels, so they are left out;
@@ -144,13 +144,13 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     return written;
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms) {
-    MzStats::Timer timer{MzStats::t_protect};
+    MtStats::Timer timer{MtStats::t_protect};
     const u64 pages = (size + 4095) / 4096;
-    MzStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
-    MzStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
+    MtStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
+    MtStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
     if (!True(perms & MemoryPermission::Write)) {
-        MzStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
-        MzStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
+        MtStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
+        MtStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
     }
     runtime_memory_gpu_protect(virtual_addr, size, True(perms & MemoryPermission::Read),
                                True(perms & MemoryPermission::Write));
@@ -189,7 +189,7 @@ std::condition_variable g_window_cv;
 bool g_window_ready;
 } // namespace
 
-u32 MzDisplayRefreshHz() {
+u32 MtDisplayRefreshHz() {
     static const u32 hz = [] {
         const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
         const u32 rate = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;
@@ -199,10 +199,10 @@ u32 MzDisplayRefreshHz() {
     return hz;
 }
 
-#ifdef MZ_PGO_GENERATE
+#ifdef MT_PGO_GENERATE
 extern "C" void __gcov_dump(void);
 extern "C" void __gcov_reset(void);
-// Instrumented build (MZ_PGO=generate): the game often ends through _exit (watchdog, guest
+// Instrumented build (MT_PGO=generate): the game often ends through _exit (watchdog, guest
 // exit), which skips the profile write at exit. Write every 30 s and reset: the files sum the
 // intervals.
 static void StartProfileWriter() {
@@ -218,16 +218,16 @@ static void StartProfileWriter() {
 }
 #endif
 
-extern "C" int mzgpu_init(const MzGpuConfig* config) {
-    MzSettings::Load();
-#ifdef MZ_PGO_GENERATE
+extern "C" int mtgpu_init(const MtGpuConfig* config) {
+    MtSettings::Load();
+#ifdef MT_PGO_GENERATE
     StartProfileWriter();
 #endif
     g_sdk_version = config->sdk_version;
 #ifdef _WIN32
-    if (config->user_dir && !std::getenv("MZ_GPU_USER_DIR")) _putenv_s("MZ_GPU_USER_DIR", config->user_dir);
+    if (config->user_dir && !std::getenv("MT_GPU_USER_DIR")) _putenv_s("MT_GPU_USER_DIR", config->user_dir);
 #else
-    if (config->user_dir) setenv("MZ_GPU_USER_DIR", config->user_dir, 0);
+    if (config->user_dir) setenv("MT_GPU_USER_DIR", config->user_dir, 0);
 #endif
     Core::Emulator::FillElfInfo(*config);
     // The window carries the project name; the dump's own title stays in ElfInfo (above).
@@ -263,14 +263,14 @@ extern "C" int mzgpu_init(const MzGpuConfig* config) {
 }
 
 namespace Libraries::Kernel { void StartKernelService(); }
-extern "C" void mzgpu_register_kernel(void) {
+extern "C" void mtgpu_register_kernel(void) {
     Libraries::Kernel::StartKernelService();
     Core::Loader::SymbolsResolver resolver;
     Libraries::Kernel::RegisterEventQueue(&resolver);
     Libraries::AvPlayer::RegisterLib(&resolver);
 }
 
-extern "C" uintptr_t mzgpu_resolve(const char* scoped_nid) {
+extern "C" uintptr_t mtgpu_resolve(const char* scoped_nid) {
     const char* hash = std::strchr(scoped_nid, '#');
     const size_t length = hash ? size_t(hash - scoped_nid) : std::strlen(scoped_nid);
     for (const auto& symbol : g_symbols) {
@@ -281,16 +281,16 @@ extern "C" uintptr_t mzgpu_resolve(const char* scoped_nid) {
     return 0;
 }
 
-extern "C" int mzgpu_handle_fault(void* ucontext, void* address) {
+extern "C" int mtgpu_handle_fault(void* ucontext, void* address) {
     return Core::Signals::Instance()->DispatchAccessViolation(ucontext, address) ? 1 : 0;
 }
 
-extern "C" unsigned mzgpu_symbol_count(void) {
+extern "C" unsigned mtgpu_symbol_count(void) {
     return unsigned(g_symbols.size());
 }
 
-extern "C" unsigned long long mzgpu_copy_yields(void) {
-    return MzCopy::Yields();
+extern "C" unsigned long long mtgpu_copy_yields(void) {
+    return MtCopy::Yields();
 }
 
 // Kernel service thread: runs boost::asio timers for equeue timer events.
@@ -356,85 +356,85 @@ ScreenshotRequests ConsumeScreenshotRequests() {
 }
 } // namespace VideoCore
 
-extern "C" int mzgpu_vibration_percent(void) {
-    return MzSettings::Get().vibration.load(std::memory_order_relaxed);
+extern "C" int mtgpu_vibration_percent(void) {
+    return MtSettings::Get().vibration.load(std::memory_order_relaxed);
 }
 
-extern "C" void mzgpu_movie_picture(void) {
+extern "C" void mtgpu_movie_picture(void) {
     Vulkan::MovieBars::Cutscenes().NotePicture(Vulkan::MovieBars::NowMs());
 }
 
-extern "C" int mzgpu_mouse_prompt_distance(void) {
-    return MzSettings::Get().mouse_prompt_distance.load(std::memory_order_relaxed);
+extern "C" int mtgpu_mouse_prompt_distance(void) {
+    return MtSettings::Get().mouse_prompt_distance.load(std::memory_order_relaxed);
 }
 
-extern "C" int mzgpu_mouse_aim_style(void) {
-    return MzSettings::Get().mouse_aim_style.load(std::memory_order_relaxed);
+extern "C" int mtgpu_mouse_aim_style(void) {
+    return MtSettings::Get().mouse_aim_style.load(std::memory_order_relaxed);
 }
 
-extern "C" int mzgpu_mouse_aim_sensitivity(void) {
-    return MzSettings::Get().mouse_aim_sensitivity.load(std::memory_order_relaxed);
+extern "C" int mtgpu_mouse_aim_sensitivity(void) {
+    return MtSettings::Get().mouse_aim_sensitivity.load(std::memory_order_relaxed);
 }
 
-extern "C" void mzgpu_mouse_pause_key(void) {
+extern "C" void mtgpu_mouse_pause_key(void) {
     Frontend::ToggleMousePause();
 }
 
-extern "C" int mzgpu_overlay_captures_input(void) {
-    return MzOverlay::CapturesInput() ? 1 : 0;
+extern "C" int mtgpu_overlay_captures_input(void) {
+    return MtOverlay::CapturesInput() ? 1 : 0;
 }
 
-extern "C" void mzgpu_engine_fps_cycle(void) {
-    MzOverlay::CycleEngineFps();
+extern "C" void mtgpu_engine_fps_cycle(void) {
+    MtOverlay::CycleEngineFps();
 }
 
-// src/probe.c: the game's maximum frame rate globals (MzSettings::SyncEngineFps writes them).
-extern "C" void mz_engine_fps_globals(uintptr_t fps, uintptr_t rounded) {
-    auto& s = MzSettings::Get();
+// src/probe.c: the game's maximum frame rate globals (MtSettings::SyncEngineFps writes them).
+extern "C" void mt_engine_fps_globals(uintptr_t fps, uintptr_t rounded) {
+    auto& s = MtSettings::Get();
     s.engine_fps_int_global = reinterpret_cast<int32_t*>(rounded);
     s.engine_fps_global = reinterpret_cast<float*>(fps);
 }
 
-extern "C" int mzgpu_text_input_begin(const char* initial, const char* prompt) {
+extern "C" int mtgpu_text_input_begin(const char* initial, const char* prompt) {
     if (!g_window) return 0;
     g_window->BeginTextInput(initial ? initial : "", prompt ? prompt : "Text");
     return 1;
 }
 
-extern "C" int mzgpu_choice_begin(const char* title, const char* const* items, const char* const* images,
+extern "C" int mtgpu_choice_begin(const char* title, const char* const* items, const char* const* images,
                                     int count, int focus) {
     if (!g_window || count <= 0) return 0;
     // Pictures are decoded here, on the game's thread, before the list is shown.
-    std::vector<MzPng::Image> pictures(count);
+    std::vector<MtPng::Image> pictures(count);
     for (int i = 0; images && i < count; ++i) {
-        if (images[i] && !MzPng::LoadRgba(images[i], pictures[i])) {
+        if (images[i] && !MtPng::LoadRgba(images[i], pictures[i])) {
             LOG_WARNING(Lib_SaveDataDialog, "save list: no picture from {}", images[i]);
         }
     }
-    MzOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
+    MtOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
                              std::move(pictures), focus);
     return 1;
 }
 
-extern "C" int mzgpu_choice_poll(void) {
-    return MzOverlay::PollChoice();
+extern "C" int mtgpu_choice_poll(void) {
+    return MtOverlay::PollChoice();
 }
 
-extern "C" int mzgpu_choice_confirm(const char* title, const char* const* items, int count, int focus,
+extern "C" int mtgpu_choice_confirm(const char* title, const char* const* items, int count, int focus,
                                            const unsigned char* png, uint64_t size, const char* caption, const char* unavailable) {
     if (!g_window || !items || count <= 0) return 0;
-    MzPng::Image preview;
+    MtPng::Image preview;
     std::string label = caption ? caption : "";
-    if (!png || !size || size > 4u * 1024u * 1024u || !MzPng::DecodeRgba(png, size, preview)) {
+    if (!png || !size || size > 4u * 1024u * 1024u || !MtPng::DecodeRgba(png, size, preview)) {
         label += "\n";
         label += unavailable ? unavailable : "";
     }
-    MzOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
-                               std::vector<MzPng::Image>(count), focus, label, std::move(preview));
+    MtOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
+                               std::vector<MtPng::Image>(count), focus, label, std::move(preview));
     return 1;
 }
 
-extern "C" int mzgpu_text_input_poll(char* out, uint64_t size) {
+extern "C" int mtgpu_text_input_poll(char* out, uint64_t size) {
     if (!g_window) return 2;
     std::string text;
     const int state = g_window->PollTextInput(text);

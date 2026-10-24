@@ -2,8 +2,8 @@
  * runtime uses. Included through runtime.h after the C library headers, so the macros below
  * only replace calls in this project's own sources. Paths are UTF-8: the executable's
  * manifest selects the UTF-8 code page (packaging/windows/minustwo.manifest). */
-#ifndef MZ_COMPAT_WIN_H
-#define MZ_COMPAT_WIN_H
+#ifndef MT_COMPAT_WIN_H
+#define MT_COMPAT_WIN_H
 #ifdef _WIN32
 #include <stdint.h>
 #include <stddef.h>
@@ -74,9 +74,9 @@ int compat_errno_from_win32(unsigned long error);
 int compat_cpu_times(int who, int64_t *user_us, int64_t *kernel_us);
 /* setjmp/longjmp without SEH unwinding (guest frames have no unwind data) that saves every
  * Win64 callee-saved register, xmm6-15 included. clang's __builtin_longjmp restores a wrong
- * frame pointer on Win64. mz_longjmp may also be entered from the exception handler. */
-typedef unsigned long long mz_jmp_buf[32];
-__attribute__((returns_twice)) int mz_setjmp(mz_jmp_buf buffer);
-__attribute__((noreturn)) void mz_longjmp(mz_jmp_buf buffer, int value);
+ * frame pointer on Win64. mt_longjmp may also be entered from the exception handler. */
+typedef unsigned long long mt_jmp_buf[32];
+__attribute__((returns_twice)) int mt_setjmp(mt_jmp_buf buffer);
+__attribute__((noreturn)) void mt_longjmp(mt_jmp_buf buffer, int value);
 #endif
 #endif

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Startup graphics options of minustwo.ini (gpu/shim/mz_graphics.h) for run.py.
+"""Startup graphics options of minustwo.ini (gpu/shim/mt_graphics.h) for run.py.
 
 The in-game menu and the launcher write them; run.py turns them into game patches and
 environment variables at every start, so "Apply and restart" uses the new values. After a
@@ -179,8 +179,8 @@ def prepare(config, state_path, extra=(), environment=None):
     ini = read_ini(config)
     if environment is not None:
         migrated = {key: environment.get(env, DEFAULTS[key]) for key, env in
-                    (('monitor', 'MZ_MONITOR'), ('hdr', 'MZ_HDR'),
-                     ('glyph_style', 'MZ_GLYPH_STYLE'), ('anisotropy', 'MZ_ANISOTROPY')) if key not in ini}
+                    (('monitor', 'MT_MONITOR'), ('hdr', 'MT_HDR'),
+                     ('glyph_style', 'MT_GLYPH_STYLE'), ('anisotropy', 'MT_ANISOTROPY')) if key not in ini}
         if migrated:
             ini.update(migrated)
             normalized = startup_options(ini, extra)
@@ -245,9 +245,9 @@ def applied_engine_fps(names):
 
 
 def environment(options):
-    return {'MZ_DEFERRED_READBACK': options['deferred_readback'],
-            'MZ_STALE_READBACK': options['stale_readback'],
-            'MZ_ASYNC_SHADERS': options['async_shaders'],
-            'MZ_MONITOR': options.get('monitor', ''), 'MZ_HDR': options.get('hdr', '0'),
-            'MZ_GLYPH_STYLE': options.get('glyph_style', 'off'),
-            'MZ_ANISOTROPY': options.get('anisotropy', '0')}
+    return {'MT_DEFERRED_READBACK': options['deferred_readback'],
+            'MT_STALE_READBACK': options['stale_readback'],
+            'MT_ASYNC_SHADERS': options['async_shaders'],
+            'MT_MONITOR': options.get('monitor', ''), 'MT_HDR': options.get('hdr', '0'),
+            'MT_GLYPH_STYLE': options.get('glyph_style', 'off'),
+            'MT_ANISOTROPY': options.get('anisotropy', '0')}

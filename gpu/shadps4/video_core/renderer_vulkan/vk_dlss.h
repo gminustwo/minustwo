@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2026 IFreemz, minustwo contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// minustwo: NVIDIA DLSS Super Resolution through the optional mz_dlss.dll bridge (gpu/
+// minustwo: NVIDIA DLSS Super Resolution through the optional mt_dlss.dll bridge (gpu/
 // dlss_bridge, MIT), loaded at run time from next to minustwo.exe together with NVIDIA's
 // nvngx_dlss.dll. The port itself contains no NVIDIA code; without the DLLs, on other GPUs or
-// with MZ_DLSS=0 nothing changes. Adapted from IFreemz/shadPS4-Bloodborne-DLSS-FSR
+// with MT_DLSS=0 nothing changes. Adapted from IFreemz/shadPS4-Bloodborne-DLSS-FSR
 // (vk_dlss_ngx).
 
 #pragma once
@@ -20,7 +20,7 @@ namespace Vulkan {
 
 class Dlss {
 public:
-    /// The process-wide instance, or null when the DLLs are absent or MZ_DLSS=0.
+    /// The process-wide instance, or null when the DLLs are absent or MT_DLSS=0.
     static Dlss* Get();
     ~Dlss();
 

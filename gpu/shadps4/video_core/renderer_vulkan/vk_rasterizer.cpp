@@ -3,9 +3,9 @@
 
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
-#include "mz_graphics.h"
-#include "mz_settings.h"
-#include "mz_toggles.h"
+#include "mt_graphics.h"
+#include "mt_settings.h"
+#include "mt_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
@@ -24,7 +24,7 @@
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
-#include "mz_threads.h"
+#include "mt_threads.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
@@ -62,22 +62,22 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     camera_motion->SetObjectMotion(object_motion.get());
     upscaler = std::make_unique<TemporalUpscaler>(instance, scheduler, texture_cache, runtime,
                                                   *camera_motion, *scene_targets);
-    // minustwo: the render resolution (in-game menu; MZ_SCENE_SIZE=<width>x<height> overrides it)
+    // minustwo: the render resolution (in-game menu; MT_SCENE_SIZE=<width>x<height> overrides it)
     // renders the game's 1920x1080 targets (and the 960x540 ones at half that) at this size for
     // the whole frame, the interface included, and the presenter shows that image: 4K is
     // 3840x2160 rendering of a game made for 1080p.
     unsigned width = 0, height = 0;
-    if (const char* text = std::getenv("MZ_SCENE_SIZE"); text && text[0]) {
+    if (const char* text = std::getenv("MT_SCENE_SIZE"); text && text[0]) {
         if (std::sscanf(text, "%ux%u", &width, &height) != 2 || width < 320 || height < 180 ||
             width > 7680 || height > 4320) {
-            std::printf("Render scale: MZ_SCENE_SIZE=%s ignored (expected WxH)\n", text);
+            std::printf("Render scale: MT_SCENE_SIZE=%s ignored (expected WxH)\n", text);
             width = height = 0;
         }
     } else {
-        const std::vector<std::string> names = MzGraphics::ResolutionNames();
+        const std::vector<std::string> names = MtGraphics::ResolutionNames();
         const int index =
-            std::clamp(MzSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
-        const auto [w, h] = MzGraphics::RenderScaleSize(names[index]);
+            std::clamp(MtSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
+        const auto [w, h] = MtGraphics::RenderScaleSize(names[index]);
         width = unsigned(w);
         height = unsigned(h);
     }
@@ -205,7 +205,7 @@ VideoCore::ImageId Rasterizer::FindTargetMemoized(VideoCore::TextureCache::Image
     };
     (append(parts), ...);
     const u64 generation = texture_cache.RegistryGeneration();
-    const bool memo_enabled = !MzToggle::Disabled(MzToggle::TextureBindingMemo);
+    const bool memo_enabled = !MtToggle::Disabled(MtToggle::TextureBindingMemo);
     if (memo_enabled && last.generation == generation && last.key_size == key_size &&
         std::memcmp(last.key.data(), key.data(), key_size) == 0) {
         texture_cache.MarkFound(last.image_id);
@@ -400,7 +400,7 @@ constexpr u32 AlignPacket(u32 size) {
 }
 u32 VerifyInterval() {
     static const u32 interval = [] {
-        const char* env = std::getenv("MZ_PIPE_VERIFY");
+        const char* env = std::getenv("MT_PIPE_VERIFY");
         return env ? static_cast<u32>(std::strtoul(env, nullptr, 10)) : 0u;
     }();
     return interval;
@@ -408,17 +408,17 @@ u32 VerifyInterval() {
 } // namespace
 
 bool Rasterizer::DrawPipeWanted() {
-    const char* env = std::getenv("MZ_DRAW_PIPE");
+    const char* env = std::getenv("MT_DRAW_PIPE");
     if (env && env[0]) {
         return env[0] == '1';
     }
     // Stage B spins while draws flow. Measured ahead with 16 threads (+19%) and with 4 cores /
     // 8 threads (taskset, Steam Deck-like: +18%).
-    return MzThreads::Available() >= 8;
+    return MtThreads::Available() >= 8;
 }
 
 bool Rasterizer::UseDrawPipe() const {
-    return draw_pipe && !host_markers_enabled && !MzToggle::Disabled(MzToggle::DrawPipeline);
+    return draw_pipe && !host_markers_enabled && !MtToggle::Disabled(MtToggle::DrawPipeline);
 }
 
 bool Rasterizer::OnStageA() const {
@@ -433,7 +433,7 @@ bool Rasterizer::OnStageA() const {
 }
 
 namespace {
-/// Stage A: cycles waited per drain site (MZ_FRAME_STATS), keyed by function name and line.
+/// Stage A: cycles waited per drain site (MT_FRAME_STATS), keyed by function name and line.
 std::unordered_map<const char*, std::unordered_map<u32, u64>> drain_sites;
 } // namespace
 
@@ -441,7 +441,7 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (!draw_pipe || !OnStageA()) {
         return;
     }
-    static const bool stats = std::getenv("MZ_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("MT_FRAME_STATS") != nullptr;
     if (!stats) {
         draw_pipe->Drain(reason);
         return;
@@ -517,7 +517,7 @@ bool Rasterizer::PendingWriteOverlaps(VAddr address, u64 size) {
 void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDraw* prepared,
                            boost::container::static_vector<RingBinding, Shader::NUM_BUFFERS>& out) {
     const PreparedStage* prepared_stage = nullptr;
-    if (prepared && !MzToggle::Disabled(MzToggle::PreparedResources)) {
+    if (prepared && !MtToggle::Disabled(MtToggle::PreparedResources)) {
         for (u32 i = 0; i < prepared->num_stages; ++i) {
             const auto& candidate = prepared->stages[i];
             if (&candidate.program->info == &stage &&
@@ -613,7 +613,7 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
         if (stage) {
             auto& ring = rings[num_stages];
             ring.clear();
-            if (constant_ring && !MzToggle::Disabled(MzToggle::ConstantRing)) {
+            if (constant_ring && !MtToggle::Disabled(MtToggle::ConstantRing)) {
                 CollectRingBindings(*stage, used_prepared, ring);
             }
             ++num_stages;
@@ -714,7 +714,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || MzToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || MtToggle::Disabled(toggle)) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
@@ -861,7 +861,7 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
 }
 
 void Rasterizer::PrintPipeStats() {
-    static const bool stats = std::getenv("MZ_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("MT_FRAME_STATS") != nullptr;
     if (!stats || (draw_pipe->packets & 1023) != 0) {
         return;
     }
@@ -941,13 +941,13 @@ bool Rasterizer::FilterDrawPasses() const {
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
     RENDERER_TRACE;
-    MzStats::draws.fetch_add(1, std::memory_order_relaxed);
+    MtStats::draws.fetch_add(1, std::memory_order_relaxed);
 
     // minustwo: with the draw pipeline this thread only selects the pipeline and hands the draw
     // to the recording thread (DrawRecord there); draws FilterDraw handles itself run here.
     const bool pipelined = UseDrawPipe();
     if (pipelined && !FilterDrawPasses() &&
-        !MzToggle::Disabled(MzToggle::PipelinedMemoryWrites)) {
+        !MtToggle::Disabled(MtToggle::PipelinedMemoryWrites)) {
         PostDraw(nullptr, nullptr, false, 0);
         return;
     }
@@ -978,7 +978,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
 
 void Rasterizer::DiagPassBoundary(bool force) {
     static const bool enabled = [] {
-        const char* env = std::getenv("MZ_DIAG_IMAGES");
+        const char* env = std::getenv("MT_DIAG_IMAGES");
         return env && *env == '1';
     }();
     if (!enabled) {
@@ -1031,7 +1031,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     } else if (regs.color_buffers[0] &&
                FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address()) &&
                regs.color_buffers[0].Address() != last_display_buffer) {
-        // Without an upscaler: still count the frame (MZ_GPU_PROFILE, MZ_BUFFER_STATS),
+        // Without an upscaler: still count the frame (MT_GPU_PROFILE, MT_BUFFER_STATS),
         // once per display buffer since the HUD draws into it as well.
         // ponytail: assumes flips rotate display buffers; a single-buffer game counts one frame.
         last_display_buffer = regs.color_buffers[0].Address();
@@ -1094,7 +1094,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         // since last frame (model constants follow the camera, the palette does not). The
         // check comes first: most gated draws are static world pieces with long index lists.
         static const bool all_motion = [] {
-            const char* value = std::getenv("MZ_OBJECT_MOTION_ALL");
+            const char* value = std::getenv("MT_OBJECT_MOTION_ALL");
             return value && value[0] == '1';
         }();
         bool gated = !all_motion;
@@ -1228,7 +1228,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     // minustwo: like direct draws, handed to the recording thread after the pipeline selection
     // (else the GPU thread waited here for a whole frame of queued draws).
     const bool pipelined = UseDrawPipe() && FilterDrawPasses() &&
-                           !MzToggle::Disabled(MzToggle::PipelinedIndirectDraws);
+                           !MtToggle::Disabled(MtToggle::PipelinedIndirectDraws);
     if (!pipelined) {
         DrainDrawPipe();
         scheduler.PopPendingOperations();
@@ -1348,9 +1348,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
 
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
-    MzStats::dispatches.fetch_add(1, std::memory_order_relaxed);
+    MtStats::dispatches.fetch_add(1, std::memory_order_relaxed);
     // minustwo: like draws, handed to the draw recording thread after the pipeline selection.
-    const bool pipelined = UseDrawPipe() && !MzToggle::Disabled(MzToggle::PipelinedDispatch);
+    const bool pipelined = UseDrawPipe() && !MtToggle::Disabled(MtToggle::PipelinedDispatch);
     if (!pipelined) {
         DrainDrawPipe();
     }
@@ -1420,10 +1420,10 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     });
     DebugState.IncDispatch();
 
-    // minustwo diagnostics: MZ_DIAG_IMAGES=1 writes the images a dispatch read and wrote, after
-    // it, while a frame capture records (MZ_CAPTURE_TRIGGER).
+    // minustwo diagnostics: MT_DIAG_IMAGES=1 writes the images a dispatch read and wrote, after
+    // it, while a frame capture records (MT_CAPTURE_TRIGGER).
     static const bool diag_images = [] {
-        const char* env = std::getenv("MZ_DIAG_IMAGES");
+        const char* env = std::getenv("MT_DIAG_IMAGES");
         return env && *env == '1';
     }();
     if (diag_images && FrameCapture::IsRecording()) {
@@ -1442,7 +1442,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
     // minustwo: handed to the recording thread like direct dispatches.
-    const bool pipelined = UseDrawPipe() && !MzToggle::Disabled(MzToggle::PipelinedIndirectDraws);
+    const bool pipelined = UseDrawPipe() && !MtToggle::Disabled(MtToggle::PipelinedIndirectDraws);
     if (!pipelined) {
         DrainDrawPipe();
     }
@@ -1522,7 +1522,7 @@ void Rasterizer::OnSubmit() {
 
 const PreparedStage* Rasterizer::FindPreparedStage(const Shader::Info& stage) const {
     // Sharps a draw-preparation worker read from the same flattened user data.
-    if (!bind_prepared || MzToggle::Disabled(MzToggle::PreparedResources)) {
+    if (!bind_prepared || MtToggle::Disabled(MtToggle::PreparedResources)) {
         return nullptr;
     }
     for (u32 i = 0; i < bind_prepared->num_stages; ++i) {
@@ -1539,7 +1539,7 @@ const PreparedStage* Rasterizer::FindPreparedStage(const Shader::Info& stage) co
 
 bool Rasterizer::BindHelperWanted() {
     // A spinning helper pays off only with cores to spare (the recording thread spins too).
-    const char* env = std::getenv("MZ_TEXTURE_HELPER");
+    const char* env = std::getenv("MT_TEXTURE_HELPER");
     if (env && env[0]) {
         return env[0] == '1';
     }
@@ -1548,16 +1548,16 @@ bool Rasterizer::BindHelperWanted() {
 }
 
 void Rasterizer::PollSceneDebug() {
-    static const char* scene_debug = std::getenv("MZ_SCENE_DEBUG");
+    static const char* scene_debug = std::getenv("MT_SCENE_DEBUG");
     scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
     scene_targets->debug = scene_debug_frame;
 }
 
 bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
     if (pipeline->IsCompute() || !bind_helper.Available() || FrameCapture::Active() ||
-        MzToggle::Disabled(MzToggle::TextureBindHelper) ||
-        MzToggle::Disabled(MzToggle::TextureBindingMemo) ||
-        MzToggle::Disabled(MzToggle::UpdateImageFastPath)) {
+        MtToggle::Disabled(MtToggle::TextureBindHelper) ||
+        MtToggle::Disabled(MtToggle::TextureBindingMemo) ||
+        MtToggle::Disabled(MtToggle::UpdateImageFastPath)) {
         return false;
     }
     for (const auto* stage : pipeline->GetStages()) {
@@ -1654,7 +1654,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
     sampler_lod_bias = 0.0f;
-    if (!pipeline->IsCompute() && !MzToggle::Disabled(MzToggle::SceneMipBias) &&
+    if (!pipeline->IsCompute() && !MtToggle::Disabled(MtToggle::SceneMipBias) &&
         std::popcount(static_cast<const GraphicsPipeline*>(pipeline)->GetGraphicsKey().mrt_mask &
                       0xff) >= 5) {
         sampler_lod_bias = upscaler->SceneMipBias();
@@ -1667,7 +1667,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
 
     bool uses_dma = false;
 
-    static const bool stats = std::getenv("MZ_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("MT_FRAME_STATS") != nullptr;
     if (stats && ((helper_full + helper_partial + helper_serial) & 1023) == 0) {
         static auto window = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
@@ -1745,7 +1745,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             auto& stage = buffer_stages[i];
             BindBuffers(*stage.info, stage.prepared, stage.binding, push_data, stage.write_index);
         }
-        if (draw_inputs.pending && !MzToggle::Disabled(MzToggle::EarlyDrawInputs)) {
+        if (draw_inputs.pending && !MtToggle::Disabled(MtToggle::EarlyDrawInputs)) {
             ResolveVertexBuffers(draw_inputs.pipeline, draw_inputs.prepared);
             if (draw_inputs.is_indexed) {
                 ResolveIndexBuffer(draw_inputs.index_offset);
@@ -1833,7 +1833,7 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     const PreparedVertexInputs* ready =
         prepared && prepared->vertex.valid && instance.IsVertexInputDynamicState() && fetch &&
                 fetch->attributes.size() == prepared->vertex.count && !FrameCapture::Active() &&
-                !MzToggle::Disabled(MzToggle::PreparedResources)
+                !MtToggle::Disabled(MtToggle::PreparedResources)
             ? &prepared->vertex
             : nullptr;
     if (ready) {
@@ -2293,7 +2293,7 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     const auto matches = [&](const ImageDescCacheEntry& e) {
         return e.flags == flags && e.sharp == key;
     };
-    const bool disabled = MzToggle::Disabled(MzToggle::ImageDescCache);
+    const bool disabled = MtToggle::Disabled(MtToggle::ImageDescCache);
     ImageDescCacheEntry* slot = nullptr;
     if (!disabled && matches(set[0])) {
         slot = &set[0];
@@ -2312,7 +2312,7 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     slot->last_use = ++desc_use_counter;
     auto& entry = *slot;
     if (entry.flags != flags || entry.sharp != key ||
-        MzToggle::Disabled(MzToggle::ImageDescCache)) {
+        MtToggle::Disabled(MtToggle::ImageDescCache)) {
         entry.desc = VideoCore::TextureCache::ImageDesc{sharp, res};
         entry.sharp = key;
         entry.flags = flags;
@@ -2354,7 +2354,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     // SampleSceneProxies: bindings that may read a reduced scene proxy instead of the native
     // image (normalized sampling only; see Shader::ImageResource::needs_native).
     boost::container::small_vector<bool, 16> binding_proxy_ok;
-    const bool sample_proxies = !MzToggle::Disabled(MzToggle::SampleSceneProxies) &&
+    const bool sample_proxies = !MtToggle::Disabled(MtToggle::SampleSceneProxies) &&
                                 !on_helper && scene_targets->Reduced();
 
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
@@ -2362,7 +2362,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const auto tsharp =
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         // minustwo: a hash lookup per texture per draw for a diagnostic only.
-        static const bool warn_meta = std::getenv("MZ_WARN_META_TEXTURE") != nullptr;
+        static const bool warn_meta = std::getenv("MT_WARN_META_TEXTURE") != nullptr;
         if (warn_meta && texture_cache.IsMeta(tsharp.Address())) {
             LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
         }
@@ -2410,7 +2410,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         auto& desc_entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        // MZ_SCENE_DEBUG: proxied scene targets this binding reads at the native size, and why.
+        // MT_SCENE_DEBUG: proxied scene targets this binding reads at the native size, and why.
         const auto debug_native = [&](const VideoCore::Image& image) {
             if (!scene_debug_frame || proxy_candidate || !image.scene_proxy) return;
             std::printf("Scene native read: %s %016llx %s %ux%u needs_native %d written %d "
@@ -2426,7 +2426,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             // while no image was registered or unregistered.
             if (mip_fallback_mode == Shader::MipStorageFallbackMode::None &&
                 desc_entry.found_generation == texture_cache.RegistryGeneration() &&
-                !MzToggle::Disabled(MzToggle::TextureBindingMemo)) {
+                !MtToggle::Disabled(MtToggle::TextureBindingMemo)) {
                 desc_entry.pinned = bind_epoch;
                 auto& [image_id, _] =
                     image_bindings.emplace_back(desc_entry.found_id, &desc_entry.found_desc);
@@ -2664,7 +2664,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
                                      u32 first_image_idx, bool& barrier, TextureSet*& slot) {
     const u32 count = static_cast<u32>(stage.images.size());
     if (!prepared || count == 0 || count > TextureSet::MaxImages ||
-        MzToggle::Disabled(MzToggle::TextureSetMemo) || FrameCapture::Active()) {
+        MtToggle::Disabled(MtToggle::TextureSetMemo) || FrameCapture::Active()) {
         return false;
     }
     for (const auto& image : stage.images) {
@@ -2702,7 +2702,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
         const auto& image = texture_cache.GetImage(entry.id);
         // Proxy entries need a current proxy; native entries of a proxied image go through
         // BindTextures, which may sample the proxy instead.
-        const bool proxies_on = !MzToggle::Disabled(MzToggle::SampleSceneProxies);
+        const bool proxies_on = !MtToggle::Disabled(MtToggle::SampleSceneProxies);
         if (image.backing != entry.backing || image.binding.needs_rebind ||
             image.binding.is_target || !texture_cache.IsUpToDate(entry.id) ||
             (entry.proxy ? !proxies_on ||
@@ -2749,8 +2749,8 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
 
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     // minustwo: RenderStateMemo (see BeginMemo).
-    const bool memo_on = !MzToggle::Disabled(MzToggle::RenderStateMemo) && !FrameCapture::Active();
-    if (MzStats::enabled && ((begin_memo_hits + begin_memo_misses) & 0x3FFFF) == 0x3FFFF) {
+    const bool memo_on = !MtToggle::Disabled(MtToggle::RenderStateMemo) && !FrameCapture::Active();
+    if (MtStats::enabled && ((begin_memo_hits + begin_memo_misses) & 0x3FFFF) == 0x3FFFF) {
         std::printf("Render state memo: %llu hits, %llu misses; texture sets: %llu hits, %llu "
                     "misses\n",
                     static_cast<unsigned long long>(begin_memo_hits),
@@ -2846,7 +2846,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     // (multisampled proxies, see SceneTargets::Eligible).
     bool reduced = scene_started && upscaler->RasterScaling() &&
                    (key.num_samples == 1 || render_scale);
-    // MZ_SCENE_DEBUG=<file>: once the file exists, why the passes of one frame keep the
+    // MT_SCENE_DEBUG=<file>: once the file exists, why the passes of one frame keep the
     // native size (see NoteFrameStart).
     const bool debug_pass = scene_debug_frame && scene_started;
     std::string why;
@@ -2859,7 +2859,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     }
     // Only this pass's attachments: slots past the mask's width keep earlier passes' targets,
     // often the G-buffer images the lighting passes sample (bound), which kept those native.
-    const u32 num_attachments = MzToggle::Disabled(MzToggle::SceneAttachmentsOnly)
+    const u32 num_attachments = MtToggle::Disabled(MtToggle::SceneAttachmentsOnly)
                                     ? u32(cb_descs.size())
                                     : u32(std::bit_width(key.mrt_mask));
     // All attachments of a reduced pass share one proxy size (scene or half resolution).
@@ -2901,9 +2901,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         std::printf("Scene pass: reduced %d %s\n", reduced, why.c_str());
     }
     push_data.scene_size = reduced ? SceneResolution::Pack(scene_targets->Size()) : 0;
-    if (MzStats::enabled) {
-        MzStats::reduced_draws.fetch_add(reduced, std::memory_order_relaxed);
-        MzStats::scene_draws.fetch_add(scene_started, std::memory_order_relaxed);
+    if (MtStats::enabled) {
+        MtStats::reduced_draws.fetch_add(reduced, std::memory_order_relaxed);
+        MtStats::scene_draws.fetch_add(scene_started, std::memory_order_relaxed);
     }
     RenderState state;
     state.width = instance.GetMaxFramebufferWidth();
@@ -3516,7 +3516,7 @@ void Rasterizer::UpdateViewportScissorState() const {
 vk::Pipeline Rasterizer::SquarePass(const GraphicsPipeline& pipeline) const {
     const vk::Pipeline square = pipeline.SquarePassHandle();
     static const bool enabled = [] {
-        const char* env = std::getenv("MZ_SQUARE_PASS");
+        const char* env = std::getenv("MT_SQUARE_PASS");
         return !env || env[0] != '0';
     }();
     if (!square || !enabled) [[likely]] {
@@ -3561,7 +3561,7 @@ void Rasterizer::UpdateDepthStencilState() const {
     dynamic_state.SetDepthBiasEnabled(depth_bias_enabled);
     if (depth_bias_enabled) {
         const bool front = regs.polygon_control.enable_polygon_offset_front;
-        // minustwo: MZ_LIGHTING_TEST=bias passes the slope scale as the guest gives it.
+        // minustwo: MT_LIGHTING_TEST=bias passes the slope scale as the guest gives it.
         const float slope = front ? regs.poly_offset.front_scale : regs.poly_offset.back_scale;
         dynamic_state.SetDepthBias(
             front ? regs.poly_offset.front_offset : regs.poly_offset.back_offset,
@@ -3775,11 +3775,11 @@ void Rasterizer::NoteFrameStart() {
     if (auto* profiler = GpuProfiler::Get()) {
         profiler->BeginFrame();
     }
-    const u64 frame = MzStats::gpu_frames.fetch_add(1, std::memory_order_relaxed) + 1;
-    // MZ_BUFFER_STATS=1: how many earlier frames the GPU has not finished when the GPU thread
+    const u64 frame = MtStats::gpu_frames.fetch_add(1, std::memory_order_relaxed) + 1;
+    // MT_BUFFER_STATS=1: how many earlier frames the GPU has not finished when the GPU thread
     // starts a frame — the lag that decides whether guest memory can be read in place.
     static const bool stats = [] {
-        const char* value = std::getenv("MZ_BUFFER_STATS");
+        const char* value = std::getenv("MT_BUFFER_STATS");
         return value && value[0] == '1';
     }();
     if (!stats) {

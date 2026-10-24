@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
-#include "mz_settings.h"
+#include "mt_settings.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/texture_cache/sampler.h"
@@ -16,7 +16,7 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
                                  AmdGpu::IsAnisoFilter(sampler.xy_min_filter);
     // minustwo: the menu's anisotropic filtering, on filtered and mipmapped textures (not on
     // point-sampled lookups, unmipmapped render targets or depth compares).
-    const int forced = MzSettings::Get().startup_anisotropy;
+    const int forced = MtSettings::Get().startup_anisotropy;
     const bool force_anisotropy = forced > 1 && !is_depth &&
                                   sampler.xy_min_filter != AmdGpu::Filter::Point &&
                                   sampler.mip_filter != AmdGpu::MipFilter::None;

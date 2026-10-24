@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <functional>
 
-namespace MzCopy {
+namespace MtCopy {
 
 /// Runs `task(i)` for every i in [0, count) on the copy threads and the caller; returns when
 /// all are done. Runs inline when count is 1, the pool is disabled, or when called from a copy
@@ -45,4 +45,4 @@ void AfterCopies(std::function<void()> callback);
 /// Times a thread yielded while waiting for copies (diagnostics, #209).
 unsigned long long Yields();
 
-} // namespace MzCopy
+} // namespace MtCopy

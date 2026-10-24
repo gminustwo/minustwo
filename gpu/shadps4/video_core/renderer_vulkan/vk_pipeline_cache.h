@@ -226,7 +226,7 @@ private:
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
-    /// minustwo: MZ_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
+    /// minustwo: MT_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
     struct WarmupPool;
     WarmupPool* warmup_pool = nullptr;
     std::mutex warmup_results_mutex;
@@ -246,7 +246,7 @@ private:
     PipelineSelection sel{}; ///< GPU thread selection state
     ComputePipelineKey compute_key{};
     u32 num_new_pipelines{}; // new pipelines added to the cache since the game start
-    /// minustwo (MzToggle::DiskShaders): with on-demand startup, a program missing from
+    /// minustwo (MtToggle::DiskShaders): with on-demand startup, a program missing from
     /// program_cache is first read from the store at its saved permutation indices, instead of
     /// being translated again (pop-in) and rewritten (antivirus scans every file).
     bool disk_shaders = false;

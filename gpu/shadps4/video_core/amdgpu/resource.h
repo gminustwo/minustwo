@@ -7,7 +7,7 @@
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "video_core/amdgpu/pixel_format.h"
-#include "video_core/amdgpu/mz_msaa.h"
+#include "video_core/amdgpu/mt_msaa.h"
 #include "video_core/amdgpu/tiling.h"
 
 namespace AmdGpu {
@@ -266,7 +266,7 @@ struct Image {
 
     ImageType GetType() const noexcept {
         if (NoMsaa() && IsGuestMsaa()) {
-            // minustwo: see mz_msaa.h; shaders then fetch it without a sample index.
+            // minustwo: see mt_msaa.h; shaders then fetch it without a sample index.
             return static_cast<ImageType>(type) == ImageType::Color2DMsaa ? ImageType::Color2D
                                                                           : ImageType::Color2DArray;
         }

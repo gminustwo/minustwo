@@ -10,7 +10,7 @@
 namespace Vulkan {
 
 void GpuProfiler::Init(const Instance& instance, Scheduler& scheduler) {
-    const char* env = std::getenv("MZ_GPU_PROFILE");
+    const char* env = std::getenv("MT_GPU_PROFILE");
     if (!env || env[0] != '1' || instance_ptr) {
         return;
     }

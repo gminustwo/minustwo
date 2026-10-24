@@ -5,18 +5,18 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <unistd.h>
-#include "mz_settings.h"
+#include "mt_settings.h"
 
 int main() {
-    using namespace MzSettings;
+    using namespace MtSettings;
     char path[] = "/tmp/minustwo-upscaler-test-XXXXXX";
     const int fd = mkstemp(path);
     assert(fd >= 0);
     close(fd);
-    setenv("MZ_CONFIG", path, 1);
-    unsetenv("MZ_UPSCALER");
-    unsetenv("MZ_UPSCALE_PRESET");
-    unsetenv("MZ_RENDER_RES");
+    setenv("MT_CONFIG", path, 1);
+    unsetenv("MT_UPSCALER");
+    unsetenv("MT_UPSCALE_PRESET");
+    unsetenv("MT_RENDER_RES");
     auto& s = Get();
     s.upscaler = UpscalerTaa;
     s.preset = Performance;
@@ -59,7 +59,7 @@ int main() {
     s.upscaler = UpscalerFsr3;
     s.preset = Performance;
     assert(RenderPreset() == Performance && !ResolutionNeedsRestart());
-    setenv("MZ_RENDER_RES", "1706x960", 1);
+    setenv("MT_RENDER_RES", "1706x960", 1);
     assert(RenderPreset() == Quality && ResolutionNeedsRestart());
     s.preset = Quality;
     assert(!ResolutionNeedsRestart());
@@ -74,9 +74,9 @@ int main() {
     s.output_res = (output + 1) % OutputCount;
     assert(ResolutionNeedsRestart());
     s.output_res = output;
-    setenv("MZ_RENDER_RES", "", 1);
+    setenv("MT_RENDER_RES", "", 1);
     assert(!FixedRenderSession() && !ResolutionNeedsRestart());
-    unsetenv("MZ_RENDER_RES");
+    unsetenv("MT_RENDER_RES");
     std::remove(path);
     std::puts("Upscaler support: saved choices and FSR 3.1 fallback PASS");
 }

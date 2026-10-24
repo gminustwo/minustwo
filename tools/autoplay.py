@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Unattended test run: starts the game through run.py, presses pad buttons on a schedule
-(MZ_PAD_FILE), dumps the screen at intervals (MZ_FRAME_DUMP_TRIGGER), then writes a contact sheet
-of the frames and the loudness of what each audio port played (MZ_AUDIO_DUMP).
+(MT_PAD_FILE), dumps the screen at intervals (MT_FRAME_DUMP_TRIGGER), then writes a contact sheet
+of the frames and the loudness of what each audio port played (MT_AUDIO_DUMP).
 
     python tools/autoplay.py --game D:/Games/CUSA02046 --seconds 120 --every 10 \\
         --press 40:cross --press 45:cross --hold 60-70:ly=0
 
 --press T:BUTTONS taps the buttons (space-separated pad file tokens) for 0.3 s at T seconds;
---hold A-B:TOKENS holds them from A to B. Dialogs answer themselves (MZ_AUTO_DIALOGS=1).
+--hold A-B:TOKENS holds them from A to B. Dialogs answer themselves (MT_AUTO_DIALOGS=1).
 Results go to --out (default out/autoplay): sheet.png, frames, run.log and audio levels.
 """
 import argparse
@@ -78,7 +78,7 @@ def audio_levels(prefix):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--game', default=os.environ.get('MZ_GAME_DIR'))
+    p.add_argument('--game', default=os.environ.get('MT_GAME_DIR'))
     p.add_argument('--seconds', type=float, default=90)
     p.add_argument('--every', type=float, default=10, help='seconds between screen dumps')
     p.add_argument('--press', action='append', default=[])
@@ -87,13 +87,13 @@ def main():
     p.add_argument('--env', action='append', default=[], help='extra NAME=VALUE for the game')
     a = p.parse_args()
     if not a.game:
-        p.error('--game or MZ_GAME_DIR is needed')
+        p.error('--game or MT_GAME_DIR is needed')
     shutil.rmtree(a.out, ignore_errors=True)
     a.out.mkdir(parents=True)
     pad, trigger = a.out / 'pad.txt', a.out / 'trigger'
     write_pad(pad, '')
-    env = {**os.environ, 'MZ_GAME_DIR': a.game, 'MZ_PAD_FILE': str(pad), 'MZ_FRAME_DUMP_TRIGGER': str(trigger),
-           'MZ_DUMP_DIR': str(a.out), 'MZ_AUTO_DIALOGS': '1', 'MZ_AUDIO_DUMP': str(a.out / 'audio'),
+    env = {**os.environ, 'MT_GAME_DIR': a.game, 'MT_PAD_FILE': str(pad), 'MT_FRAME_DUMP_TRIGGER': str(trigger),
+           'MT_DUMP_DIR': str(a.out), 'MT_AUTO_DIALOGS': '1', 'MT_AUDIO_DUMP': str(a.out / 'audio'),
            'PYTHONIOENCODING': 'utf-8'}
     for item in a.env:
         name, value = item.split('=', 1)

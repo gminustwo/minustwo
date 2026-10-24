@@ -12,8 +12,8 @@
 #include "common/types.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
-#include "video_core/amdgpu/mz_msaa.h"
-#include "video_core/amdgpu/mz_msaa_default.h"
+#include "video_core/amdgpu/mt_msaa.h"
+#include "video_core/amdgpu/mt_msaa_default.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
@@ -224,7 +224,7 @@ std::string Instance::GetDriverVersionName() {
 
 namespace {
 bool PipelineBinaryCacheRequested() {
-    const char* setting = std::getenv("MZ_PIPELINE_BINARIES");
+    const char* setting = std::getenv("MT_PIPELINE_BINARIES");
     return !setting || *setting != '0';
 }
 }
@@ -365,7 +365,7 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- primitiveTopologyPatchListRestart: {}",
                  list_restart_features.primitiveTopologyPatchListRestart);
     }
-    // minustwo: MZ_AMD_PATHS_OFF=shaderext leaves the AMD shader extensions out (vk_amd_paths.h).
+    // minustwo: MT_AMD_PATHS_OFF=shaderext leaves the AMD shader extensions out (vk_amd_paths.h).
     const auto amd_paths_off = AmdPathsOff::Current();
     amd_shader_explicit_vertex_parameter =
         !amd_paths_off.shaderext &&
@@ -385,7 +385,7 @@ bool Instance::CreateDevice() {
     amd_shader_trinary_minmax =
         !amd_paths_off.shaderext && add_extension(VK_AMD_SHADER_TRINARY_MINMAX_EXTENSION_NAME);
     nv_framebuffer_mixed_samples = add_extension(VK_NV_FRAMEBUFFER_MIXED_SAMPLES_EXTENSION_NAME);
-    // minustwo: MZ_AMD_PATHS_OFF=mixed forces equal colour and depth samples, as on Intel.
+    // minustwo: MT_AMD_PATHS_OFF=mixed forces equal colour and depth samples, as on Intel.
     amd_mixed_attachment_samples =
         !amd_paths_off.mixed && add_extension(VK_AMD_MIXED_ATTACHMENT_SAMPLES_EXTENSION_NAME);
     shader_atomic_float = add_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
@@ -440,11 +440,11 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- shaderSubgroupClock: {}",
                  shader_clock_features.shaderSubgroupClock);
     }
-    // minustwo: MZ_WAVE_STATS=1 logs the subgroup width the driver compiled each pipeline stage
+    // minustwo: MT_WAVE_STATS=1 logs the subgroup width the driver compiled each pipeline stage
     // at (vk_wave_stats.h). Off by default: the feature may change how the driver caches
     // pipelines.
     pipeline_executable_properties = [&] {
-        const char* env = std::getenv("MZ_WAVE_STATS");
+        const char* env = std::getenv("MT_WAVE_STATS");
         return env && env[0] == '1' &&
                add_extension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
     }();
@@ -821,14 +821,14 @@ void Instance::CollectDeviceParameters() {
     driver_id = driver.driverID;
     vendor_name = driver.driverName.data();
 
-    // minustwo: see video_core/amdgpu/mz_msaa.h; the default per driver is mz_msaa_default.h.
-    const char* no_msaa_env = std::getenv("MZ_NO_MSAA");
+    // minustwo: see video_core/amdgpu/mt_msaa.h; the default per driver is mt_msaa_default.h.
+    const char* no_msaa_env = std::getenv("MT_NO_MSAA");
     const bool no_msaa = no_msaa_env && *no_msaa_env
                              ? *no_msaa_env == '1'
-                             : mz_no_msaa_default(static_cast<VkDriverId>(driver_id)) != 0;
+                             : mt_no_msaa_default(static_cast<VkDriverId>(driver_id)) != 0;
     AmdGpu::no_msaa.store(no_msaa, std::memory_order_relaxed);
     std::printf("GPU: guest multisampling %s\n",
-                no_msaa ? "off (single-sampled images; MZ_NO_MSAA=0 keeps it)" : "on");
+                no_msaa ? "off (single-sampled images; MT_NO_MSAA=0 keeps it)" : "on");
 
     const std::string model_name{GetModelName()};
     const std::string driver_version = GetDriverVersionName();

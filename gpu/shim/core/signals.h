@@ -1,5 +1,5 @@
 // minustwo: fault-handler registry. The C loader's SIGSEGV handler calls
-// mzgpu_handle_fault() first; registered handlers run in priority order.
+// mtgpu_handle_fault() first; registered handlers run in priority order.
 #pragma once
 #include <compare>
 #include <set>

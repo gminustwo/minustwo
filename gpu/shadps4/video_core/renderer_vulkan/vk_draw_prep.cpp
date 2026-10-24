@@ -7,8 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "mz_threads.h"
-#include "mz_toggles.h"
+#include "mt_threads.h"
+#include "mt_toggles.h"
 #include "common/thread.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
@@ -48,12 +48,12 @@ void ForEachPacket(std::span<const u32> commands, Func&& func) {
 }
 
 u32 DefaultWorkerCount() {
-    if (const char* env = std::getenv("MZ_PREP_WORKERS")) {
+    if (const char* env = std::getenv("MT_PREP_WORKERS")) {
         return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
     }
     // Workers are SCHED_IDLE and claim whole buffers, so more of them only use more idle
     // cores: half the hardware threads (Steam Deck 4, 16-thread desktop 8).
-    return std::clamp<u32>(MzThreads::Available() / 2, 1, 8);
+    return std::clamp<u32>(MtThreads::Available() / 2, 1, 8);
 }
 
 /// Flattened user data of one submission: chunks never move, so the GPU thread can read a
@@ -206,7 +206,7 @@ DrawPreparation::DrawPreparation(PipelineCache& pipeline_cache_)
         workers.emplace_back([this, i](std::stop_token stop) { WorkerLoop(stop, i); });
     }
     std::printf("GPU: draw preparation workers: %u (+1 scanner, %u hardware threads)\n",
-                worker_count, MzThreads::Available());
+                worker_count, MtThreads::Available());
 }
 
 DrawPreparation::~DrawPreparation() {
@@ -298,7 +298,7 @@ const PreparedDraw* DrawPreparation::NextDraw() {
         return nullptr;
     }
     const PreparedDraw* draw = &current->draws[current_draw++];
-    if (MzToggle::Disabled(MzToggle::DrawPreparation)) {
+    if (MtToggle::Disabled(MtToggle::DrawPreparation)) {
         return nullptr;
     }
     return draw;
@@ -326,7 +326,7 @@ void DrawPreparation::Collect() {
 
 void DrawPreparation::ScannerLoop(std::stop_token stop) {
     Common::SetCurrentThreadName("minustwo:DrawScan");
-    MzThreads::MakeBackground();
+    MtThreads::MakeBackground();
     std::unique_ptr<AmdGpu::Regs> regs;
     u64 checksum = 0;
     u64 next_seq = 0;
@@ -380,7 +380,7 @@ void DrawPreparation::ScannerLoop(std::stop_token stop) {
 
 void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
     Common::SetCurrentThreadName(("minustwo:DrawPrep" + std::to_string(index)).c_str());
-    MzThreads::MakeBackground();
+    MtThreads::MakeBackground();
     auto regs = std::make_unique<AmdGpu::Regs>();
     constexpr u64 NoPosition = ~0ull;
     u64 position = NoPosition; ///< `regs` holds the state at the start of this buffer
@@ -485,7 +485,7 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
 
 void DrawPreparation::Count(bool was_used) {
     ++(was_used ? used : unused);
-    static const bool stats = std::getenv("MZ_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("MT_FRAME_STATS") != nullptr;
     // The clock is read every 1024 draws: per draw it was 8% of the GPU thread.
     if (!stats || ((used + unused) & 1023) != 0) {
         return;

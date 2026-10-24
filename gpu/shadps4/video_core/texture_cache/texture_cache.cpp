@@ -5,7 +5,7 @@
 #include <xxhash.h>
 #include "video_core/amdgpu/liverpool.h"
 
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -138,7 +138,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                 }
             }
         }
-        MzStats::Timer readback_timer{MzStats::t_readback_wait};
+        MtStats::Timer readback_timer{MtStats::t_readback_wait};
         if (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
             ++readbacks_waited;
             waited = !scheduler.IsFree(tick);
@@ -167,7 +167,7 @@ void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     }, exact);
 }
 
-// minustwo (MZ_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
+// minustwo (MT_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
 void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& used,
                                    BindingType binding) {
     ++partial_views;
@@ -187,7 +187,7 @@ void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& us
     ++slot->count;
 }
 
-// minustwo (MZ_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
+// minustwo (MT_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
 // (held by FindImage), so it runs before ProcessDownloadImages takes readback_mutex.
 void TextureCache::ReportImageCreates() {
     const auto now = std::chrono::steady_clock::now();
@@ -429,7 +429,7 @@ void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
     scheduler.Finish();
     download.Invalidate();
     static int sequence = 0;
-    const char* dir = std::getenv("MZ_DIAG_DIR");
+    const char* dir = std::getenv("MT_DIAG_DIR");
     const char* dir_path = dir && *dir ? dir : "out/diag";
     std::error_code ec;
     std::filesystem::create_directories(dir_path, ec);
@@ -779,12 +779,12 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             const std::string_view numeric = vk::componentNumericFormat(format, 0);
             return numeric == "UINT" || numeric == "SINT";
         };
-        // Launcher: Performance, "Fast screen effects" (MZ_PARTIAL_HEIGHT_VIEWS=0 turns it off).
+        // Launcher: Performance, "Fast screen effects" (MT_PARTIAL_HEIGHT_VIEWS=0 turns it off).
         static const bool partial_views_enabled = [] {
-            const char* value = std::getenv("MZ_PARTIAL_HEIGHT_VIEWS");
+            const char* value = std::getenv("MT_PARTIAL_HEIGHT_VIEWS");
             return !value || value[0] != '0';
         }();
-        if (partial_views_enabled && !MzToggle::Disabled(MzToggle::PartialHeightViews) &&
+        if (partial_views_enabled && !MtToggle::Disabled(MtToggle::PartialHeightViews) &&
             (binding == BindingType::Texture || binding == BindingType::Storage) && native_reads &&
             a.pixel_format != b.pixel_format && is_integer(a.pixel_format) &&
             lhs_block_size == rhs_block_size && a.pitch == b.pitch && a.tile_mode == b.tile_mode &&
@@ -1070,7 +1070,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         cached.format == info.pixel_format && cached.type == info.type &&
         cached.exact_fmt == exact_fmt && cached.binding == desc.type &&
         cached.needs_native == desc.needs_native && cached.levels == info.resources.levels && cached.layers == info.resources.layers &&
-        !MzToggle::Disabled(MzToggle::FindImageCache)) {
+        !MtToggle::Disabled(MtToggle::FindImageCache)) {
         Image& image = slot_images[cached.image_id];
         image.tick_accessed_last = scheduler.CurrentTick();
         TouchImage(image);
@@ -1111,7 +1111,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         image_id = cache_id;
     }
 
-    // minustwo (MZ_PERF_DIAG): what was cached here, read before overlap resolution may free it.
+    // minustwo (MT_PERF_DIAG): what was cached here, read before overlap resolution may free it.
     const bool diag = Vulkan::WaitDiagnostics::Enabled();
     CreateStat created{info.guest_address, info.size.width, info.size.height, 1, info.pixel_format,
                        desc.type, image_ids.empty() ? "nothing cached" : "overlap unresolved"};
@@ -1265,7 +1265,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc, Vi
     if (desc.type == BindingType::Storage) {
         PublishAliasWrite(image_id);
     }
-    if (memo && !MzToggle::Disabled(MzToggle::TextureViewMemo)) {
+    if (memo && !MtToggle::Disabled(MtToggle::TextureViewMemo)) {
         if (memo->image_id == image_id && memo->backing == image.backing && memo->view_id) {
             return slot_image_views[memo->view_id];
         }
@@ -1353,7 +1353,7 @@ void TextureCache::RefreshImage(Image& image) {
     }
     ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                      ReadbackSource::ImageRefresh);
-    MzStats::Timer timer{MzStats::t_refresh};
+    MtStats::Timer timer{MtStats::t_refresh};
 
     RENDERER_TRACE;
     TRACE_HINT(fmt::format("{:x}:{:x}", image.info.guest_address, image.info.guest_size));
@@ -1383,7 +1383,7 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
-    MzStats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
+    MtStats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
         const u32 width = std::max(image.info.size.width >> m, 1u);
@@ -1456,7 +1456,7 @@ vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
 }
 
 void TextureCache::RegisterImage(ImageId image_id) {
-    MzStats::images_registered.fetch_add(1, std::memory_order_relaxed);
+    MtStats::images_registered.fetch_add(1, std::memory_order_relaxed);
     Image& image = slot_images[image_id];
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
@@ -1624,7 +1624,7 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
 }
 
 void TextureCache::GarbageCollectImages() {
-    MzStats::Timer gc_timer{MzStats::t_gc};
+    MtStats::Timer gc_timer{MtStats::t_gc};
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
         // minustwo: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
@@ -1632,9 +1632,9 @@ void TextureCache::GarbageCollectImages() {
         // ~1 GB after its 8 GB system reserve: usage stayed above the critical mark, so the
         // collector evicted images used two or three frames ago on every submission and wrote
         // GPU-written ones back. Compare with the driver's current budget instead.
-        // MZ_GC_BUDGET_MB=N: this rule with a fixed budget on any GPU (tests on a desktop).
+        // MT_GC_BUDGET_MB=N: this rule with a fixed budget on any GPU (tests on a desktop).
         static const u64 forced_budget = [] {
-            const char* env = std::getenv("MZ_GC_BUDGET_MB");
+            const char* env = std::getenv("MT_GC_BUDGET_MB");
             return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
         }();
         if (instance.IsIntegrated() || forced_budget) {
@@ -1711,7 +1711,7 @@ void TextureCache::GarbageCollectImages() {
         configure(true);
         lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
-    // minustwo: evictions under memory pressure, at most every 5 s (MZ_FRAME_STATS or not).
+    // minustwo: evictions under memory pressure, at most every 5 s (MT_FRAME_STATS or not).
     if (pressured || gc_downloads != 0) {
         const auto now = std::chrono::steady_clock::now();
         if (now - gc_report_time >= std::chrono::seconds(5)) {

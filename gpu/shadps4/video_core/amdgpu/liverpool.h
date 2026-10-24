@@ -116,7 +116,7 @@ public:
     /// work_retired). sceGnmSubmitDone does not block the guest when this is true.
     bool IsGpuIdle() const {
         static const bool use_retired = [] {
-            const char* env = std::getenv("MZ_WORK_RETIRED");
+            const char* env = std::getenv("MT_WORK_RETIRED");
             return !(env && env[0] == '0');
         }();
         return num_submits == 0 && (work_retired || !use_retired);

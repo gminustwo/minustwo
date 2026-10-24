@@ -1,16 +1,16 @@
-/* MZ_PAD_MAP / MZ_KEY_MAP parsing, mouse sources and mouse look (src/runtime_pad.c). */
+/* MT_PAD_MAP / MT_KEY_MAP parsing, mouse sources and mouse look (src/runtime_pad.c). */
 #define _GNU_SOURCE
 #include <assert.h>
 #include "../src/runtime_pad.c"
 
-int mzgpu_overlay_captures_input(void) { return 0; }
-int mzgpu_vibration_percent(void) { return 100; }
+int mtgpu_overlay_captures_input(void) { return 0; }
+int mtgpu_vibration_percent(void) { return 100; }
 static int pause_keys;
-void mzgpu_mouse_pause_key(void) { ++pause_keys; }
+void mtgpu_mouse_pause_key(void) { ++pause_keys; }
 static int look_style;
-int mzgpu_mouse_aim_style(void) { return look_style; }
+int mtgpu_mouse_aim_style(void) { return look_style; }
 static int look_sensitivity=100;
-int mzgpu_mouse_aim_sensitivity(void) { return look_sensitivity; }
+int mtgpu_mouse_aim_sensitivity(void) { return look_sensitivity; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;

@@ -12,7 +12,7 @@
 #pragma once
 
 #include <cstdlib>
-#include "mz_threads.h"
+#include "mt_threads.h"
 
 #include <array>
 #include <atomic>
@@ -167,12 +167,12 @@ private:
             u64 available = published.load(std::memory_order_acquire);
             if (available == at) {
                 // With few hardware threads (Steam Deck: 8) a long spin takes time from the
-                // game's own threads. MZ_PIPE_SPIN_US overrides.
+                // game's own threads. MT_PIPE_SPIN_US overrides.
                 static const auto spin_time = std::chrono::microseconds([] {
-                    if (const char* env = std::getenv("MZ_PIPE_SPIN_US")) {
+                    if (const char* env = std::getenv("MT_PIPE_SPIN_US")) {
                         return std::max(0, std::atoi(env));
                     }
-                    return MzThreads::Available() >= 12 ? 200 : 50;
+                    return MtThreads::Available() >= 12 ? 200 : 50;
                 }());
                 const auto spin_until = std::chrono::steady_clock::now() + spin_time;
                 for (u32 spins = 1; available == at; ++spins) {

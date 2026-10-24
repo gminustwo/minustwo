@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "common/debug.h"
 #include "common/types.h"
 #include "core/emulator_settings.h"
@@ -106,7 +106,7 @@ public:
                                // fault handler before the store, and the draw that uses the
                                // data reaches this thread through the submission queue lock.
                                if (!is_written &&
-                                   !MzToggle::Disabled(MzToggle::LockFreeUploadCheck) &&
+                                   !MtToggle::Disabled(MtToggle::LockFreeUploadCheck) &&
                                    !manager->template IsRegionModified<Type::CPU>(offset, size)) {
                                    return;
                                }

@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "../gpu/shim/mz_png.h"
+#include "../gpu/shim/mt_png.h"
 
 // 2x2 RGB: red, green / blue, white.
 static const unsigned char kPng[] = {
@@ -15,8 +15,8 @@ static const unsigned char kPng[] = {
     0xd9, 0x68, 0x8b, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
 
 int main() {
-    MzPng::Image image;
-    assert(MzPng::DecodeRgba(kPng, sizeof(kPng), image));
+    MtPng::Image image;
+    assert(MtPng::DecodeRgba(kPng, sizeof(kPng), image));
     assert(image.width == 2 && image.height == 2 && image.rgba.size() == 16);
     const unsigned char expected[16] = {255, 0, 0, 255, 0, 255, 0, 255,
                                         0, 0, 255, 255, 255, 255, 255, 255};
@@ -25,13 +25,13 @@ int main() {
     }
 
     // Truncated data and data that is not a PNG fail and leave the image empty.
-    MzPng::Image bad;
-    assert(!MzPng::DecodeRgba(kPng, 40, bad) && bad.rgba.empty());
+    MtPng::Image bad;
+    assert(!MtPng::DecodeRgba(kPng, 40, bad) && bad.rgba.empty());
     const unsigned char junk[64] = {1, 2, 3};
-    assert(!MzPng::DecodeRgba(junk, sizeof(junk), bad) && bad.rgba.empty());
-    assert(!MzPng::DecodeRgba(nullptr, 0, bad));
+    assert(!MtPng::DecodeRgba(junk, sizeof(junk), bad) && bad.rgba.empty());
+    assert(!MtPng::DecodeRgba(nullptr, 0, bad));
 
-    assert(!MzPng::LoadRgba("does/not/exist/icon0.png", bad) && bad.rgba.empty());
+    assert(!MtPng::LoadRgba("does/not/exist/icon0.png", bad) && bad.rgba.empty());
     std::puts("png-decode-test: ok");
     return 0;
 }

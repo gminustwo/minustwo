@@ -1,7 +1,7 @@
 /* Offline AppContent provider for the configured base-game profile.
  * No package mounting or downloads. Add-ons: GODZILLA's are unlocks whose content is in the base
  * game (pre-order bonuses, early unlocks, diorama figure sets), so every add-on the game asks
- * about is reported as owned, without extra data; MZ_UNLOCK_ADDONS=0 reports none instead. */
+ * about is reported as owned, without extra data; MT_UNLOCK_ADDONS=0 reports none instead. */
 #include "runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,7 +79,7 @@ _Static_assert(sizeof(AddonInfo)==24,"OrbisAppContentAddcontInfo layout");
 static char addon_labels[64][LABEL_SIZE];
 static unsigned addon_count;
 static int addons_unlocked(void) {
-    const char *v=getenv("MZ_UNLOCK_ADDONS");
+    const char *v=getenv("MT_UNLOCK_ADDONS");
     return !v || strcmp(v,"0")!=0;
 }
 static void addon_remember(const char *label) {

@@ -33,7 +33,7 @@ PowerShell at the repository root:
 
 ```powershell
 python -m pip install pillow iced-x86==1.21.0
-python launcher/mz_launcher_win.py
+python launcher/mt_launcher_win.py
 ```
 
 Choose the game folder in the launcher. For platform-specific tests, see
@@ -65,7 +65,7 @@ See the [feature availability table](https://github.com/FelipePrado0/MinusTwo#fe
 for differences between published packages and current source builds, including Discord Rich Presence.
 
 The launcher texts are written in English with the Russian beside them; the other languages
-are in `launcher/mz_lang.py` (one list per language in the order of `KEYS`; a missing or
+are in `launcher/mt_lang.py` (one list per language in the order of `KEYS`; a missing or
 empty text falls back to English). The icon (`launcher/minustwo.ico`/`.png`) is made from the
 SP monogram (`packaging/icon/monogram.png`) by `packaging/windows/make_icon.py` and built into `MinusTwo.exe`, `minustwo.exe` (the game
 window) and `minustwo-gpu-capabilities.exe`.
@@ -77,17 +77,17 @@ window) and `minustwo-gpu-capabilities.exe`.
 | `mov rax, fs:[0]` rewritten to `gs:[0]`, GS base set with `arch_prctl` | GS is the TEB and cannot move. The loader rewrites the displacement to `gs:[0x1480 + 8*slot]` (the TEB's `TlsSlots[slot]`, same 9-byte instruction) and each guest thread keeps its TCB in that TLS slot. The slot is claimed first thing in `main` (Vulkan drivers take many). |
 | One memfd for direct + flexible memory, `mmap(MAP_FIXED)` views | A pagefile-backed section; the PS4 range 64 GiB–1 TiB is reserved as one placeholder and views replace placeholders (`VirtualAlloc2`/`MapViewOfFile3`, as in shadPS4). Partial unmaps split views and restore page protections (GPU tracking). |
 | `-no-pie`, heap below 1 TiB | `--disable-high-entropy-va`: heaps and thread stacks stay low and out of the PS4 range. |
-| SIGSEGV handler, `sigsetjmp` recovery | Vectored exception handler; `mz_setjmp`/`mz_longjmp` (`src/compat_win.c`) restore all Win64 callee-saved registers without SEH unwinding (guest frames have no unwind data; clang's `__builtin_longjmp` restores a wrong frame pointer on Win64). |
+| SIGSEGV handler, `sigsetjmp` recovery | Vectored exception handler; `mt_setjmp`/`mt_longjmp` (`src/compat_win.c`) restore all Win64 callee-saved registers without SEH unwinding (guest frames have no unwind data; clang's `__builtin_longjmp` restores a wrong frame pointer on Win64). |
 | Guest thread stacks from `runtime_low_map` | Windows allocates them, fully committed (`pthread_attr_setstacksize`): guest code has no stack probes and would skip the guard page. The main thread stack is 16 MiB committed. |
 | glibc `nanosleep`, monotonic condition variables | High-resolution waitable timers (`compat_sleep_ns`; winpthreads' sleep rounds to 15.6 ms); semaphore deadlines use `CLOCK_REALTIME` (winpthreads rejects monotonic condition variables). |
-| `libmzgpu.so` | `libmzgpu.a`, linked into `minustwo.exe` by CMake (`gpu/CMakeLists.txt`), with a manifest for UTF-8 paths and long paths. |
-| `execlp bash run.sh` (in-game restart) | `run.py` puts its command line in `MZ_RESTART_COMMAND`; the new launch waits for the old process (`--after PID`). The launcher keeps the game in a job object. |
+| `libmtgpu.so` | `libmtgpu.a`, linked into `minustwo.exe` by CMake (`gpu/CMakeLists.txt`), with a manifest for UTF-8 paths and long paths. |
+| `execlp bash run.sh` (in-game restart) | `run.py` puts its command line in `MT_RESTART_COMMAND`; the new launch waits for the old process (`--after PID`). The launcher keeps the game in a job object. |
 | Mod overlay with symlinks | Symlinks when allowed (Developer Mode), else junctions for folders and hard links for files. On a network share (SMB), which refuses junctions too, folders are mirrored with hard links so the game still reads real files through the view. |
 
-Diagnostics added on the way: `MZ_FRAME_DUMP_TRIGGER=<file>` writes the guest display buffer
-and the presented image of the next frame to `MZ_DUMP_DIR` (raw 32-bit pixels), which also
+Diagnostics added on the way: `MT_FRAME_DUMP_TRIGGER=<file>` writes the guest display buffer
+and the presented image of the next frame to `MT_DUMP_DIR` (raw 32-bit pixels), which also
 works for menus and movies.
 
 Linux-specific features include watchdog/`--timeout` thread dumps (Linux signals), userfaultfd
-tracking (`MZ_UFFD`), MangoHud and PGO (GCC flags). Many Python and C/C++ tests run on Windows;
+tracking (`MT_UFFD`), MangoHud and PGO (GCC flags). Many Python and C/C++ tests run on Windows;
 some tests still require Linux APIs. See the root README and `gpu/CMakeLists.txt` for test commands.

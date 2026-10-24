@@ -3,7 +3,7 @@
  * Cinema B) and from the console's system font set.
  *
  * The PS4 system fonts (SST) are not part of the game, so a system font set opens host fonts
- * instead: MZ_SYSTEM_FONT (one path or several separated by ';') when set, otherwise Windows' UI
+ * instead: MT_SYSTEM_FONT (one path or several separated by ';') when set, otherwise Windows' UI
  * and Japanese fonts. Every face of a font is tried in order for a missing glyph.
  *
  * Library, renderer and font handles are opaque numbers, never host pointers; one lock serializes
@@ -56,8 +56,8 @@ static Font fonts[MAX_FONTS];
 static uint32_t libraries, renderers;
 static size_t glyphs_rendered, glyphs_missing;
 static int trace=-1;
-/* MZ_FONT_TRACE=1: the scale, weight and first glyphs of every font as the game sets them. */
-static int tracing(void) { if (trace<0) { const char *v=getenv("MZ_FONT_TRACE"); trace=v && *v && *v!='0'; } return trace; }
+/* MT_FONT_TRACE=1: the scale, weight and first glyphs of every font as the game sets them. */
+static int tracing(void) { if (trace<0) { const char *v=getenv("MT_FONT_TRACE"); trace=v && *v && *v!='0'; } return trace; }
 
 static int ft_ready(void) {
     if (!ft && FT_Init_FreeType(&ft)) { ft=NULL; fputs("Runtime: FreeType initialization failed\n",stderr); }
@@ -220,14 +220,14 @@ static ABI int32_t open_file(uint64_t library, const char *path, uint32_t mode, 
     if (!result) printf("Runtime: font %llx opened from %s\n",(unsigned long long)*out,path);
     return result;
 }
-/* A system font set: MZ_SYSTEM_FONT, else Windows' UI font for Latin text followed by its
+/* A system font set: MT_SYSTEM_FONT, else Windows' UI font for Latin text followed by its
  * Japanese fonts (Japanese menus, katakana names). */
 static ABI int32_t open_set(uint64_t library, uint32_t type, uint32_t mode, const unsigned char *detail, uint64_t *out) {
     (void)mode; (void)detail;
     if (!library_valid(library)) return ERR_INVALID_LIBRARY;
     if (!out) return ERR_INVALID_PARAMETER;
     char paths[2048];
-    const char *chosen=getenv("MZ_SYSTEM_FONT");
+    const char *chosen=getenv("MT_SYSTEM_FONT");
 #ifdef _WIN32
     const char *windir=getenv("WINDIR");
     if (!windir || !*windir) windir="C:\\Windows";
@@ -256,7 +256,7 @@ static ABI int32_t open_set(uint64_t library, uint32_t type, uint32_t mode, cons
     if (!faces) font_free(f);
     else snprintf(f->name,sizeof(f->name),"system set 0x%08x (%s)",type,f->faces[0]->family_name ? f->faces[0]->family_name : "?");
     pthread_mutex_unlock(&lock);
-    if (!faces) { printf("Runtime: font set 0x%08x: no host font found (set MZ_SYSTEM_FONT)\n",type); return ERR_FONT_OPEN_FAILED; }
+    if (!faces) { printf("Runtime: font set 0x%08x: no host font found (set MT_SYSTEM_FONT)\n",type); return ERR_FONT_OPEN_FAILED; }
     printf("Runtime: font %llx is %s, %d faces\n",(unsigned long long)*out,f->name,faces);
     return 0;
 }

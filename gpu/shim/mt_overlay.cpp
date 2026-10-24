@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "mz_overlay.h"
-#include "mz_ui_font.h"
+#include "mt_overlay.h"
+#include "mt_ui_font.h"
 
 #include <algorithm>
 #include <atomic>
@@ -18,15 +18,15 @@
 #include <vector>
 
 #include <SDL3/SDL.h>
-#include "mz_settings.h"
-#include "mz_graphics.h"
-#include "mz_perf_stats.h"
+#include "mt_settings.h"
+#include "mt_graphics.h"
+#include "mt_perf_stats.h"
 
 extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
 #include "common/elf_info.h"
 #include "imgui.h"
 #include "imgui_internal.h" // RegisterUserTexture (save pictures)
-#include "../mzgpu.h"       // mzgpu_toast_trophy, mzgpu_trophy_setup
+#include "../mtgpu.h"       // mtgpu_toast_trophy, mtgpu_trophy_setup
 #include "imgui_impl_vulkan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -37,31 +37,31 @@ extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends
 #ifdef _WIN32
 asm(".section .rdata,\"dr\"\n"
     ".balign 16\n"
-    ".global mz_font_ttf\n"
-    "mz_font_ttf:\n"
-    ".incbin \"" MZ_FONT_PATH "\"\n"
-    ".global mz_font_ttf_end\n"
-    "mz_font_ttf_end:\n"
+    ".global mt_font_ttf\n"
+    "mt_font_ttf:\n"
+    ".incbin \"" MT_FONT_PATH "\"\n"
+    ".global mt_font_ttf_end\n"
+    "mt_font_ttf_end:\n"
     ".text\n");
 #else
 asm(".section .rodata\n"
     ".balign 16\n"
-    ".hidden mz_font_ttf\n"
-    ".global mz_font_ttf\n"
-    "mz_font_ttf:\n"
-    ".incbin \"" MZ_FONT_PATH "\"\n"
-    ".hidden mz_font_ttf_end\n"
-    ".global mz_font_ttf_end\n"
-    "mz_font_ttf_end:\n"
+    ".hidden mt_font_ttf\n"
+    ".global mt_font_ttf\n"
+    "mt_font_ttf:\n"
+    ".incbin \"" MT_FONT_PATH "\"\n"
+    ".hidden mt_font_ttf_end\n"
+    ".global mt_font_ttf_end\n"
+    "mt_font_ttf_end:\n"
     ".previous\n");
 #endif
-extern "C" const unsigned char mz_font_ttf[];
-extern "C" const unsigned char mz_font_ttf_end[];
+extern "C" const unsigned char mt_font_ttf[];
+extern "C" const unsigned char mt_font_ttf_end[];
 
-namespace MzOverlay {
+namespace MtOverlay {
 
 namespace {
-using MzUi::Tr;
+using MtUi::Tr;
 
 std::mutex imgui_mutex; // the ImGui context: window thread (input) and present thread
 bool initialized = false;
@@ -92,7 +92,7 @@ int choice_index = 0;
 std::atomic<int> choice_result{-1}; // -1 open, -2 cancelled, else the chosen index
 // Save pictures: decoded by BeginChoice, made textures on the present thread (null = none).
 // Closed lists' textures wait in choice_retired until the backend has destroyed them.
-std::vector<MzPng::Image> choice_pictures;
+std::vector<MtPng::Image> choice_pictures;
 std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 float base_scale = 1.0f;
@@ -127,7 +127,7 @@ void SetOpen(bool value) {
     ImGui::GetIO().MouseDrawCursor = value;
     if (!value && dirty) {
         dirty = false;
-        MzSettings::Save();
+        MtSettings::Save();
     }
 }
 
@@ -181,11 +181,11 @@ ImGuiKey KeyFromGamepad(u8 button) {
 void UiText(const char* text) { ImGui::TextUnformatted(Tr(text)); }
 void DisabledText(const char* text) { ImGui::TextDisabled("%s", Tr(text)); }
 // Text in the heading font (DejaVu Sans for translated text, which Impact has no glyphs for).
-void PushHeading(float size) { ImGui::PushFont(MzUi::chinese ? nullptr : heading_font, size); }
+void PushHeading(float size) { ImGui::PushFont(MtUi::chinese ? nullptr : heading_font, size); }
 
 std::string Upper(const char* text) {
     std::string upper = text;
-    if (!MzUi::chinese) {
+    if (!MtUi::chinese) {
         for (char& c : upper) c = char(std::toupper(static_cast<unsigned char>(c)));
     }
     return upper;
@@ -242,10 +242,10 @@ void Choice(const char* label, std::atomic<int>& target, const char* const* labe
     }
 }
 
-// Controller button names in the help text follow MZ_GLYPHS (run.py sets xbox or nintendo when
+// Controller button names in the help text follow MT_GLYPHS (run.py sets xbox or nintendo when
 // the glyph feature is on); unset is PlayStation. Read once: the environment is fixed for a run.
 static const char* PadText(const char* playstation, const char* xbox, const char* nintendo) {
-    static const char* style = std::getenv("MZ_GLYPHS");
+    static const char* style = std::getenv("MT_GLYPHS");
     if (!style) return playstation;
     return !std::strcmp(style, "xbox") ? xbox : !std::strcmp(style, "nintendo") ? nintendo : playstation;
 }
@@ -312,11 +312,11 @@ void SliderRow(const char* label, std::atomic<int>& value, int lo, int hi, const
 
 const char* UpscalerLabel(int upscaler) {
     switch (upscaler) {
-    case MzSettings::UpscalerFsr3: return "FSR 3.1";
-    case MzSettings::UpscalerFsr4: return "FSR 4";
-    case MzSettings::UpscalerFsr411: return "FSR 4.1.1";
-    case MzSettings::UpscalerTaa: return "TAA";
-    case MzSettings::UpscalerDlss: return "DLSS";
+    case MtSettings::UpscalerFsr3: return "FSR 3.1";
+    case MtSettings::UpscalerFsr4: return "FSR 4";
+    case MtSettings::UpscalerFsr411: return "FSR 4.1.1";
+    case MtSettings::UpscalerTaa: return "TAA";
+    case MtSettings::UpscalerDlss: return "DLSS";
     default: return "";
     }
 }
@@ -325,8 +325,8 @@ const Vulkan::Instance* overlay_instance = nullptr; // for the overlay's measure
 
 // The performance overlay's text with the current settings (also the menu's preview).
 std::string OverlayText() {
-    namespace P = MzPerfStats;
-    const auto& s = MzSettings::Get();
+    namespace P = MtPerfStats;
+    const auto& s = MtSettings::Get();
     const unsigned items = s.overlay_items;
     if ((items & (P::Gpu | P::Cpu | P::Ram | P::Vram)) && overlay_instance) {
         P::Start(*overlay_instance);
@@ -339,8 +339,8 @@ std::string OverlayText() {
 }
 
 void ImageTab() {
-    namespace G = MzGraphics;
-    auto& s = MzSettings::Get();
+    namespace G = MtGraphics;
+    auto& s = MtSettings::Get();
     Separator("Display");
     if (BeginRows("##display")) {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
@@ -389,14 +389,14 @@ void ImageTab() {
 }
 
 void PerformanceTab() {
-    namespace G = MzGraphics;
-    auto& s = MzSettings::Get();
+    namespace G = MtGraphics;
+    auto& s = MtSettings::Get();
     Separator("Live");
     if (BeginRows("##live")) {
         static const char* const fps_labels[] = {"30", "60", "100", "120", "144", "180", "240", "Unlimited"};
         ChoiceRow("Frame rate limit", s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
                   "Caps the frame rate. GODZILLA itself runs at up to 60 frames per second.");
-        const int effective = G::EffectiveFps(s.fps_limit, MzSettings::EngineFpsNow());
+        const int effective = G::EffectiveFps(s.fps_limit, MtSettings::EngineFpsNow());
         if (s.fps_limit == 0 || effective < s.fps_limit) {
             char text[48];
             std::snprintf(text, sizeof(text), Tr("%d FPS (engine frame rate)"), effective);
@@ -447,7 +447,7 @@ void PerformanceTab() {
 
 // The controller and the mouse (the launcher's Controls page sets the same, and the keys).
 void ControlsTab() {
-    auto& s = MzSettings::Get();
+    auto& s = MtSettings::Get();
     Separator("Controller");
     if (BeginRows("##controller")) {
         SliderRow("Vibration", s.vibration, 0, 100, "%d%%",
@@ -474,8 +474,8 @@ void ControlsTab() {
 }
 
 void OverlayTab() {
-    namespace P = MzPerfStats;
-    auto& s = MzSettings::Get();
+    namespace P = MtPerfStats;
+    auto& s = MtSettings::Get();
     if (BeginRows("##overlay_on")) {
         CheckRow("Show overlay", s.show_fps, "The performance overlay in a corner of the screen.");
         ImGui::EndTable();
@@ -535,7 +535,7 @@ void OverlayTab() {
 
 // Startup options changed since this launch (applied by "Apply and restart").
 int RestartChanges() {
-    const auto& s = MzSettings::Get();
+    const auto& s = MtSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) +
            (s.monitor != s.startup_monitor) + (s.hdr != s.startup_hdr) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
@@ -543,7 +543,7 @@ int RestartChanges() {
 }
 
 void Menu() {
-    auto& s = MzSettings::Get();
+    auto& s = MtSettings::Get();
     const float u = base_scale;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
@@ -607,7 +607,7 @@ void Menu() {
     static const char* const tabs[kMenuTabs] = {"Image", "Performance", "Controls", "Overlay"};
     ImGui::Dummy(ImVec2(0.0f, 10.0f * u));
     const ImVec2 strip = ImGui::GetCursorScreenPos();
-    ImGui::PushFont(MzUi::chinese ? nullptr : nav_font, 19.0f);
+    ImGui::PushFont(MtUi::chinese ? nullptr : nav_font, 19.0f);
     const float tab_h = ImGui::GetTextLineHeight();
     float x = strip.x;
     ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true); // the pad and the keys move between the settings
@@ -661,12 +661,12 @@ void Menu() {
         ImGui::PushStyleColor(ImGuiCol_Button, Theme::Accent);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::AccentHi);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Accent);
-        ImGui::BeginDisabled(!std::getenv("MZ_RESTART_COMMAND"));
+        ImGui::BeginDisabled(!std::getenv("MT_RESTART_COMMAND"));
         if (Button("Apply and restart")) {
             // The new launch confirms the options once the game shows; run.py restores the
             // previous ones if it never does (restart_unconfirmed).
             s.restart_unconfirmed = true;
-            MzSettings::Save();
+            MtSettings::Save();
             runtime_restart();
         }
         ImGui::EndDisabled();
@@ -812,7 +812,7 @@ void LoadingScreen() {
 }
 
 void FpsCounter() {
-    const auto& s = MzSettings::Get();
+    const auto& s = MtSettings::Get();
     const std::string text = OverlayText();
     if (text.empty()) {
         return;
@@ -850,7 +850,7 @@ void BackgroundLoading() {
     ImGui::End();
 }
 
-// Trophy texts and list (set once by mzgpu_trophy_setup from the runtime, which reads them from the
+// Trophy texts and list (set once by mtgpu_trophy_setup from the runtime, which reads them from the
 // user's trophy_texts.txt, or GODZILLA's list built in): the labels of the notice and of the in-game
 // trophy window.
 struct TrophyLabels {
@@ -862,7 +862,7 @@ struct TrophyLabels {
 struct TrophyRow {
     int id = 0;
     std::string name, detail;
-    MzPng::Image image;         // decoded icon, waiting for its texture
+    MtPng::Image image;         // decoded icon, waiting for its texture
     ImTextureData* tex = nullptr; // render thread, lives for the whole run
 };
 TrophyLabels trophy_labels;                      // imgui_mutex
@@ -873,12 +873,12 @@ std::atomic<bool> trophy_view{false};            // the in-game trophy window is
 int trophy_filter = 0;                           // 0 all, 1 unlocked, 2 locked
 float trophy_scroll = 0.0f;                      // pixels
 
-// Trophy notices: queued by mzgpu_toast/mzgpu_toast_icon (any thread), drawn by Render in the
+// Trophy notices: queued by mtgpu_toast/mtgpu_toast_icon (any thread), drawn by Render in the
 // top-right corner, below the FPS counter.
 struct Toast {
     std::string text, detail;     // title (the trophy's name) and the line under it (its description)
     std::chrono::steady_clock::time_point start, until;
-    MzPng::Image image;         // decoded icon, waiting for its texture (empty: none)
+    MtPng::Image image;         // decoded icon, waiting for its texture (empty: none)
     ImTextureData* tex = nullptr; // render thread only
 };
 std::mutex toast_mutex;
@@ -1321,9 +1321,9 @@ void Notice(float& bottom) {
     CornerNote("##notice", bottom, 0.6f, [&] { UiText(text.c_str()); });
 }
 
-// Launcher: "Shader notes in the corner" (MZ_SHADER_NOTES), off by default.
+// Launcher: "Shader notes in the corner" (MT_SHADER_NOTES), off by default.
 const bool shader_notes = [] {
-    const char* env = std::getenv("MZ_SHADER_NOTES");
+    const char* env = std::getenv("MT_SHADER_NOTES");
     return env && *env != '0';
 }();
 
@@ -1372,7 +1372,7 @@ void ShowNotice(const std::string& text, int milliseconds) {
 }
 
 void CycleEngineFps() {
-    const int fps = MzSettings::CycleEngineFps();
+    const int fps = MtSettings::CycleEngineFps();
     ShowNotice(fps ? std::string(Tr("Engine frame rate: ")) + std::to_string(fps) + Tr(" FPS")
                    : std::string(Tr("Engine frame rate: 60 FPS only (no frame rate patch for this game build)")));
 }
@@ -1427,7 +1427,7 @@ ImFont* SystemFont(ImFontAtlas* atlas, const char* file) {
         return nullptr;
     }
     const auto path = std::filesystem::path(directory) / "Fonts" / file;
-    if (!MzUi::UsableFont(path)) {
+    if (!MtUi::UsableFont(path)) {
         return nullptr;
     }
     const auto utf8 = path.u8string();
@@ -1461,11 +1461,11 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
 
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(mz_font_ttf),
-                                   int(mz_font_ttf_end - mz_font_ttf), 18.0f, &font_config);
-    const char* ui_language = std::getenv("MZ_UI_LANGUAGE");
-    if (!MzUi::ConfigureChineseFont(io.Fonts, ui_language ? ui_language : "", MzUi::FindChineseFont()) &&
-        MzUi::WantsChinese(ui_language ? ui_language : "")) {
+    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(mt_font_ttf),
+                                   int(mt_font_ttf_end - mt_font_ttf), 18.0f, &font_config);
+    const char* ui_language = std::getenv("MT_UI_LANGUAGE");
+    if (!MtUi::ConfigureChineseFont(io.Fonts, ui_language ? ui_language : "", MtUi::FindChineseFont()) &&
+        MtUi::WantsChinese(ui_language ? ui_language : "")) {
         std::printf("Overlay: no usable system CJK font; keeping English menu text\n");
     }
     heading_font = SystemFont(io.Fonts, "impact.ttf");
@@ -1543,7 +1543,7 @@ void UpdateChoiceTextures() {
     if (!choice_pictures.empty()) {
         choice_textures.assign(choice_pictures.size(), nullptr);
         for (size_t i = 0; i < choice_pictures.size(); ++i) {
-            const MzPng::Image& picture = choice_pictures[i];
+            const MtPng::Image& picture = choice_pictures[i];
             if (picture.rgba.empty()) {
                 continue;
             }
@@ -1613,7 +1613,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
         static const bool capture_key = [] {
-            const char* env = std::getenv("MZ_FRAME_CAPTURE_KEY");
+            const char* env = std::getenv("MT_FRAME_CAPTURE_KEY");
             return env && *env == '1';
         }();
         if (event.key.key == SDLK_F9) {
@@ -1742,12 +1742,12 @@ bool HandleEvent(const SDL_Event& event) {
 // seconds of frames after loading (run.py restores the previous ones otherwise).
 void ConfirmRestart() {
     static u32 frames = 0;
-    auto& s = MzSettings::Get();
+    auto& s = MtSettings::Get();
     if (!s.restart_unconfirmed || loading || ++frames < 600) {
         return;
     }
     s.restart_unconfirmed = false;
-    MzSettings::Save();
+    MtSettings::Save();
     std::puts("Settings: graphics options confirmed after restart");
 }
 
@@ -1780,11 +1780,11 @@ void SetLoading(bool active, u32 done, u32 total) {
     loading = active;
 }
 
-// MZ_MENU_AT=<seconds>: the menu opens that long after the first frame and shows the next tab
+// MT_MENU_AT=<seconds>: the menu opens that long after the first frame and shows the next tab
 // every 4 seconds (pictures of the menu in test runs, with nothing pressed).
 void OpenMenuForTest() {
     static const float menu_at = [] {
-        const char* env = std::getenv("MZ_MENU_AT");
+        const char* env = std::getenv("MT_MENU_AT");
         return env ? float(std::atof(env)) : 0.0f;
     }();
     if (menu_at <= 0.0f) {
@@ -1798,7 +1798,7 @@ void OpenMenuForTest() {
         if (initialized) {
             shown_tab = int(t / 4.0f);
             SetOpen(true);
-            MzSettings::Get().menu_tab = shown_tab % kMenuTabs;
+            MtSettings::Get().menu_tab = shown_tab % kMenuTabs;
         }
     }
 }
@@ -1806,7 +1806,7 @@ void OpenMenuForTest() {
 // Asked by the presenter every frame: the overlay draws only when this is true.
 bool Visible() {
     OpenMenuForTest();
-    const auto& s = MzSettings::Get();
+    const auto& s = MtSettings::Get();
     return initialized && (loading || background_total || PrefetchActive() || CompileNoteActive() ||
                            menu_open || text_entry_active || choice_active || choice_retiring ||
                            toast_active || trophy_view || s.show_fps || NoticeActive());
@@ -1817,8 +1817,8 @@ bool CapturesInput() {
 }
 
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
-                 std::vector<MzPng::Image> pictures, int focus,
-                 const std::string& preview_label, MzPng::Image preview) {
+                 std::vector<MtPng::Image> pictures, int focus,
+                 const std::string& preview_label, MtPng::Image preview) {
     std::scoped_lock lock{imgui_mutex};
     RetireChoiceTextures();
     choice_pictures = std::move(pictures);
@@ -1879,7 +1879,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (menu_open) {
         Menu();
     }
-    if (MzSettings::Get().show_fps && !menu_open) {
+    if (MtSettings::Get().show_fps && !menu_open) {
         FpsCounter();
     }
     float corner = ImGui::GetMainViewport()->WorkPos.y + ImGui::GetMainViewport()->WorkSize.y -
@@ -1930,21 +1930,21 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     cmdbuf.endRendering();
 }
 
-} // namespace MzOverlay
+} // namespace MtOverlay
 
 // Called by the runtime (src/runtime_services.c) when the game unlocks a trophy. title: its name,
 // detail: its description (may be empty), png: the trophy's icon (the PNG bytes from trophy00.trp)
 // or null for the drawn medal.
-extern "C" void mzgpu_toast_trophy(const char* title, const char* detail, const unsigned char* png,
+extern "C" void mtgpu_toast_trophy(const char* title, const char* detail, const unsigned char* png,
                                      uint64_t png_size) {
     if (!title || !title[0]) {
         return;
     }
-    MzPng::Image image;
+    MtPng::Image image;
     if (png && png_size) {
-        MzPng::DecodeRgba(png, size_t(png_size), image); // empty on failure: the medal is drawn
+        MtPng::DecodeRgba(png, size_t(png_size), image); // empty on failure: the medal is drawn
     }
-    using namespace MzOverlay;
+    using namespace MtOverlay;
     std::scoped_lock lock{toast_mutex};
     const auto now = std::chrono::steady_clock::now();
     if (toasts.size() >= 6) {
@@ -1955,19 +1955,19 @@ extern "C" void mzgpu_toast_trophy(const char* title, const char* detail, const 
     toast_active = true;
 }
 
-extern "C" void mzgpu_toast_icon(const char* text, const unsigned char* png, uint64_t png_size) {
-    mzgpu_toast_trophy(text, nullptr, png, png_size);
+extern "C" void mtgpu_toast_icon(const char* text, const unsigned char* png, uint64_t png_size) {
+    mtgpu_toast_trophy(text, nullptr, png, png_size);
 }
 
-extern "C" void mzgpu_toast(const char* text) {
-    mzgpu_toast_trophy(text, nullptr, nullptr, 0);
+extern "C" void mtgpu_toast(const char* text) {
+    mtgpu_toast_trophy(text, nullptr, nullptr, 0);
 }
 
 // Called once by the runtime (src/runtime_services.c) with the trophy texts: the in-game list
 // (F8 / R3+R2) and the notice labels. The icons are decoded on a worker thread; unlocked is read live.
-extern "C" void mzgpu_trophy_setup(const MzGpuTrophyLabels* labels, const MzGpuTrophyInfo* items, int count,
+extern "C" void mtgpu_trophy_setup(const MtGpuTrophyLabels* labels, const MtGpuTrophyInfo* items, int count,
                                      const volatile uint32_t* unlocked) {
-    using namespace MzOverlay;
+    using namespace MtOverlay;
     if (!items || count <= 0 || trophy_started.exchange(true)) {
         return;
     }
@@ -2008,7 +2008,7 @@ extern "C" void mzgpu_trophy_setup(const MzGpuTrophyLabels* labels, const MzGpuT
             row.name = std::move(item.name);
             row.detail = std::move(item.detail);
             if (!item.png.empty()) {
-                MzPng::DecodeRgba(item.png.data(), item.png.size(), row.image); // empty on failure
+                MtPng::DecodeRgba(item.png.data(), item.png.size(), row.image); // empty on failure
             }
             rows.push_back(std::move(row));
         }

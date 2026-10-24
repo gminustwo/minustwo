@@ -67,13 +67,13 @@ class ProfileTest(unittest.TestCase):
 class LauncherTest(unittest.TestCase):
     def setUp(self):
         self.data = tempfile.TemporaryDirectory()
-        os.environ['MZ_DATA_DIR'] = self.data.name
+        os.environ['MT_DATA_DIR'] = self.data.name
         import importlib
         import minustwo_launcher
         self.launcher = importlib.reload(minustwo_launcher)
 
     def tearDown(self):
-        os.environ.pop('MZ_DATA_DIR', None)
+        os.environ.pop('MT_DATA_DIR', None)
         self.data.cleanup()
 
     def dump(self, title_id, title):
@@ -98,19 +98,19 @@ class LauncherTest(unittest.TestCase):
         values = {**self.launcher.DEFAULTS, 'game_dir': 'G', 'language': '17', 'unlock_addons': False,
                   'keys': {'cross': 'Return', 'circle': ',', 'square': 'Mouse Left'}}
         env = self.launcher.game_environment(values)
-        self.assertEqual((env['MZ_GAME_DIR'], env['MZ_LANGUAGE'], env['MZ_UNLOCK_ADDONS']), ('G', '17', '0'))
-        self.assertEqual(env['MZ_KEY_MAP'], 'cross=Return,circle=Comma')
+        self.assertEqual((env['MT_GAME_DIR'], env['MT_LANGUAGE'], env['MT_UNLOCK_ADDONS']), ('G', '17', '0'))
+        self.assertEqual(env['MT_KEY_MAP'], 'cross=Return,circle=Comma')
 
     def test_settings_with_a_byte_order_mark_load(self):
         self.launcher.SETTINGS.write_text(json.dumps({'game_dir': 'D:/G'}), encoding='utf-8-sig')
         self.assertEqual(self.launcher.load_settings()['game_dir'], 'D:/G')
 
     def test_mods_switch_reaches_run_py(self):
-        # The Mods & patches page's "Load mods": run.py reads MZ_MODS_ENABLED (mods are on by default).
+        # The Mods & patches page's "Load mods": run.py reads MT_MODS_ENABLED (mods are on by default).
         values = {**self.launcher.DEFAULTS, 'game_dir': 'G'}
-        self.assertEqual(self.launcher.game_environment(values)['MZ_MODS_ENABLED'], '1')
+        self.assertEqual(self.launcher.game_environment(values)['MT_MODS_ENABLED'], '1')
         values['mods_enabled'] = False
-        self.assertEqual(self.launcher.game_environment(values)['MZ_MODS_ENABLED'], '0')
+        self.assertEqual(self.launcher.game_environment(values)['MT_MODS_ENABLED'], '0')
 
     def test_mod_and_patch_selections_round_trip(self):
         path = self.launcher.DATA / 'mods.json'

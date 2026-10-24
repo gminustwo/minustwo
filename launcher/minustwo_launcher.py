@@ -20,7 +20,7 @@ import threading
 
 FROZEN = getattr(sys, 'frozen', False)
 PORT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
-DATA = Path(os.environ.get('MZ_DATA_DIR', PORT))
+DATA = Path(os.environ.get('MT_DATA_DIR', PORT))
 SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
@@ -29,7 +29,7 @@ TITLE_IDS = ('CUSA02046',)
 LANGUAGES = (('English', '1'), ('Français', '2'), ('Español (Latinoamérica)', '20'), ('Português (Brasil)', '17'))
 DISPLAY_MODES = (('Windowed', 'windowed'), ('Borderless', 'borderless'), ('Fullscreen', 'fullscreen'))
 FPS_LIMITS = (('60 (the game\'s own)', '60'), ('30', '30'), ('Unlimited', '0'))
-# The keyboard's PS4 buttons and their default keys (src/runtime_pad.c key_map); MZ_KEY_MAP carries changes.
+# The keyboard's PS4 buttons and their default keys (src/runtime_pad.c key_map); MT_KEY_MAP carries changes.
 KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('move_left', 'Walk left', 'A'),
         ('move_right', 'Walk right', 'D'), ('l1', 'Turn left (L1)', 'Q'), ('r1', 'Turn right (R1)', 'E'),
         ('square', 'Normal attack (Square)', 'Mouse Left'), ('triangle', 'Strong attack (Triangle)', 'Mouse Right'),
@@ -92,14 +92,14 @@ def game_version(folder):
 
 def game_environment(values):
     """The variables run.py and the game read, from the launcher's settings."""
-    env = {**os.environ, 'MZ_GAME_DIR': values['game_dir'], 'MZ_LANGUAGE': values['language'],
-           'MZ_UNLOCK_ADDONS': '1' if values['unlock_addons'] else '0', 'MZ_CONFIG': str(INI),
-           'MZ_DATA_DIR': str(DATA), 'MZ_MODS_ENABLED': '1' if values.get('mods_enabled', True) else '0',
+    env = {**os.environ, 'MT_GAME_DIR': values['game_dir'], 'MT_LANGUAGE': values['language'],
+           'MT_UNLOCK_ADDONS': '1' if values['unlock_addons'] else '0', 'MT_CONFIG': str(INI),
+           'MT_DATA_DIR': str(DATA), 'MT_MODS_ENABLED': '1' if values.get('mods_enabled', True) else '0',
            'PYTHONIOENCODING': 'utf-8'}
     changed = {k: v for k, v in values['keys'].items() if v and v != dict((a, d) for a, _, d in KEYS).get(k)}
     if changed:
         # ',' and '=' separate the entries: the runtime knows those two keys as Comma and Equals.
-        env['MZ_KEY_MAP'] = ','.join(f'{k}={v.replace(",", "Comma").replace("=", "Equals")}' for k, v in changed.items())
+        env['MT_KEY_MAP'] = ','.join(f'{k}={v.replace(",", "Comma").replace("=", "Equals")}' for k, v in changed.items())
     return env
 
 
@@ -286,9 +286,9 @@ class Launcher:
         s = self.ttk.Style(self.root)
         s.theme_use('clam')
         self.check_images()
-        s.element_create('Mz.indicator', 'image', self.check_off, ('selected', self.check_on), sticky='')
+        s.element_create('Mt.indicator', 'image', self.check_off, ('selected', self.check_on), sticky='')
         s.layout('TCheckbutton', [('Checkbutton.padding', {'sticky': 'nswe', 'children': [
-            ('Mz.indicator', {'side': 'left', 'sticky': ''}),
+            ('Mt.indicator', {'side': 'left', 'sticky': ''}),
             ('Checkbutton.focus', {'side': 'left', 'sticky': 'w', 'children': [
                 ('Checkbutton.label', {'sticky': 'nswe'})]})]})])
         base = self.font(10)

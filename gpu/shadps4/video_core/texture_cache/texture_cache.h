@@ -9,7 +9,7 @@
 #include "video_core/texture_cache/readback_queue.h"
 #include "video_core/texture_cache/readback_sources.h"
 #include <chrono>
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include <optional>
 #include <cstdlib>
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
@@ -180,7 +180,7 @@ public:
         // Every texture binding comes here; the mutex (shared with the fault handlers of the
         // guest threads) was ~3% of the GPU thread. Flags are read atomically: an invalidation
         // racing with this check races the same way with the locked path.
-        if (!MzToggle::Disabled(MzToggle::UpdateImageFastPath)) {
+        if (!MtToggle::Disabled(MtToggle::UpdateImageFastPath)) {
             const Image& image = slot_images[image_id];
             const u32 flags = std::atomic_ref<u32>(const_cast<u32&>(reinterpret_cast<const u32&>(image.flags)))
                                   .load(std::memory_order_acquire);
@@ -238,7 +238,7 @@ public:
         auto& image = slot_images[id];
         return !uid || image.image_uid == uid ? &image : nullptr;
     }
-    /// minustwo diagnostics: writes level 0 of a color image to MZ_DIAG_DIR as raw pixels
+    /// minustwo diagnostics: writes level 0 of a color image to MT_DIAG_DIR as raw pixels
     /// (<seq>_<tag>_<address>_<w>x<h>_p<pitch>_b<bytes per pixel>_f<vk format>.raw). Waits for
     /// the GPU.
     void DiagDumpImage(ImageId image_id, const char* tag);
@@ -462,14 +462,14 @@ private:
     Common::LeastRecentlyUsedCache<u64, u64> sampler_lru_cache;
     const bool readback_linear_images;
     const bool deferred_readbacks = [] {
-        const char* value = std::getenv("MZ_DEFERRED_READBACK");
+        const char* value = std::getenv("MT_DEFERRED_READBACK");
         return value && value[0] == '1';
     }();
-    /// minustwo: MZ_STALE_READBACK=1 (needs deferred readbacks). A pending copy only blocks CPU
+    /// minustwo: MT_STALE_READBACK=1 (needs deferred readbacks). A pending copy only blocks CPU
     /// writes: CPU reads see the version the GPU published last (one frame late) instead of
     /// waiting for the GPU. Writes still wait, so no byte is lost.
     const bool stale_readbacks = deferred_readbacks && [] {
-        const char* value = std::getenv("MZ_STALE_READBACK");
+        const char* value = std::getenv("MT_STALE_READBACK");
         return value && value[0] == '1';
     }();
     template <bool track>
@@ -481,7 +481,7 @@ private:
         u64 Bytes() const { return u64{width} * height * bits / 8; }
     };
     std::array<ReadbackImageStat, 16> readback_images{};
-    /// minustwo (MZ_PERF_DIAG): images FindImage had to create, by request, and the image that was
+    /// minustwo (MT_PERF_DIAG): images FindImage had to create, by request, and the image that was
     /// cached at that memory before (none: nothing overlapped). Printed with the readback report.
     struct CreateStat {
         VAddr address;
@@ -499,7 +499,7 @@ private:
     u64 images_created = 0;
     std::chrono::steady_clock::time_point create_report = std::chrono::steady_clock::now();
     void ReportImageCreates();
-    /// minustwo (MZ_PERF_DIAG): requests answered by MzToggle::PartialHeightViews.
+    /// minustwo (MT_PERF_DIAG): requests answered by MtToggle::PartialHeightViews.
     struct PartialViewStat {
         VAddr address;
         vk::Format format, used_format;
@@ -512,7 +512,7 @@ private:
     u64 readbacks_released = 0;
     u64 readbacks_neighbors = 0; ///< resolves ExactReadbackWaits let through (report)
     bool ExactReadbackWaits() const {
-        return stale_readbacks && !MzToggle::Disabled(MzToggle::ExactReadbackWaits);
+        return stale_readbacks && !MtToggle::Disabled(MtToggle::ExactReadbackWaits);
     }
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;

@@ -16,10 +16,10 @@ class RunIsaTests(unittest.TestCase):
         self.assertFalse(run.isa_rewrite_wanted([], {}))
 
     def test_rewrite_forced(self):
-        self.assertTrue(run.isa_rewrite_wanted([], {'MZ_ISA_REWRITE': '1'}))
+        self.assertTrue(run.isa_rewrite_wanted([], {'MT_ISA_REWRITE': '1'}))
 
     def test_rewrite_disabled(self):
-        self.assertFalse(run.isa_rewrite_wanted(['MOVBE', 'BMI1'], {'MZ_ISA_REWRITE': '0'}))
+        self.assertFalse(run.isa_rewrite_wanted(['MOVBE', 'BMI1'], {'MT_ISA_REWRITE': '0'}))
 
 
 if __name__ == '__main__':

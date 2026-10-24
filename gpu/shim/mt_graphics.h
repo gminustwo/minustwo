@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace MzGraphics {
+namespace MtGraphics {
 
 enum DisplayMode : int { Windowed = 0, Borderless = 1, Fullscreen = 2, DisplayModeCount };
 inline constexpr std::array<std::string_view, DisplayModeCount> DisplayModeKeys = {
@@ -35,10 +35,10 @@ inline constexpr std::array<std::string_view, 23> Resolutions = {
     "1280x960", "1440x1080", "1920x1440", "2048x1536", "2560x1920",
     "5120x2160", "8K"};
 /// The resolutions to choose from: the built-in ones, then those of the enabled mods' patch files
-/// (MZ_EXTRA_RESOLUTIONS, ";"-separated sizes such as "3440x1440"; run.py sets it at every start).
+/// (MT_EXTRA_RESOLUTIONS, ";"-separated sizes such as "3440x1440"; run.py sets it at every start).
 inline std::vector<std::string> ResolutionNames() {
     std::vector<std::string> names(Resolutions.begin(), Resolutions.end());
-    const char* extra = std::getenv("MZ_EXTRA_RESOLUTIONS");
+    const char* extra = std::getenv("MT_EXTRA_RESOLUTIONS");
     for (std::string_view rest = extra ? extra : ""; !rest.empty();) {
         const std::size_t end = rest.find(';');
         const std::string_view name = rest.substr(0, end);
@@ -75,7 +75,7 @@ inline std::pair<int, int> RenderScaleSize(std::string_view name) {
     return {width, height};
 }
 /// Engine frame rates: 60 is the game's own (59.94). The launch takes the 240 FPS patch and the
-/// rate is written live (MzSettings::SyncEngineFps); 100, 144 and 180 fit common high-refresh displays.
+/// rate is written live (MtSettings::SyncEngineFps); 100, 144 and 180 fit common high-refresh displays.
 inline constexpr std::array<int, 6> EngineFps = {60, 100, 120, 144, 180, 240};
 
 template <typename T, std::size_t N>
@@ -118,7 +118,7 @@ inline int RefreshFor60(const std::vector<float>& rates, float desktop) {
 /// from an explicit index 0, which names the first display SDL3 lists even when it is not the primary.
 inline constexpr int PrimaryMonitor = -1;
 /// The display the window opens on: an index into the list window.cpp reads from SDL3, or
-/// PrimaryMonitor. The value comes from the launcher (MZ_MONITOR), so it is untrusted text:
+/// PrimaryMonitor. The value comes from the launcher (MT_MONITOR), so it is untrusted text:
 /// empty, negative, non-numeric or too large for an int falls back to PrimaryMonitor.
 inline int ParseMonitor(std::string_view text) {
     if (text.empty()) return PrimaryMonitor;
@@ -196,4 +196,4 @@ inline int NextEngineFps(int current, int highest) {
     return EngineFps[0];
 }
 
-} // namespace MzGraphics
+} // namespace MtGraphics

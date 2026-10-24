@@ -41,7 +41,7 @@ std::filesystem::path SharedPath(const std::filesystem::path& directory, const K
                                  const Key& binary, u64 content);
 bool StoreShared(const std::filesystem::path& file, const Key& global, const Key& pipeline,
                  u64 graphics_hash, const std::vector<Binary>& binaries);
-/// StoreShared, or the version 1 file with MzToggle::SharedBinaries off.
+/// StoreShared, or the version 1 file with MtToggle::SharedBinaries off.
 bool Store(const std::filesystem::path& file, const Key& global, const Key& pipeline,
            u64 graphics_hash, const std::vector<Binary>& binaries);
 /// Rewrites every version 1 file of `directory` as version 2: {files, bytes freed}.

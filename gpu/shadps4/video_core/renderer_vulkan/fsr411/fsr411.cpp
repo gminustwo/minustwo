@@ -238,7 +238,7 @@ struct Upscaler::Impl {
     std::vector<uint8_t> initializer_data;
     uint64_t frame_index = 0;
     float previous_pre_exposure = 0.0f;
-    // MZ_FSR4_PROFILE=1: GPU time per pass, read when a ring slot is reused, printed every 300 frames.
+    // MT_FSR4_PROFILE=1: GPU time per pass, read when a ring slot is reused, printed every 300 frames.
     VkQueryPool profile_pool = VK_NULL_HANDLE;
     float period_ns = 1.0f;
     std::array<uint32_t, kFramesInFlight> profile_count{};
@@ -255,7 +255,7 @@ struct Upscaler::Impl {
         push_descriptors = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(
             vkGetDeviceProcAddr(device, "vkCmdPushDescriptorSetKHR"));
         period_ns = props.limits.timestampPeriod;
-        const char* profile = std::getenv("MZ_FSR4_PROFILE");
+        const char* profile = std::getenv("MT_FSR4_PROFILE");
         if (profile && profile[0] == '1') {
             VkQueryPoolCreateInfo qci{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
             qci.queryType = VK_QUERY_TYPE_TIMESTAMP;

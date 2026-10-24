@@ -189,8 +189,8 @@ static File *get(int fd) {
     if (fd<3 || fd>=MAX_FILES || !files[fd].used) return NULL;
     return &files[fd];
 }
-/* MZ_AUDIO_TRACE=1: sound file opens and failed reads (missing game sounds). */
-static int audio_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("MZ_AUDIO_TRACE"); v=e && e[0]=='1'; } return v; }
+/* MT_AUDIO_TRACE=1: sound file opens and failed reads (missing game sounds). */
+static int audio_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("MT_AUDIO_TRACE"); v=e && e[0]=='1'; } return v; }
 /* Game mounts (including linked mod overlays) are read-only. Saves use other mounts. */
 static int game_path(const char *p) {
     if (!p || !*p) return 0;
@@ -246,7 +246,7 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     ++opens;
     pthread_mutex_unlock(&lock);
     if (audio_trace() && strstr(guest,"sound/")) printf("Audio trace: open(%s) -> fd %d, %lld bytes\n",guest,fd,(long long)s.st_size);
-    const char *mod_trace=getenv("MZ_MOD_TRACE"), *mod_root=getenv("MZ_MODS_DIR");
+    const char *mod_trace=getenv("MT_MOD_TRACE"), *mod_root=getenv("MT_MODS_DIR");
     if (mod_trace && mod_trace[0]=='1' && mod_root) {
         char actual[PATH_MAX],root[PATH_MAX];
         static unsigned traced;
@@ -296,7 +296,7 @@ static void touch_for_write(void *buffer,uint64_t size) {
 }
 /* The guest code that called pread (0: the runtime itself, as sceNgs2ParseWaveformFile does). */
 static __thread const void *sound_caller;
-/* MZ_AUDIO_TRACE=1: every read of a sound file, its result and who asked. */
+/* MT_AUDIO_TRACE=1: every read of a sound file, its result and who asked. */
 static void trace_sound_read(int fd,const char *call,uint64_t size,int64_t offset,int64_t result) {
     if (!audio_trace()) return;
     pthread_mutex_lock(&lock);

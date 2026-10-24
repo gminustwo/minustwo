@@ -106,7 +106,7 @@ public:
     using OrderedTask = void (*)(Rasterizer& rasterizer, const u8* data);
     /// Returns true when the task was handed to the recording thread (not run yet).
     bool RunInOrder(OrderedTask task, const void* data, u32 size,
-                    u64 toggle = MzToggle::PipelinedTasks);
+                    u64 toggle = MtToggle::PipelinedTasks);
     /// Stage A: the draw pipe position after the last handed-over packet, and whether the
     /// recording thread has run everything before a position.
     [[nodiscard]] u64 DrawPipeHead() const {
@@ -290,7 +290,7 @@ private:
     /// Whether the helper may bind textures for this pipeline at all (fixed descriptor layout,
     /// no storage writes that invalidate cached images).
     bool HelperEligible(const Pipeline* pipeline) const;
-    /// MZ_SCENE_DEBUG=<file>: at a frame start, whether that file exists (it is removed).
+    /// MT_SCENE_DEBUG=<file>: at a frame start, whether that file exists (it is removed).
     void PollSceneDebug();
     /// After BeginRendering: host_fetch draws see FragCoord in the proxy's pixels.
     void ApplyHostFetch();
@@ -300,11 +300,11 @@ private:
     static void RunTextureTask(void* rasterizer);
     static void JoinBindHelper(void* rasterizer);
 
-    /// Display pass: counts the frame (MzStats::gpu_frames) and, with MZ_BUFFER_STATS, the lag.
+    /// Display pass: counts the frame (MtStats::gpu_frames) and, with MT_BUFFER_STATS, the lag.
     void NoteFrameStart();
     /// Without an upscaler: the display buffer of the last NoteFrameStart (HUD draws go there too).
     VAddr last_display_buffer = 0;
-    /// MZ_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
+    /// MT_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
     void MarkPass(const GraphicsPipeline* pipeline, const RenderState& state);
     void BindVertexBuffers(const GraphicsPipeline* pipeline,
                            const PreparedDraw* prepared = nullptr);
@@ -339,7 +339,7 @@ private:
     std::unique_ptr<DrawPreparation> draw_prep;
     std::unique_ptr<CameraMotion> camera_motion; // minustwo: motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
-    /// minustwo: render scale (the render resolution, or MZ_SCENE_SIZE): every eligible pass of
+    /// minustwo: render scale (the render resolution, or MT_SCENE_SIZE): every eligible pass of
     /// every frame is drawn at the scene size.
     bool render_scale = false;
     /// minustwo: this draw reads a multisampled scene proxy (render scale). Such reads are
@@ -363,7 +363,7 @@ private:
     boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
     boost::container::static_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
-    /// minustwo diagnostics (MZ_DIAG_IMAGES=1, draw pipe off): while a frame capture records, the
+    /// minustwo diagnostics (MT_DIAG_IMAGES=1, draw pipe off): while a frame capture records, the
     /// color targets of a pass are written to files when the next pass or dispatch begins.
     void DiagPassBoundary(bool force);
     std::array<VAddr, 8> diag_addresses{};
@@ -483,7 +483,7 @@ private:
         u32 completed = 0; ///< stages the helper bound; the rest are bound after the join
         bool barrier = false;
     } texture_task;
-    /// Draws whose textures the helper bound completely, partly or not at all (MZ_FRAME_STATS).
+    /// Draws whose textures the helper bound completely, partly or not at all (MT_FRAME_STATS).
     u64 helper_full = 0, helper_partial = 0, helper_serial = 0;
     /// The memoized cache entry of each image binding (FindImage memo taken), else null.
     boost::container::static_vector<ImageDescCacheEntry*, Shader::NUM_IMAGES> image_binding_entries;
@@ -515,7 +515,7 @@ private:
     u32 pending_checks = 0;
     u64 proxy_samples = 0; ///< texture bindings that read a scene proxy (statistics)
     float sampler_lod_bias = 0.0f; ///< minustwo: extra bias of this draw's samplers
-    bool scene_debug_frame = false; ///< MZ_SCENE_DEBUG: this frame's passes are printed
+    bool scene_debug_frame = false; ///< MT_SCENE_DEBUG: this frame's passes are printed
     bool PendingWriteOverlaps(VAddr address, u64 size);
     /// Stage B: the ring bindings of the stages of the packet being recorded.
     struct RingStage {

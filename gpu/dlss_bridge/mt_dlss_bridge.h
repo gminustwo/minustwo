@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minustwo contributors
 // SPDX-License-Identifier: MIT
 //
-// C interface between minustwo and mz_dlss.dll. The port contains no NVIDIA code: it loads the
+// C interface between minustwo and mt_dlss.dll. The port contains no NVIDIA code: it loads the
 // bridge at run time when it is present (next to minustwo.exe, with nvngx_dlss.dll) and keeps
 // its other upscalers when it is absent. Adapted from IFreemz/shadPS4-Bloodborne-DLSS-FSR.
 
@@ -14,20 +14,20 @@
 extern "C" {
 #endif
 
-#define MZ_DLSS_BRIDGE_ABI 1
+#define MT_DLSS_BRIDGE_ABI 1
 
-typedef void (*MzDlssLogFn)(int warning, const char* message);
+typedef void (*MtDlssLogFn)(int warning, const char* message);
 
-typedef struct MzDlssImage {
+typedef struct MtDlssImage {
     VkImage image;
     VkImageView view;
     VkImageSubresourceRange range;
     VkFormat format;
     uint32_t width;
     uint32_t height;
-} MzDlssImage;
+} MtDlssImage;
 
-typedef struct MzDlssFeature {
+typedef struct MtDlssFeature {
     uint32_t input_width;
     uint32_t input_height;
     uint32_t output_width;
@@ -36,25 +36,25 @@ typedef struct MzDlssFeature {
     int32_t depth_inverted;
     uint32_t preset; // NVSDK_NGX_DLSS_Hint_Render_Preset value, 0 = driver default
     int32_t hdr;     // 1: linear HDR colour with automatic exposure, 0: tonemapped colour
-} MzDlssFeature;
+} MtDlssFeature;
 
-typedef struct MzDlssEvaluate {
-    MzDlssImage color;  // sampled
-    MzDlssImage depth;  // sampled, hardware depth
-    MzDlssImage motion; // sampled, render-resolution pixels, current to previous
-    MzDlssImage output; // storage, general layout
+typedef struct MtDlssEvaluate {
+    MtDlssImage color;  // sampled
+    MtDlssImage depth;  // sampled, hardware depth
+    MtDlssImage motion; // sampled, render-resolution pixels, current to previous
+    MtDlssImage output; // storage, general layout
     float jitter_x;
     float jitter_y;
     int32_t reset;
     float frame_ms;
     float sharpness; // 0..1; 0 leaves the output unsharpened
-} MzDlssEvaluate;
+} MtDlssEvaluate;
 
-typedef struct MzDlssApi {
+typedef struct MtDlssApi {
     uint32_t abi;
     // UTF-16 paths: the directory with nvngx_dlss.dll, and a writable data directory.
     int32_t (*Configure)(const wchar_t* dll_directory, const wchar_t* data_directory,
-                         MzDlssLogFn log);
+                         MtDlssLogFn log);
     // Vulkan extensions NGX needs. The arrays stay valid until Shutdown.
     int32_t (*InstanceExtensions)(uint32_t* count, const VkExtensionProperties** extensions);
     int32_t (*DeviceExtensions)(VkInstance instance, VkPhysicalDevice physical, uint32_t* count,
@@ -62,14 +62,14 @@ typedef struct MzDlssApi {
     int32_t (*Initialize)(VkInstance instance, VkPhysicalDevice physical, VkDevice device,
                           PFN_vkGetInstanceProcAddr get_instance_proc,
                           PFN_vkGetDeviceProcAddr get_device_proc);
-    int32_t (*CreateFeature)(VkCommandBuffer command, const MzDlssFeature* feature);
-    int32_t (*Evaluate)(VkCommandBuffer command, const MzDlssEvaluate* evaluate);
+    int32_t (*CreateFeature)(VkCommandBuffer command, const MtDlssFeature* feature);
+    int32_t (*Evaluate)(VkCommandBuffer command, const MtDlssEvaluate* evaluate);
     // The caller must have waited for the GPU work that used the feature.
     void (*ReleaseFeature)(void);
     void (*Shutdown)(void);
-} MzDlssApi;
+} MtDlssApi;
 
-typedef const MzDlssApi* (*MzDlssGetApiFn)(void);
+typedef const MtDlssApi* (*MtDlssGetApiFn)(void);
 
 #ifdef __cplusplus
 }

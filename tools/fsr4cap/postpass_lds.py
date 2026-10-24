@@ -55,41 +55,41 @@ n = [0]
 
 def new(prefix):
     n[0] += 1
-    return f'%mz_{prefix}{n[0]}'
+    return f'%mt_{prefix}{n[0]}'
 
 decl = [
-    '%mz_u5 = OpConstant %uint 5', '%mz_u31 = OpConstant %uint 31', '%mz_u32 = OpConstant %uint 32',
-    '%mz_u10 = OpConstant %uint 10', '%mz_u256 = OpConstant %uint 256', '%mz_u2 = OpConstant %uint 2',
-    '%mz_u264 = OpConstant %uint 264', '%mz_u10240 = OpConstant %uint 10240',
-] + [f'%mz_c{c} = OpConstant %uint {c}' for c in range(10)] + [
-    '%mz_arr = OpTypeArray %float %mz_u10240',
-    '%mz_ptr_arr = OpTypePointer Workgroup %mz_arr',
-    '%mz_ptr_f = OpTypePointer Workgroup %float',
-    '%mz_lds = OpVariable %mz_ptr_arr Workgroup',
+    '%mt_u5 = OpConstant %uint 5', '%mt_u31 = OpConstant %uint 31', '%mt_u32 = OpConstant %uint 32',
+    '%mt_u10 = OpConstant %uint 10', '%mt_u256 = OpConstant %uint 256', '%mt_u2 = OpConstant %uint 2',
+    '%mt_u264 = OpConstant %uint 264', '%mt_u10240 = OpConstant %uint 10240',
+] + [f'%mt_c{c} = OpConstant %uint {c}' for c in range(10)] + [
+    '%mt_arr = OpTypeArray %float %mt_u10240',
+    '%mt_ptr_arr = OpTypePointer Workgroup %mt_arr',
+    '%mt_ptr_f = OpTypePointer Workgroup %float',
+    '%mt_lds = OpVariable %mt_ptr_arr Workgroup',
 ]
 preamble = [
-    '%mz_wgx_p = OpAccessChain %_ptr_Input_uint %gl_WorkGroupID %uint_0',
-    '%mz_wgx = OpLoad %uint %mz_wgx_p',
-    '%mz_wgy_p = OpAccessChain %_ptr_Input_uint %gl_WorkGroupID %uint_1',
-    '%mz_wgy = OpLoad %uint %mz_wgy_p',
-    '%mz_lid_p = OpAccessChain %_ptr_Input_uint %gl_LocalInvocationID %uint_0',
-    '%mz_lid = OpLoad %uint %mz_lid_p',
-    '%mz_x0 = OpShiftLeftLogical %uint %mz_wgx %mz_u5',
-    '%mz_y0 = OpShiftLeftLogical %uint %mz_wgy %mz_u5',
+    '%mt_wgx_p = OpAccessChain %_ptr_Input_uint %gl_WorkGroupID %uint_0',
+    '%mt_wgx = OpLoad %uint %mt_wgx_p',
+    '%mt_wgy_p = OpAccessChain %_ptr_Input_uint %gl_WorkGroupID %uint_1',
+    '%mt_wgy = OpLoad %uint %mt_wgy_p',
+    '%mt_lid_p = OpAccessChain %_ptr_Input_uint %gl_LocalInvocationID %uint_0',
+    '%mt_lid = OpLoad %uint %mt_lid_p',
+    '%mt_x0 = OpShiftLeftLogical %uint %mt_wgx %mt_u5',
+    '%mt_y0 = OpShiftLeftLogical %uint %mt_wgy %mt_u5',
 ]
 
 def flush():
-    code = ['OpControlBarrier %mz_u2 %mz_u2 %mz_u264']
+    code = ['OpControlBarrier %mt_u2 %mt_u2 %mt_u264']
     for k in range(4):
         i, lx, ly, px, py = new('i'), new('lx'), new('ly'), new('px'), new('py')
         kk = new('k')
         code += [
             f'{kk} = OpConstant %uint {256 * k}' if False else '',
-            f'{i} = OpIAdd %uint %mz_lid %mz_k{k}',
-            f'{lx} = OpBitwiseAnd %uint {i} %mz_u31',
-            f'{ly} = OpShiftRightLogical %uint {i} %mz_u5',
-            f'{px} = OpIAdd %uint %mz_x0 {lx}',
-            f'{py} = OpIAdd %uint %mz_y0 {ly}',
+            f'{i} = OpIAdd %uint %mt_lid %mt_k{k}',
+            f'{lx} = OpBitwiseAnd %uint {i} %mt_u31',
+            f'{ly} = OpShiftRightLogical %uint {i} %mt_u5',
+            f'{px} = OpIAdd %uint %mt_x0 {lx}',
+            f'{py} = OpIAdd %uint %mt_y0 {ly}',
         ]
         tx, ty, cx, cy, c = new('tx'), new('ty'), new('cx'), new('cy'), new('c')
         code += [
@@ -99,14 +99,14 @@ def flush():
             f'{cy} = OpULessThan %bool {ty} {h2}',
             f'{c} = OpLogicalAnd %bool {cx} {cy}',
         ]
-        then, done = f'%mz_then{k}', f'%mz_done{k}'
+        then, done = f'%mt_then{k}', f'%mt_done{k}'
         code += [f'OpSelectionMerge {done} None', f'OpBranchConditional {c} {then} {done}', f'{then} = OpLabel']
         base = new('base')
-        code.append(f'{base} = OpIMul %uint {i} %mz_u10')
+        code.append(f'{base} = OpIMul %uint {i} %mt_u10')
         vals = []
         for comp in range(10):
             e, p, v = new('e'), new('p'), new('v')
-            code += [f'{e} = OpIAdd %uint {base} %mz_c{comp}', f'{p} = OpAccessChain %mz_ptr_f %mz_lds {e}',
+            code += [f'{e} = OpIAdd %uint {base} %mt_c{comp}', f'{p} = OpAccessChain %mt_ptr_f %mt_lds {e}',
                      f'{v} = OpLoad %float {p}']
             vals.append(v)
         coord = new('coord')
@@ -124,7 +124,7 @@ def flush():
         code += [f'OpBranch {done}', f'{done} = OpLabel']
     return [c for c in code if c]
 
-decl += [f'%mz_k{k} = OpConstant %uint {256 * k}' for k in range(4)]
+decl += [f'%mt_k{k} = OpConstant %uint {256 * k}' for k in range(4)]
 
 stores = 0
 in_main = False
@@ -165,14 +165,14 @@ for idx, line in enumerate(lines):
             comps = [t[1], t[2], t[3]]
         lx, ly, row, pix, base = new('slx'), new('sly'), new('srow'), new('spix'), new('sbase')
         out += ['               ' + c for c in [
-            f'{lx} = OpISub %uint {x} %mz_x0', f'{ly} = OpISub %uint {y} %mz_y0',
-            f'{row} = OpShiftLeftLogical %uint {ly} %mz_u5', f'{pix} = OpIAdd %uint {row} {lx}',
-            f'{base} = OpIMul %uint {pix} %mz_u10']]
+            f'{lx} = OpISub %uint {x} %mt_x0', f'{ly} = OpISub %uint {y} %mt_y0',
+            f'{row} = OpShiftLeftLogical %uint {ly} %mt_u5', f'{pix} = OpIAdd %uint {row} {lx}',
+            f'{base} = OpIMul %uint {pix} %mt_u10']]
         for c, v in enumerate(comps):
             e, p = new('se'), new('sp')
             out += ['               ' + q for q in [
-                f'{e} = OpIAdd %uint {base} %mz_c{SLOT[var] + c}',
-                f'{p} = OpAccessChain %mz_ptr_f %mz_lds {e}', f'OpStore {p} {v}']]
+                f'{e} = OpIAdd %uint {base} %mt_c{SLOT[var] + c}',
+                f'{p} = OpAccessChain %mt_ptr_f %mt_lds {e}', f'OpStore {p} {v}']]
         stores += 1
         continue
     if in_main and s == f'{merge} = OpLabel':

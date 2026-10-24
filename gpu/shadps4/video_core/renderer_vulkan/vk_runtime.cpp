@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
-#include "mz_toggles.h"
+#include "mt_toggles.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -532,7 +532,7 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
 }
 
 void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
-    // minustwo: with MZ_NO_MSAA a guest multisampled depth target is single-sampled on the host; a
+    // minustwo: with MT_NO_MSAA a guest multisampled depth target is single-sampled on the host; a
     // colour image aliasing it still holds the samples as channels, so sample 0 is channel 0.
     const bool guest_ms_depth = dst->info.props.is_depth && dst->info.guest_samples > 1;
     if (src->info.num_samples == 1 && dst->info.num_samples == 1 && !guest_ms_depth) {
@@ -825,12 +825,12 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
     // at a new offset every draw; rounded, they land in ranges already present and the
     // insert returns early instead of growing the tree until the next barrier flush.
     // Wider read ranges only add barriers, never drop one.
-    if (!(src_access & WRITE_MASK) && !MzToggle::Disabled(MzToggle::CoarseReadTracking)) {
+    if (!(src_access & WRITE_MASK) && !MtToggle::Disabled(MtToggle::CoarseReadTracking)) {
         range.range_start &= ~u64{0xFFF};
         range.range_end |= 0xFFF;
     }
     const auto insert = [&](Access access) {
-        if (MzToggle::Disabled(MzToggle::AccessMemo)) {
+        if (MtToggle::Disabled(MtToggle::AccessMemo)) {
             barrier_tracker.InsertRange(range, access);
             return;
         }

@@ -1,7 +1,7 @@
 //  SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 //  SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "mz_graphics.h"
+#include "mt_graphics.h"
 #include "common/assert.h"
 #include "core/emulator_settings.h"
 #include "video_core/host_shaders/fsr_easu_comp.h"
@@ -134,7 +134,7 @@ vk::ImageView FsrPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
                               vk::Extent2D input_size, vk::Extent2D output_size, Settings settings,
                               bool hdr) {
     // minustwo: FSR 1 upscales when the window is larger; RCAS alone also runs at the same size.
-    if (!MzGraphics::FsrPassRuns(settings.enable, settings.use_rcas, int(input_size.width),
+    if (!MtGraphics::FsrPassRuns(settings.enable, settings.use_rcas, int(input_size.width),
                                    int(input_size.height), int(output_size.width),
                                    int(output_size.height))) {
         DebugState.is_using_fsr = false;

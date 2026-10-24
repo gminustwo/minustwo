@@ -6,8 +6,8 @@
 #include <cstring>
 
 #include <vk_mem_alloc.h>
-#include "mz_settings.h"
-#include "mz_toggles.h"
+#include "mt_settings.h"
+#include "mt_toggles.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -53,9 +53,9 @@ ObjectMotion::ObjectMotion(const Instance& instance_, Scheduler& scheduler_)
     : instance{instance_}, scheduler{scheduler_} {
     // Pipeline selection limits the extra attachment and vertex stores to likely
     // animated draws. A setting or environment override can still disable the path.
-    if (!MzSettings::Get().object_motion ||
-        MzSettings::Get().upscaler == MzSettings::UpscalerOff) {
-        std::puts("Object motion: off (enable in menu or MZ_OBJECT_MOTION=1)");
+    if (!MtSettings::Get().object_motion ||
+        MtSettings::Get().upscaler == MtSettings::UpscalerOff) {
+        std::puts("Object motion: off (enable in menu or MT_OBJECT_MOTION=1)");
         return;
     }
     const auto& features = instance.GetPhysicalDevice().getFeatures();
@@ -95,7 +95,7 @@ void ObjectMotion::OnFrameStart() {
     if (!enabled) {
         return;
     }
-    if (MzStats::enabled && (frame % 600) == 0 && history.stats.draws) {
+    if (MtStats::enabled && (frame % 600) == 0 && history.stats.draws) {
         const auto& s = history.stats;
         std::printf("Object motion: %llu draws, %llu stored, %llu with history, %llu unmatched, "
                     "%llu capacity skips, %llu invalid, %llu still (600 frames); last frame %u/%u vertices; "
@@ -138,7 +138,7 @@ void ObjectMotion::OnFrameStart() {
 }
 
 u32 ObjectMotion::PrepareDraw(const DrawInfo& draw) {
-    if (!enabled || MzToggle::Disabled(1u << 29) || params_used >= ParamsPerFrame) {
+    if (!enabled || MtToggle::Disabled(1u << 29) || params_used >= ParamsPerFrame) {
         return 0;
     }
     const auto allocation = history.Prepare(draw);

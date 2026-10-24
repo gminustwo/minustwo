@@ -46,8 +46,8 @@ private:
     std::atomic<bool> is_minimized{false};
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
-    int display_mode = -1; ///< applied MzSettings display mode (window thread)
-    bool match_refresh = false; ///< applied MzSettings::match_refresh (window thread)
+    int display_mode = -1; ///< applied MtSettings display mode (window thread)
+    bool match_refresh = false; ///< applied MtSettings::match_refresh (window thread)
     bool mouse_locked = false; ///< relative mouse mode on (window thread)
     bool cursor_shown = false; ///< the system cursor is visible (window thread)
     void ApplyDisplayMode(int mode);

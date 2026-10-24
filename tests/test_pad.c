@@ -9,14 +9,14 @@
 static int capture;
 static int vibration_percent=100;
 static uint16_t rumble_low, rumble_high;
-int mzgpu_overlay_captures_input(void) { return capture; }
-int mzgpu_vibration_percent(void) { return vibration_percent; }
+int mtgpu_overlay_captures_input(void) { return capture; }
+int mtgpu_vibration_percent(void) { return vibration_percent; }
 static int engine_fps_cycles;
-void mzgpu_engine_fps_cycle(void) { ++engine_fps_cycles; }
-int mzgpu_mouse_prompt_distance(void) { return 48; }
-void mzgpu_mouse_pause_key(void) {}
-int mzgpu_mouse_aim_style(void) { return 0; }
-int mzgpu_mouse_aim_sensitivity(void) { return 100; }
+void mtgpu_engine_fps_cycle(void) { ++engine_fps_cycles; }
+int mtgpu_mouse_prompt_distance(void) { return 48; }
+void mtgpu_mouse_pause_key(void) {}
+int mtgpu_mouse_aim_style(void) { return 0; }
+int mtgpu_mouse_aim_sensitivity(void) { return 100; }
 
 static bool SDLCALL record_rumble(void *userdata, uint16_t low, uint16_t high) {
     (void)userdata;
@@ -54,7 +54,7 @@ int main(void) {
     int fd=mkstemp(path);
     assert(fd>=0);
     close(fd);
-    setenv("MZ_PAD_FILE",path,1);
+    setenv("MT_PAD_FILE",path,1);
     setenv("SDL_VIDEODRIVER","dummy",1);
     /* Only the virtual test controller is a gamepad, whatever is plugged in. */
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT,"0x1d50/0x6189");
