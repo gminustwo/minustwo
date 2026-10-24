@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
+#include <vector>
 #include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -146,22 +148,23 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 // "Match refresh rate": the display's mode at the desktop size with a refresh rate that is a whole
 // multiple of 60 (MzGraphics::RefreshFor60), when the desktop's is not (144 Hz). 60 FPS frames then
 // last the same number of refreshes, locked to them (mz_vblank.h); at 144 Hz they last 2 or 3.
-static const SDL_DisplayMode* RefreshFor60(SDL_DisplayID display, const SDL_DisplayMode* desktop) {
-    if (!desktop) return nullptr;
+// A copy: the modes live in the list's own allocation (the log once said "238039711037318496256 Hz").
+static std::optional<SDL_DisplayMode> RefreshFor60(SDL_DisplayID display, const SDL_DisplayMode* desktop) {
+    if (!desktop) return std::nullopt;
     int count = 0;
     SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display, &count);
-    std::vector<const SDL_DisplayMode*> candidates;
+    std::vector<SDL_DisplayMode> candidates;
     std::vector<float> rates;
     for (int i = 0; modes && i < count; ++i) {
         if (modes[i]->w == desktop->w && modes[i]->h == desktop->h && modes[i]->format == desktop->format &&
             modes[i]->pixel_density == desktop->pixel_density) {
-            candidates.push_back(modes[i]);
+            candidates.push_back(*modes[i]);
             rates.push_back(modes[i]->refresh_rate);
         }
     }
     SDL_free(modes);
     const int best = MzGraphics::RefreshFor60(rates, desktop->refresh_rate);
-    return best >= 0 ? candidates[best] : nullptr;
+    return best >= 0 ? std::optional{candidates[best]} : std::nullopt;
 }
 
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
@@ -178,7 +181,8 @@ void WindowSDL::ApplyDisplayMode(int mode) {
     } else {
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
-        const SDL_DisplayMode* refresh = match_refresh ? RefreshFor60(display, desktop) : nullptr;
+        const std::optional<SDL_DisplayMode> fit = match_refresh ? RefreshFor60(display, desktop) : std::nullopt;
+        const SDL_DisplayMode* refresh = fit ? &*fit : nullptr;
         const SDL_DisplayMode* exclusive = refresh ? refresh : mode == MzGraphics::Fullscreen ? desktop : nullptr;
         SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, mode == MzGraphics::Borderless ? "0" : "auto");
         if (!SDL_SetWindowFullscreenMode(window, exclusive)) {
