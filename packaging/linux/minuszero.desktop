@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MinusZero
+Comment=Unofficial PC port (bring your own game dump)
+Exec=AppRun
+Icon=minuszero
+Categories=Game;
+Terminal=false
+StartupWMClass=minuszero

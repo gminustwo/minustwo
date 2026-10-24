@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- Minus Zero: patches for the GODZILLA CUSA02046 v01.01 eboot.bin with sha256
+     c2e2a6f4ff62d1c4004f80cddf1ab1dc38386540a96f77f7130a55583fc32462 (scripts/patches.py checks it).
+     Each line may carry a signature (Pattern/At) so it is found in any build whose code matches. -->
+<Patch>
+    <TitleID>
+        <ID>CUSA02046</ID>
+    </TitleID>
+</Patch>
