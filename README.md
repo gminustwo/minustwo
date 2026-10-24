@@ -135,6 +135,22 @@ $env:MT_GAME_DIR = 'D:\Games\CUSA02046'
 python run.py
 ```
 
+### Releases and updates
+
+The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
+(`launcher/minustwo_launcher.py`, `owner/name`; the repository must be public, empty turns the check off) and
+offers it when its tag is a higher version than `VERSION` in the same file. To publish a version:
+
+1. Raise `VERSION` (for example to `0.2.0`) and commit.
+2. `bash build.sh` and `bash packaging/windows/package.sh`: `dist/minustwo-windows.zip` and
+   `dist/minustwo-windows.zip.sha256`.
+3. On GitHub, create a release tagged `v0.2.0` and attach both files. The launcher refuses a zip without the
+   `.sha256` beside it, or one that does not match it.
+
+"Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself over the
+installation once the launcher has closed, never the player's files (`USER_FILES`: `user`, settings, mods), then
+opens it.
+
 ## Tests
 
 ```bash

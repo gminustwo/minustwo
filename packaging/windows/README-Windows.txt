@@ -23,6 +23,10 @@ Starting
 "Play MinusTwo.exe" starts the game with the saved settings without opening the launcher
 (for a desktop shortcut, or Steam's "Add a Non-Steam Game").
 
+Updates: when a new version is out, the launcher shows it at the bottom left; "Update" downloads
+and installs it and opens the launcher again (saves, settings and mods are kept). Advanced ->
+"Check for updates" checks by hand.
+
 While playing
 - Insert on the keyboard, or R3 + L2 on a controller, opens the port's menu (display mode,
   VSync, frame rate limit, controller vibration, mouse camera, overlay).

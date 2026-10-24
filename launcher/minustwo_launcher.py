@@ -13,9 +13,11 @@ minustwo.ini (the in-game menu, Insert or R3+L2, changes the same file).
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import subprocess
 import sys
+import tempfile
 import threading
 
 FROZEN = getattr(sys, 'frozen', False)
@@ -24,6 +26,14 @@ DATA = Path(os.environ.get('MT_DATA_DIR', PORT))
 SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
+# This build of the port. A GitHub release is an update when its tag (v0.2.0) holds a higher version.
+VERSION = '0.1.0'
+# The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
+GITHUB_REPO = ''
+UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
+# Never copied over an installation by an update (the package does not hold them either).
+USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
+              'patches.json', 'last_run.log', 'fsr4_shaders', 'nvngx_dlss*.dll')
 TITLE_IDS = ('CUSA02046',)
 # The game's languages (game_en, game_fr, game_ns, game_bp) as PS4 system language ids.
 LANGUAGES = (('English', '1'), ('Français', '2'), ('Español (Latinoamérica)', '20'), ('Português (Brasil)', '17'))
@@ -38,7 +48,8 @@ KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('mov
         ('touchpad', 'Touchpad', 'Tab'), ('up', 'D-pad up', 'I'), ('down', 'D-pad down', 'K'),
         ('left', 'D-pad left', 'J'), ('right', 'D-pad right', 'L'), ('look_up', 'Camera up', 'Up'),
         ('look_down', 'Camera down', 'Down'), ('look_left', 'Camera left', 'Left'), ('look_right', 'Camera right', 'Right'))
-DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True}
+DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True,
+            'check_updates': True}
 MODS, MODS_CONFIG, MOD_PRESETS = DATA / 'mods', DATA / 'mods.json', DATA / 'mods_presets.json'
 PATCHES, PATCHES_CONFIG = DATA / 'patches', DATA / 'patches.json'
 
@@ -196,6 +207,109 @@ def graphics_card():
     return ''
 
 
+# ---- updates (GitHub releases) ------------------------------------------------------------------
+def version_tuple(text):
+    return tuple(int(number) for number in re.findall(r'\d+', text or ''))
+
+
+def release_info(release, repo):
+    """(version, package URL, checksum URL, page URL) of a GitHub release (the API's JSON): the zip
+    and the `<zip>.sha256` published beside it (None when missing)."""
+    assets = {a.get('name', ''): a.get('browser_download_url') for a in release.get('assets', [])}
+    package = next((name for name in assets if name.lower().endswith('.zip')), None)
+    return ('.'.join(re.findall(r'\d+', release.get('tag_name', ''))), assets.get(package),
+            assets.get(f'{package}.sha256') if package else None,
+            release.get('html_url') or f'https://github.com/{repo}/releases/latest')
+
+
+def latest_release(repo=None):
+    import urllib.request
+    repo = repo or GITHUB_REPO
+    request = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/latest',
+                                     headers={'Accept': 'application/vnd.github+json',
+                                              'User-Agent': 'minustwo-launcher'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return release_info(json.load(response), repo)
+
+
+def download_update(url, checksum_url, folder, progress=lambda percent: None):
+    """Downloads the release zip into `folder`, checks it against the published SHA-256 and unpacks it;
+    returns the unpacked folder that holds MinusTwo.exe. Raises OSError when anything is wrong."""
+    import hashlib
+    import shutil
+    import urllib.request
+    import zipfile
+    if not checksum_url:
+        raise OSError('the release has no checksum (.sha256) beside its zip')
+    request = urllib.request.Request(checksum_url, headers={'User-Agent': 'minustwo-launcher'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        words = response.read(4096).decode('ascii', 'replace').split()
+    if not words or not re.fullmatch(r'[0-9a-fA-F]{64}', words[0]):
+        raise OSError('the release checksum is not a SHA-256')
+    folder = Path(folder)
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    archive, digest = folder / 'update.zip', hashlib.sha256()
+    request = urllib.request.Request(url, headers={'User-Agent': 'minustwo-launcher'})
+    with urllib.request.urlopen(request, timeout=60) as response, open(archive, 'wb') as out:
+        total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
+        while chunk := response.read(1 << 20):
+            out.write(chunk)
+            digest.update(chunk)
+            done += len(chunk)
+            percent = done * 100 // total if total else 0
+            if percent != shown:
+                shown = percent
+                progress(percent)
+    if digest.hexdigest() != words[0].lower():
+        archive.unlink()
+        raise OSError('the download does not match the published checksum')
+    try:
+        with zipfile.ZipFile(archive) as package:
+            package.extractall(folder / 'new')
+    except zipfile.BadZipFile as error:
+        raise OSError(f'the download is not a zip: {error}') from error
+    archive.unlink()
+    new = next((exe.parent for exe in (folder / 'new').rglob('MinusTwo.exe')), None)
+    if not new:
+        raise OSError('MinusTwo.exe is missing from the download')
+    return new
+
+
+def copy_over(source, target):
+    """The new version's files over an installation, never the player's (USER_FILES)."""
+    import shutil
+    shutil.copytree(source, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*USER_FILES))
+
+
+def install_update(target, wait_pid):
+    """--install-update TARGET PID, run by the downloaded version from its temporary folder: waits for
+    the old launcher to close, copies this version over TARGET and starts it there."""
+    import time
+    target = Path(target)
+    if sys.platform == 'win32':
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x00100000, False, int(wait_pid))  # SYNCHRONIZE
+        if handle:
+            kernel.WaitForSingleObject(handle, 60000)
+            kernel.CloseHandle(handle)
+    for _attempt in range(30):
+        try:
+            copy_over(PORT, target)
+            break
+        except OSError:  # a file still in use: the old launcher is closing
+            time.sleep(1)
+    else:
+        if sys.platform == 'win32':
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, 'Could not install the update (files in use). Close the game '
+                                                   'and the launcher, then try again.', 'Minus Two', 0x10)
+        return 1
+    subprocess.Popen([str(target / 'MinusTwo.exe')], cwd=str(target))
+    return 0
+
+
 class Launcher:
     """The window: GODZILLA's pages in a sidebar (as the God of War III and Bloodborne ports have
     them), the Play page with the game's key art, a ready check and quick settings, and the PLAY bar."""
@@ -242,6 +356,12 @@ class Launcher:
         self.card_answer = queue.Queue()
         threading.Thread(target=lambda: self.card_answer.put(graphics_card()), daemon=True).start()
         self.root.after(100, self.poll_card)
+        # Answers of the update check and download, run on the window's thread.
+        self.ui_calls = queue.Queue()
+        self.root.after(150, self.poll_ui)
+        self.update_box = None
+        if GITHUB_REPO and self.values.get('check_updates', True):
+            threading.Thread(target=self.check_update, daemon=True).start()
 
     def px(self, value):
         return int(round(value * self.scale))
@@ -335,7 +455,8 @@ class Launcher:
         brand.pack(anchor='w', padx=self.px(24), pady=(self.px(22), self.px(20)))
         tk.Label(brand, text='ゴジラ', bg=BG, fg=RED, font=(self.kana_face, 11, 'bold')).pack(anchor='w')
         tk.Label(brand, text='GODZILLA', bg=BG, fg=TEXT, font=(self.title_face, 31)).pack(anchor='w')
-        tk.Label(brand, text='Minus Two · native PC port', bg=BG, fg=MUTED, font=self.font(9)).pack(anchor='w')
+        tk.Label(brand, text=f'Minus Two {VERSION} · native PC port', bg=BG, fg=MUTED, font=self.font(9)).pack(
+            anchor='w')
         self.nav, self.current = {}, None
         for name, title in PAGES:
             row = tk.Frame(side, bg=BG, cursor='hand2')
@@ -351,8 +472,10 @@ class Launcher:
                 widget.bind('<Leave>', lambda _e, n=name: self.hover(n, False))
             self.nav[name] = (row, bar, label)
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
-        tk.Label(side, text='In the game: Insert or R3+L2\nopens the port\'s menu.', bg=BG, fg=MUTED,
-                 font=self.font(9), justify='left').pack(anchor='w', padx=self.px(24), pady=(0, self.px(18)))
+        self.side = side
+        self.side_note = tk.Label(side, text='In the game: Insert or R3+L2\nopens the port\'s menu.', bg=BG,
+                                  fg=MUTED, font=self.font(9), justify='left')
+        self.side_note.pack(anchor='w', padx=self.px(24), pady=(0, self.px(18)))
 
         right = tk.Frame(self.root, bg=PANEL)
         right.pack(side='left', fill='both', expand=True)
@@ -1120,6 +1243,15 @@ class Launcher:
             ttk.Button(page, text=text, command=command).grid(row=page.next_row, column=0, columnspan=2, sticky='w',
                                                               pady=self.px(4))
             page.next_row += 1
+        self.section(page, 'Updates')
+        self.row(page, 'Version', ttk.Label(page, text=f'Minus Two {VERSION}'))
+        self.check_updates_var = self.tk.BooleanVar(value=bool(self.values.get('check_updates', True)))
+        self.row(page, 'Check when the launcher opens', self.check(page, self.check_updates_var))
+        button = ttk.Button(page, text='Check for updates',
+                            command=lambda: threading.Thread(target=self.check_update, args=(True,), daemon=True).start())
+        self.row(page, '', button, None if GITHUB_REPO else 'No GitHub repository is set for updates yet.')
+        if not GITHUB_REPO:
+            button.state(['disabled'])
         self.section(page, 'Folders')
         for name, path in (('Port', PORT), ('Data', DATA)):
             self.row(page, name, ttk.Label(page, text=str(path), style='Muted.TLabel'))
@@ -1147,6 +1279,7 @@ class Launcher:
         self.values['language'] = dict(LANGUAGES)[self.language_var.get()]
         self.values['unlock_addons'] = bool(self.addons_var.get())
         self.values['mods_enabled'] = bool(self.mods_enabled_var.get())
+        self.values['check_updates'] = bool(self.check_updates_var.get())
         defaults = {a: d for a, _, d in KEYS}
         self.values['keys'] = {a: v.get().strip() for a, v in self.key_vars.items() if v.get().strip() != defaults[a]}
 
@@ -1181,6 +1314,92 @@ class Launcher:
         self.load_art(None if problem else folder)
         self.draw_banner()
         self.refresh_checks()
+
+    # ---- updates --------------------------------------------------------------------------------
+    def poll_ui(self):
+        import queue
+        try:
+            while True:
+                self.ui_calls.get_nowait()()
+        except queue.Empty:
+            pass
+        try:
+            self.root.after(150, self.poll_ui)
+        except self.tk.TclError:
+            pass  # the window closed for an update
+
+    def check_update(self, manual=False):
+        """Helper thread: asks GitHub for the newest release and offers it when it is newer."""
+        import shutil
+        from tkinter import messagebox
+        if UPDATE_DIR not in PORT.parents:
+            shutil.rmtree(UPDATE_DIR, ignore_errors=True)  # an installed update's download
+        try:
+            version, url, checksum, page = latest_release()
+        except (OSError, ValueError, KeyError) as failure:
+            if manual:
+                self.ui_calls.put(lambda error=failure: messagebox.showerror(
+                    'Minus Two', f'Could not check for updates: {error}'))
+            return
+
+        def show():
+            if version_tuple(version) > version_tuple(VERSION):
+                self.offer_update(version, url, checksum, page)
+            elif manual:
+                messagebox.showinfo('Minus Two', f'You have the latest version ({VERSION}).')
+        self.ui_calls.put(show)
+
+    def offer_update(self, version, url, checksum, page):
+        """A box above the sidebar's note: the new version, Update and What's new."""
+        if self.update_box:
+            return
+        import webbrowser
+        tk, ttk = self.tk, self.ttk
+        box = tk.Frame(self.side, bg=CARD, highlightthickness=self.px(1), highlightbackground=ACCENT)
+        self.update_label = tk.Label(box, text=f'Version {version} is available.', bg=CARD, fg=TEXT,
+                                     font=self.font(10, 'bold', 'Segoe UI Semibold'), wraplength=self.px(170),
+                                     justify='left')
+        self.update_label.pack(anchor='w', padx=self.px(10), pady=(self.px(8), self.px(6)))
+        self.update_button = ttk.Button(box, text='Update', command=lambda: self.install_update(version, url, checksum,
+                                                                                                  page))
+        self.update_button.pack(fill='x', padx=self.px(10))
+        ttk.Button(box, text="What's new", command=lambda: webbrowser.open(page)).pack(
+            fill='x', padx=self.px(10), pady=(self.px(4), self.px(10)))
+        box.pack(fill='x', padx=(self.px(20), self.px(18)), pady=(0, self.px(14)), before=self.side_note)
+        self.update_box = box
+
+    def install_update(self, version, url, checksum, page):
+        import webbrowser
+        from tkinter import messagebox
+        if self.process and self.process.poll() is None:
+            messagebox.showinfo('Minus Two', 'Close the game before updating.')
+            return
+        if not FROZEN or sys.platform != 'win32' or not url:
+            webbrowser.open(page)  # a source tree updates with git; a release without a zip by hand
+            return
+        if not messagebox.askyesno('Minus Two', f'Install version {version} now? The launcher closes, installs it '
+                                                'and opens again. Saves, settings and mods are kept.'):
+            return
+        self.update_button.state(['disabled'])
+
+        def progress(percent):
+            self.update_label.configure(text=f'Downloading version {version}… {percent}%')
+
+        def failed(error):
+            self.update_button.state(['!disabled'])
+            self.update_label.configure(text=f'Version {version} is available.')
+            messagebox.showerror('Minus Two', f'Update failed: {error}')
+
+        def work():
+            try:
+                new = download_update(url, checksum, UPDATE_DIR, lambda p: self.ui_calls.put(lambda: progress(p)))
+                # The new launcher copies itself over this installation once this one has closed.
+                subprocess.Popen([str(new / 'MinusTwo.exe'), '--install-update', str(PORT), str(os.getpid())],
+                                 cwd=str(new), stdin=subprocess.DEVNULL)
+                self.ui_calls.put(self.root.destroy)
+            except OSError as failure:
+                self.ui_calls.put(lambda error=failure: failed(error))
+        threading.Thread(target=work, daemon=True).start()
 
     # ---- the game -----------------------------------------------------------------------------
     def play(self):
@@ -1243,6 +1462,8 @@ class Launcher:
 
 def main():
     args = sys.argv[1:]
+    if len(args) == 3 and args[0] == '--install-update':
+        return install_update(args[1], args[2])
     if len(args) >= 2 and args[0] == '--script':
         # The preparation scripts, run by run.py through this executable when frozen.
         sys.argv = args[1:]

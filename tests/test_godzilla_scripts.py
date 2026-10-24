@@ -121,6 +121,77 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(self.launcher.load_json(path, {}), {})
 
 
+class UpdateTest(unittest.TestCase):
+    """The launcher's updates from GitHub releases (no network: file:// downloads)."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.root = Path(self.folder.name)
+        os.environ['MT_DATA_DIR'] = str(self.root / 'data')
+        import importlib
+        import minustwo_launcher
+        self.launcher = importlib.reload(minustwo_launcher)
+
+    def tearDown(self):
+        os.environ.pop('MT_DATA_DIR', None)
+        self.folder.cleanup()
+
+    def test_versions_compare_as_numbers(self):
+        v = self.launcher.version_tuple
+        self.assertGreater(v('0.10.0'), v('0.9.1'))
+        self.assertGreater(v('v0.1.1'), v(self.launcher.VERSION))
+        self.assertEqual(v('windows-v0.2.0'), (0, 2, 0))
+
+    def test_release_gives_the_zip_and_its_checksum(self):
+        release = {'tag_name': 'v0.2.0', 'html_url': 'https://github.com/o/r/releases/tag/v0.2.0', 'assets': [
+            {'name': 'minustwo-windows.zip.sha256', 'browser_download_url': 'https://x/zip.sha256'},
+            {'name': 'minustwo-windows.zip', 'browser_download_url': 'https://x/zip'}]}
+        self.assertEqual(self.launcher.release_info(release, 'o/r'),
+                         ('0.2.0', 'https://x/zip', 'https://x/zip.sha256', 'https://github.com/o/r/releases/tag/v0.2.0'))
+        self.assertEqual(self.launcher.release_info({'tag_name': 'v0.3'}, 'o/r'),
+                         ('0.3', None, None, 'https://github.com/o/r/releases/latest'))
+
+    def package(self, checksum=None):
+        import hashlib
+        import zipfile
+        archive = self.root / 'minustwo-windows.zip'
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('minustwo-windows/MinusTwo.exe', b'new launcher')
+            z.writestr('minustwo-windows/bin/minustwo.exe', b'new game')
+        digest = checksum or hashlib.sha256(archive.read_bytes()).hexdigest()
+        (self.root / 'minustwo-windows.zip.sha256').write_text(f'{digest}  minustwo-windows.zip\n')
+        return archive.as_uri(), (self.root / 'minustwo-windows.zip.sha256').as_uri()
+
+    def test_download_is_checked_and_unpacked(self):
+        url, checksum = self.package()
+        seen = []
+        new = self.launcher.download_update(url, checksum, self.root / 'update', seen.append)
+        self.assertEqual((new / 'MinusTwo.exe').read_bytes(), b'new launcher')
+        self.assertEqual(seen[-1], 100)
+
+    def test_a_download_unlike_its_checksum_is_refused(self):
+        url, checksum = self.package('0' * 64)
+        with self.assertRaises(OSError):
+            self.launcher.download_update(url, checksum, self.root / 'update')
+        self.assertFalse((self.root / 'update' / 'new').exists())
+        with self.assertRaises(OSError):  # a release without its .sha256
+            self.launcher.download_update(url, None, self.root / 'update')
+
+    def test_installing_keeps_the_players_files(self):
+        new, old = self.root / 'new', self.root / 'installed'
+        for folder in (new, old):
+            (folder / 'bin').mkdir(parents=True)
+            (folder / 'bin' / 'minustwo.exe').write_text(folder.name)
+        (new / 'minustwo.ini').write_text('from the package')
+        (old / 'minustwo.ini').write_text('mine')
+        (old / 'user').mkdir()
+        (old / 'user' / 'save.dat').write_text('progress')
+        self.launcher.copy_over(new, old)
+        self.assertEqual((old / 'bin' / 'minustwo.exe').read_text(), 'new')
+        self.assertEqual((old / 'minustwo.ini').read_text(), 'mine')
+        self.assertEqual((old / 'user' / 'save.dat').read_text(), 'progress')
+
+
 class TrophyTest(unittest.TestCase):
     """The Achievements page's trophies (scripts/godzilla_trophies.py)."""
 

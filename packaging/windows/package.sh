@@ -89,4 +89,6 @@ else
         ! -name mods.json ! -name patches.json ! -name settings.json ! -name game_icon.ico ! -name gamecontrollerdb.txt -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
+# The launcher's updates check the download against this (publish it beside the zip in a release).
+(cd dist && sha256sum minustwo-windows.zip > minustwo-windows.zip.sha256)
 du -sh "$dest" dist/minustwo-windows.zip
