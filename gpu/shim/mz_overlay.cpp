@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <cctype>
 #include <mutex>
 #include <thread>
 #include <string>
@@ -79,7 +80,6 @@ std::mutex notice_mutex;
 std::string notice_text;
 std::atomic<s64> notice_until{0}; // steady_clock milliseconds
 bool dirty = false; // settings changed while open: saved on close
-int requested_tab = -1; // switch on the next frame (L1/R1, Q/E, menu opened)
 // The game's text dialog (SetTextEntry), guarded by imgui_mutex.
 bool text_entry_active = false;
 std::string text_entry_prompt, text_entry_text;
@@ -97,6 +97,25 @@ std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 float base_scale = 1.0f;
 
+// GODZILLA's look, the launcher's (launcher/minuszero_launcher.py): near black, the atomic blue of
+// its menus and HUD, the red of the ゴジラ in its logo.
+namespace Theme {
+constexpr ImVec4 Rgb(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
+constexpr ImVec4 Alpha(ImVec4 c, float a) { return ImVec4(c.x, c.y, c.z, c.w * a); }
+constexpr ImVec4 Bg = Rgb(6, 8, 12), Panel = Rgb(11, 15, 21), Card = Rgb(18, 26, 36), Line = Rgb(29, 40, 54);
+constexpr ImVec4 Raised = Rgb(26, 38, 53); // a card under the mouse
+constexpr ImVec4 Text = Rgb(230, 237, 245), Soft = Rgb(190, 201, 214), Muted = Rgb(127, 141, 160);
+constexpr ImVec4 Accent = Rgb(22, 128, 216), AccentHi = Rgb(76, 180, 255), Red = Rgb(211, 32, 42);
+constexpr ImVec4 Warn = Rgb(240, 166, 64);
+ImU32 U32(const ImVec4& c, float a = 1.0f) { return ImGui::ColorConvertFloat4ToU32(Alpha(c, a)); }
+} // namespace Theme
+// The launcher's fonts, read from the system's fonts where installed (none is bundled): Impact for
+// headings, Bahnschrift for the tabs, Yu Gothic for the ゴジラ. Null: DejaVu Sans instead.
+ImFont* heading_font = nullptr;
+ImFont* nav_font = nullptr;
+ImFont* kana_font = nullptr;
+constexpr int kMenuTabs = 4;
+
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
 float frame_ms_avg = 0.0f;
@@ -106,9 +125,6 @@ void SetOpen(bool value) {
         return;
     }
     ImGui::GetIO().MouseDrawCursor = value;
-    if (value) {
-        requested_tab = MzSettings::Get().menu_tab;
-    }
     if (!value && dirty) {
         dirty = false;
         MzSettings::Save();
@@ -164,7 +180,30 @@ ImGuiKey KeyFromGamepad(u8 button) {
 
 void UiText(const char* text) { ImGui::TextUnformatted(Tr(text)); }
 void DisabledText(const char* text) { ImGui::TextDisabled("%s", Tr(text)); }
-void Separator(const char* text) { ImGui::SeparatorText(Tr(text)); }
+// Text in the heading font (DejaVu Sans for translated text, which Impact has no glyphs for).
+void PushHeading(float size) { ImGui::PushFont(MzUi::chinese ? nullptr : heading_font, size); }
+
+std::string Upper(const char* text) {
+    std::string upper = text;
+    if (!MzUi::chinese) {
+        for (char& c : upper) c = char(std::toupper(static_cast<unsigned char>(c)));
+    }
+    return upper;
+}
+
+// A section: its name in capitals, atomic blue, over a thin rule (the launcher's sections).
+void Separator(const char* text) {
+    const float u = base_scale;
+    ImGui::Dummy(ImVec2(0.0f, 6.0f * u));
+    PushHeading(22.0f);
+    ImGui::TextColored(Theme::AccentHi, "%s", Upper(Tr(text)).c_str());
+    ImGui::PopFont();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, at.y - 1.0f * u),
+                                        ImVec2(at.x + ImGui::GetContentRegionAvail().x, at.y - 1.0f * u),
+                                        Theme::U32(Theme::Line), 1.0f * u);
+    ImGui::Dummy(ImVec2(0.0f, 4.0f * u));
+}
 bool Button(const char* text) { return ImGui::Button(Tr(text)); }
 
 float PixelDensity(SDL_WindowID id) {
@@ -406,6 +445,34 @@ void PerformanceTab() {
     }
 }
 
+// The controller and the mouse (the launcher's Controls page sets the same, and the keys).
+void ControlsTab() {
+    auto& s = MzSettings::Get();
+    Separator("Controller");
+    if (BeginRows("##controller")) {
+        SliderRow("Vibration", s.vibration, 0, 100, "%d%%",
+                  "Strength of the controller's vibration. 0% turns it off.");
+        ImGui::EndTable();
+    }
+    Separator("Mouse");
+    if (BeginRows("##mouse")) {
+        SliderRow("Camera speed", s.mouse_aim_sensitivity, 10, 200, "%d%%",
+                  "How far the camera turns for the same mouse movement.");
+        static const char* const styles[] = {"Relative", "Absolute"};
+        ChoiceRow("Camera style", s.mouse_aim_style, styles, nullptr, 2,
+                  "Relative: the camera turns as fast as the mouse moves. Absolute: it turns by how far the "
+                  "mouse has gone since it started moving, so a long slow movement turns fast too.");
+        CheckRow("Keep mouse in window", s.mouse_lock,
+                 "While you play, the mouse stays in the game window; this menu and other windows get it back.");
+        ImGui::EndTable();
+    }
+    Separator("Keys");
+    ImGui::PushTextWrapPos(0.0f);
+    DisabledText("The keyboard keys are set on the launcher's Controls page (MinusZero.exe). The mouse "
+                 "always moves the camera too.");
+    ImGui::PopTextWrapPos();
+}
+
 void OverlayTab() {
     namespace P = MzPerfStats;
     auto& s = MzSettings::Get();
@@ -477,25 +544,29 @@ int RestartChanges() {
 
 void Menu() {
     auto& s = MzSettings::Get();
+    const float u = base_scale;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
                                    viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(std::min(760.0f * base_scale, viewport->WorkSize.x * 0.95f),
-                                    std::min(680.0f * base_scale, viewport->WorkSize.y * 0.9f)),
+    ImGui::SetNextWindowSize(ImVec2(std::min(780.0f * u, viewport->WorkSize.x * 0.95f),
+                                    std::min(720.0f * u, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
     // minuszero: the game's own title (param.sfo), not a fixed one.
-    static const std::string heading = [] {
-        const std::string_view title = Common::ElfInfo::Instance().Title();
-        return std::string(title.empty() ? "MinusZero" : title) + PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)");
+    static const std::string title = [] {
+        const std::string_view name = Common::ElfInfo::Instance().Title();
+        return Upper(std::string(name.empty() ? "MinusZero" : name).c_str());
     }();
-    if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * u, 18.0f * u));
+    ImGui::SetNextWindowBgAlpha(1.0f); // the game's text would show through (the blend is in linear light)
+    const bool shown = ImGui::Begin("##menu", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
+    ImGui::PopStyleVar();
+    if (!shown) {
         ImGui::End();
         return;
     }
     footer_help = nullptr;
-    constexpr int TabCount = 3;
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_E, false) ? 1
@@ -503,47 +574,93 @@ void Menu() {
                              ? -1
                              : 0;
         if (step) {
-            requested_tab = (s.menu_tab + step + TabCount) % TabCount;
-        }
-    }
-    const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + ImGui::GetTextLineHeightWithSpacing() * 2.0f;
-    if (ImGui::BeginTabBar("##tabs")) {
-        static const char* const tabs[TabCount] = {"Image", "Performance", "Overlay"};
-        for (int tab = 0; tab < TabCount; ++tab) {
-            const ImGuiTabItemFlags flags = requested_tab == tab ? ImGuiTabItemFlags_SetSelected : 0;
-            if (!ImGui::BeginTabItem(Tr(tabs[tab]), nullptr, flags)) {
-                continue;
-            }
-            if (s.menu_tab != tab && requested_tab < 0) {
-                s.menu_tab = tab;
-                dirty = true;
-            }
-            if (ImGui::BeginChild("##body", ImVec2(0, -footer))) {
-                switch (tab) {
-                case 0: ImageTab(); break;
-                case 1: PerformanceTab(); break;
-                default: OverlayTab(); break;
-                }
-            }
-            ImGui::EndChild();
-            ImGui::EndTabItem();
-        }
-        if (requested_tab >= 0) {
-            s.menu_tab = requested_tab;
+            s.menu_tab = (std::clamp(s.menu_tab.load(), 0, kMenuTabs - 1) + step + kMenuTabs) % kMenuTabs;
             dirty = true;
-            requested_tab = -1;
         }
-        ImGui::EndTabBar();
     }
+    const int current = std::clamp(s.menu_tab.load(), 0, kMenuTabs - 1);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 window = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+    const float left = ImGui::GetCursorScreenPos().x, right = left + ImGui::GetContentRegionAvail().x;
+    dl->AddRectFilled(window, ImVec2(window.x + size.x, window.y + 3.0f * u), Theme::U32(Theme::Accent),
+                      ImGui::GetStyle().WindowRounding, ImDrawFlags_RoundCornersTop);
+
+    // The brand, as the launcher's sidebar: ゴジラ in red over the title; the port and the keys beside.
+    if (kana_font) {
+        ImGui::PushFont(kana_font, 15.0f);
+        ImGui::TextColored(Theme::Red, "%s", "\xe3\x82\xb4\xe3\x82\xb8\xe3\x83\xa9"); // ゴジラ
+        ImGui::PopFont();
+    }
+    PushHeading(40.0f);
+    ImGui::TextUnformatted(title.c_str());
+    ImGui::PopFont();
+    const float baseline = ImGui::GetItemRectMax().y - ImGui::GetTextLineHeight() - 5.0f * u;
+    ImGui::SameLine(0.0f, 14.0f * u);
+    ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, baseline));
+    DisabledText("Minus Zero · port menu");
+    const char* keys = PadText("Insert / R3+L2", "Insert / RS+LT", "Insert / RS+ZL");
+    ImGui::SameLine();
+    ImGui::SetCursorScreenPos(ImVec2(right - ImGui::CalcTextSize(keys).x, baseline));
+    ImGui::TextDisabled("%s", keys);
+
+    // The tabs: names in capitals, the chosen one atomic blue and underlined, over a rule.
+    static const char* const tabs[kMenuTabs] = {"Image", "Performance", "Controls", "Overlay"};
+    ImGui::Dummy(ImVec2(0.0f, 10.0f * u));
+    const ImVec2 strip = ImGui::GetCursorScreenPos();
+    ImGui::PushFont(MzUi::chinese ? nullptr : nav_font, 19.0f);
+    const float tab_h = ImGui::GetTextLineHeight();
+    float x = strip.x;
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true); // the pad and the keys move between the settings
+    for (int tab = 0; tab < kMenuTabs; ++tab) {
+        const std::string label = Upper(Tr(tabs[tab]));
+        const float w = ImGui::CalcTextSize(label.c_str()).x;
+        ImGui::SetCursorScreenPos(ImVec2(x, strip.y));
+        ImGui::PushID(tab);
+        if (ImGui::InvisibleButton("##tab", ImVec2(w, tab_h + 10.0f * u)) && tab != current) {
+            s.menu_tab = tab;
+            dirty = true;
+        }
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::PopID();
+        const bool chosen = tab == current;
+        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x, strip.y),
+                    Theme::U32(chosen ? Theme::AccentHi : hovered ? Theme::Text : Theme::Muted), label.c_str());
+        if (chosen) {
+            dl->AddRectFilled(ImVec2(x, strip.y + tab_h + 6.0f * u), ImVec2(x + w, strip.y + tab_h + 9.0f * u),
+                              Theme::U32(Theme::AccentHi), 1.0f * u);
+        }
+        x += w + 30.0f * u;
+    }
+    ImGui::PopItemFlag();
+    ImGui::PopFont();
+    dl->AddLine(ImVec2(left, strip.y + tab_h + 9.0f * u), ImVec2(right, strip.y + tab_h + 9.0f * u),
+                Theme::U32(Theme::Line), 1.0f * u);
+    ImGui::SetCursorScreenPos(ImVec2(left, strip.y + tab_h + 16.0f * u));
+
+    const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + ImGui::GetTextLineHeightWithSpacing() * 2.0f;
+    ImGui::PushID(current); // each tab keeps its own scroll position
+    if (ImGui::BeginChild("##body", ImVec2(0, -footer))) {
+        switch (current) {
+        case 0: ImageTab(); break;
+        case 1: PerformanceTab(); break;
+        case 2: ControlsTab(); break;
+        default: OverlayTab(); break;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopID();
 
     ImGui::Separator();
     ImGui::PushTextWrapPos(0.0f);
     DisabledText(footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in minuszero.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in minuszero.ini.", "L / R or Q / E: switch tabs. Settings are saved in minuszero.ini."));
     ImGui::PopTextWrapPos();
     if (const int changes = RestartChanges()) {
-        ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), Tr("%d change%s need%s a restart (unsaved progress is lost)."),
+        ImGui::TextColored(Theme::Warn, Tr("%d change%s need%s a restart (unsaved progress is lost)."),
                            changes, changes == 1 ? "" : "s", changes == 1 ? "s" : "");
         ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, Theme::Accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::AccentHi);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Accent);
         ImGui::BeginDisabled(!std::getenv("MZ_RESTART_COMMAND"));
         if (Button("Apply and restart")) {
             // The new launch confirms the options once the game shows; run.py restores the
@@ -553,6 +670,7 @@ void Menu() {
             runtime_restart();
         }
         ImGui::EndDisabled();
+        ImGui::PopStyleColor(3);
     } else {
         ImGui::NewLine();
     }
@@ -580,7 +698,7 @@ void TextEntryBox() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%s", text_entry_prompt.c_str());
+    ImGui::TextColored(Theme::AccentHi, "%s", text_entry_prompt.c_str());
     ImGui::Separator();
     ImGui::SetWindowFontScale(1.4f);
     ImGui::Text("%s_", text_entry_text.c_str());
@@ -605,7 +723,7 @@ void ChoiceBox() {
                      ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::PushTextWrapPos(viewport->WorkSize.x * 0.7f);
     const size_t details = choice_preview_label.empty() ? std::string::npos : choice_title.find("\n\n");
-    ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%.*s",
+    ImGui::TextColored(Theme::AccentHi, "%.*s",
                        int(details == std::string::npos ? choice_title.size() : details), choice_title.c_str());
     ImGui::PopTextWrapPos();
     ImGui::Separator();
@@ -621,7 +739,7 @@ void ChoiceBox() {
             ImGui::SameLine();
             ImGui::BeginGroup();
             ImGui::PushTextWrapPos(viewport->WorkSize.x * 0.7f);
-            ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%s", choice_title.c_str() + details + 2);
+            ImGui::TextColored(Theme::Soft, "%s", choice_title.c_str() + details + 2);
             ImGui::PopTextWrapPos();
             ImGui::EndGroup();
         }
@@ -646,7 +764,7 @@ void ChoiceBox() {
         }
         ImGui::PushTextWrapPos(viewport->WorkSize.x * 0.7f);
         if (selected) {
-            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.55f, 1.0f), "> %s", choice_items[i].c_str());
+            ImGui::TextColored(Theme::AccentHi, "> %s", choice_items[i].c_str());
         } else {
             ImGui::Text("  %s", choice_items[i].c_str());
         }
@@ -658,7 +776,7 @@ void ChoiceBox() {
                 const float pad = 3.0f * base_scale;
                 ImGui::GetWindowDrawList()->AddRect(ImVec2(min.x - pad, min.y - pad),
                                                     ImVec2(max.x + pad, max.y + pad),
-                                                    IM_COL32(255, 230, 140, 255), 0.0f, 0,
+                                                    Theme::U32(Theme::AccentHi), 0.0f, 0,
                                                     2.0f * base_scale);
             }
             ImGui::SetScrollHereY();
@@ -871,8 +989,8 @@ void ToastBox() {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f * s);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f * s);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.08f, 0.92f * alpha));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.96f, 0.74f, 0.20f, 0.9f * alpha));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, Theme::Alpha(Theme::Panel, 0.94f * alpha));
+        ImGui::PushStyleColor(ImGuiCol_Border, Theme::Alpha(Theme::AccentHi, 0.9f * alpha));
         char name[40];
         std::snprintf(name, sizeof(name), "##trophy_toast_%zu", i);
         ImGui::Begin(name, nullptr,
@@ -880,34 +998,34 @@ void ToastBox() {
                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImVec2 p = ImGui::GetWindowPos();
-        const ImU32 gold = ImGui::ColorConvertFloat4ToU32(ImVec4(0.96f, 0.74f, 0.20f, alpha));
-        const ImU32 goldSoft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.96f, 0.74f, 0.20f, 0.75f * alpha));
-        dl->AddRectFilled(p, ImVec2(p.x + 6.0f * s, p.y + h), gold, 10.0f * s, ImDrawFlags_RoundCornersLeft);
+        const ImU32 accent = Theme::U32(Theme::AccentHi, alpha);
+        const ImU32 accent_soft = Theme::U32(Theme::AccentHi, 0.75f * alpha);
+        dl->AddRectFilled(p, ImVec2(p.x + 6.0f * s, p.y + h), accent, 10.0f * s, ImDrawFlags_RoundCornersLeft);
         if (l.tex) {
             const float icon = 64.0f * s;
             ImGui::SetCursorPos(ImVec2(18.0f * s, (h - 8.0f * s - icon) * 0.5f));
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
             ImGui::Image(l.tex->GetTexRef(), ImVec2(icon, icon));
             ImGui::PopStyleVar();
-            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), gold, 3.0f * s, 0, 2.0f * s);
+            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), accent, 3.0f * s, 0, 2.0f * s);
         } else {
             DrawTrophyIcon(dl, ImVec2(p.x + 52.0f * s, p.y + (h - 8.0f * s) * 0.5f), 28.0f * s, alpha);
         }
         const float frac = std::clamp(l.left / kToastSeconds, 0.0f, 1.0f); // time left
         dl->AddRectFilled(ImVec2(p.x + 14.0f * s, p.y + h - 8.0f * s),
-                          ImVec2(p.x + 14.0f * s + (w - 28.0f * s) * frac, p.y + h - 5.0f * s), goldSoft, 1.5f * s);
+                          ImVec2(p.x + 14.0f * s + (w - 28.0f * s) * frac, p.y + h - 5.0f * s), accent_soft, 1.5f * s);
         const float top = std::max(8.0f * s, (h - 8.0f * s - block) * 0.5f);
         ImGui::PushTextWrapPos(w - 16.0f * s);
         ImGui::SetWindowFontScale(1.0f);
         ImGui::SetCursorPos(ImVec2(text_x, top));
-        ImGui::TextColored(ImVec4(0.96f, 0.74f, 0.20f, alpha), "%s", trophy_labels.notice.c_str());
+        ImGui::TextColored(Theme::Alpha(Theme::AccentHi, alpha), "%s", trophy_labels.notice.c_str());
         ImGui::SetCursorPos(ImVec2(text_x, top + fs * 1.15f));
         ImGui::SetWindowFontScale(kNameScale);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, alpha), "%s", l.text.c_str());
+        ImGui::TextColored(Theme::Alpha(Theme::Text, alpha), "%s", l.text.c_str());
         ImGui::SetWindowFontScale(1.0f);
         if (detail_h > 0.0f) {
             ImGui::SetCursorPos(ImVec2(text_x, top + fs * 1.15f + name_h + 4.0f * s));
-            ImGui::TextColored(ImVec4(0.80f, 0.83f, 0.90f, alpha), "%s", l.detail.c_str());
+            ImGui::TextColored(Theme::Alpha(Theme::Soft, alpha), "%s", l.detail.c_str());
         }
         ImGui::PopTextWrapPos();
         ImGui::End();
@@ -1045,8 +1163,8 @@ void TrophyView() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f * s);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f * s);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.03f, 0.04f, 0.07f, 0.96f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.96f, 0.74f, 0.20f, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, Theme::Alpha(Theme::Panel, 0.97f));
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::Line);
     ImGui::Begin("##trophy_list", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse |
@@ -1055,7 +1173,7 @@ void TrophyView() {
     const ImVec2 p = ImGui::GetWindowPos();
     ImGui::SetWindowFontScale(1.0f);
     const float fs = ImGui::GetFontSize();
-    const ImVec4 gold(0.96f, 0.74f, 0.20f, 1.0f), white(1.0f, 1.0f, 1.0f, 1.0f), muted(0.62f, 0.64f, 0.70f, 1.0f);
+    const ImVec4 accent = Theme::AccentHi, white = Theme::Text, muted = Theme::Muted;
     auto color = [](const ImVec4& c, float a = 1.0f) {
         return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w * a));
     };
@@ -1074,11 +1192,11 @@ void TrophyView() {
     const float title_h = fs * 1.5f;
     const float header_h = 16.0f * s + title_h + 10.0f * s + fs + 16.0f * s;
     const float footer_h = fs + 22.0f * s;
-    dl->AddRectFilled(p, ImVec2(p.x + size.x, p.y + header_h), color(ImVec4(0.06f, 0.07f, 0.11f, 1.0f)), 12.0f * s,
+    dl->AddRectFilled(p, ImVec2(p.x + size.x, p.y + header_h), color(Theme::Bg), 12.0f * s,
                       ImDrawFlags_RoundCornersTop);
     ImGui::SetWindowFontScale(1.5f);
     ImGui::SetCursorPos(ImVec2(24.0f * s, 16.0f * s));
-    ImGui::TextColored(gold, "%s", trophy_labels.heading.c_str());
+    ImGui::TextColored(accent, "%s", trophy_labels.heading.c_str());
     ImGui::SetWindowFontScale(1.0f);
     const std::string counter = TrophyCounter(have, int(trophy_rows.size()));
     ImGui::SetCursorPos(ImVec2(size.x - 24.0f * s - ImGui::CalcTextSize(counter.c_str()).x, 16.0f * s + (title_h - fs) * 0.5f));
@@ -1089,10 +1207,10 @@ void TrophyView() {
     for (int i = 0; i < 3; i++) {
         const float w = ImGui::CalcTextSize(filters[i]->c_str()).x;
         ImGui::SetCursorPos(ImVec2(fx, fy));
-        ImGui::TextColored(i == trophy_filter ? gold : muted, "%s", filters[i]->c_str());
+        ImGui::TextColored(i == trophy_filter ? accent : muted, "%s", filters[i]->c_str());
         if (i == trophy_filter) {
             dl->AddRectFilled(ImVec2(p.x + fx, p.y + fy + fs + 3.0f * s), ImVec2(p.x + fx + w, p.y + fy + fs + 5.0f * s),
-                              color(gold), 1.0f * s);
+                              color(accent), 1.0f * s);
         }
         fx += w + 28.0f * s;
     }
@@ -1115,8 +1233,8 @@ void TrophyView() {
         }
         const bool got = TrophyUnlocked(row.id);
         const ImVec2 a(p.x + 16.0f * s, y), b(p.x + size.x - 16.0f * s - (max_scroll > 0.0f ? 8.0f * s : 0.0f), y + row_h);
-        dl->AddRectFilled(a, b, color(got ? ImVec4(0.10f, 0.12f, 0.19f, 0.95f) : ImVec4(0.07f, 0.08f, 0.11f, 0.92f)), 8.0f * s);
-        dl->AddRect(a, b, color(got ? ImVec4(0.96f, 0.74f, 0.20f, 0.85f) : ImVec4(0.25f, 0.27f, 0.33f, 0.9f)), 8.0f * s, 0,
+        dl->AddRectFilled(a, b, color(got ? Theme::Card : Theme::Rgb(13, 18, 26)), 8.0f * s);
+        dl->AddRect(a, b, color(got ? Theme::Alpha(Theme::Accent, 0.9f) : Theme::Line), 8.0f * s, 0,
                     1.5f * s);
         ImGui::PushClipRect(a, b, true);
         const float icon = 56.0f * s;
@@ -1129,7 +1247,7 @@ void TrophyView() {
         } else {
             ImGui::Dummy(ImVec2(icon, icon));
         }
-        dl->AddRect(ip, ImVec2(ip.x + icon, ip.y + icon), color(got ? gold : ImVec4(0.30f, 0.32f, 0.38f, 1.0f)), 3.0f * s, 0,
+        dl->AddRect(ip, ImVec2(ip.x + icon, ip.y + icon), color(got ? accent : Theme::Line), 3.0f * s, 0,
                     1.5f * s);
         const float tx = ip.x + icon + 14.0f * s;
         const float status_x = b.x - 16.0f * s - status_w;
@@ -1142,12 +1260,12 @@ void TrophyView() {
         if (!row.detail.empty()) {
             ImGui::SetCursorScreenPos(ImVec2(tx, a.y + 9.0f * s + fs * 1.15f + 4.0f * s));
             ImGui::PushTextWrapPos(status_x - 12.0f * s - p.x);
-            ImGui::TextColored(got ? ImVec4(0.80f, 0.83f, 0.90f, 1.0f) : ImVec4(0.50f, 0.52f, 0.58f, 1.0f), "%s",
+            ImGui::TextColored(got ? Theme::Soft : Theme::Alpha(Theme::Muted, 0.8f), "%s",
                                row.detail.c_str());
             ImGui::PopTextWrapPos();
         }
         ImGui::SetCursorScreenPos(ImVec2(status_x, a.y + (row_h - fs) * 0.5f));
-        ImGui::TextColored(got ? gold : muted, "%s", (got ? trophy_labels.unlocked : trophy_labels.locked).c_str());
+        ImGui::TextColored(got ? accent : muted, "%s", (got ? trophy_labels.unlocked : trophy_labels.locked).c_str());
         ImGui::PopClipRect();
     }
     ImGui::PopClipRect();
@@ -1156,7 +1274,7 @@ void TrophyView() {
         const float thumb = std::max(24.0f * s, track * (list_max.y - list_min.y) / content_h);
         const float top = list_min.y + 8.0f * s + (track - thumb) * (trophy_scroll / max_scroll);
         dl->AddRectFilled(ImVec2(p.x + size.x - 14.0f * s, top), ImVec2(p.x + size.x - 8.0f * s, top + thumb),
-                          color(gold, 0.7f), 3.0f * s);
+                          color(accent, 0.7f), 3.0f * s);
     }
     // footer: the keys
     const float hint_w = ImGui::CalcTextSize(trophy_labels.hint.c_str()).x;
@@ -1259,6 +1377,68 @@ void CycleEngineFps() {
                    : std::string(Tr("Engine frame rate: 60 FPS only (no frame rate patch for this game build)")));
 }
 
+// The launcher's colours on every window of the overlay (menu, save list, notices).
+void ApplyTheme(ImGuiStyle& style) {
+    using namespace Theme;
+    ImVec4* c = style.Colors;
+    constexpr ImVec4 none(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_Text] = Text;
+    c[ImGuiCol_TextDisabled] = Muted;
+    c[ImGuiCol_WindowBg] = Alpha(Panel, 0.95f);
+    c[ImGuiCol_ChildBg] = none;
+    c[ImGuiCol_PopupBg] = Alpha(Card, 0.98f);
+    c[ImGuiCol_Border] = Line;
+    c[ImGuiCol_FrameBg] = Card;
+    c[ImGuiCol_FrameBgHovered] = Raised;
+    c[ImGuiCol_FrameBgActive] = Rgb(31, 46, 64);
+    c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TitleBgCollapsed] = Bg;
+    c[ImGuiCol_ScrollbarBg] = none;
+    c[ImGuiCol_ScrollbarGrab] = Line;
+    c[ImGuiCol_ScrollbarGrabHovered] = Rgb(42, 58, 78);
+    c[ImGuiCol_ScrollbarGrabActive] = Accent;
+    c[ImGuiCol_CheckMark] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); // a white tick on atomic blue, as the launcher's
+    c[ImGuiCol_CheckboxSelectedBg] = Accent;
+    c[ImGuiCol_SliderGrab] = Accent;
+    c[ImGuiCol_SliderGrabActive] = AccentHi;
+    c[ImGuiCol_Button] = Card;
+    c[ImGuiCol_ButtonHovered] = Raised;
+    c[ImGuiCol_ButtonActive] = Accent;
+    c[ImGuiCol_Header] = Alpha(Accent, 0.35f);
+    c[ImGuiCol_HeaderHovered] = Alpha(Accent, 0.55f);
+    c[ImGuiCol_HeaderActive] = Accent;
+    c[ImGuiCol_Separator] = c[ImGuiCol_SeparatorHovered] = Line;
+    c[ImGuiCol_SeparatorActive] = Accent;
+    c[ImGuiCol_ResizeGrip] = none;
+    c[ImGuiCol_ResizeGripHovered] = Alpha(Accent, 0.5f);
+    c[ImGuiCol_ResizeGripActive] = Accent;
+    c[ImGuiCol_PlotHistogram] = Accent;
+    c[ImGuiCol_PlotHistogramHovered] = AccentHi;
+    c[ImGuiCol_TableBorderStrong] = c[ImGuiCol_TableBorderLight] = Line;
+    c[ImGuiCol_TextSelectedBg] = Alpha(Accent, 0.4f);
+    c[ImGuiCol_NavCursor] = AccentHi;
+}
+
+// A font from the system's fonts folder (Windows), or null.
+ImFont* SystemFont(ImFontAtlas* atlas, const char* file) {
+#ifdef _WIN32
+    wchar_t directory[MAX_PATH]{};
+    const UINT size = GetWindowsDirectoryW(directory, MAX_PATH);
+    if (!size || size >= MAX_PATH) {
+        return nullptr;
+    }
+    const auto path = std::filesystem::path(directory) / "Fonts" / file;
+    if (!MzUi::UsableFont(path)) {
+        return nullptr;
+    }
+    const auto utf8 = path.u8string();
+    return atlas->AddFontFromFileTTF(reinterpret_cast<const char*>(utf8.c_str()), 18.0f);
+#else
+    (void)atlas;
+    (void)file;
+    return nullptr;
+#endif
+}
+
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) {
     std::scoped_lock lock{imgui_mutex};
     if (initialized) {
@@ -1277,7 +1457,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     style.WindowRounding = 6.0f;
     style.FrameRounding = 4.0f;
     style.GrabRounding = 4.0f;
-    style.Colors[ImGuiCol_WindowBg].w = 0.92f;
+    ApplyTheme(style);
 
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
@@ -1288,6 +1468,9 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
         MzUi::WantsChinese(ui_language ? ui_language : "")) {
         std::printf("Overlay: no usable system CJK font; keeping English menu text\n");
     }
+    heading_font = SystemFont(io.Fonts, "impact.ttf");
+    nav_font = SystemFont(io.Fonts, "bahnschrift.ttf");
+    kana_font = SystemFont(io.Fonts, "YuGothB.ttc");
 
 
     const vk::Instance vk_instance = instance.GetInstance();
@@ -1597,7 +1780,32 @@ void SetLoading(bool active, u32 done, u32 total) {
     loading = active;
 }
 
+// MZ_MENU_AT=<seconds>: the menu opens that long after the first frame and shows the next tab
+// every 4 seconds (pictures of the menu in test runs, with nothing pressed).
+void OpenMenuForTest() {
+    static const float menu_at = [] {
+        const char* env = std::getenv("MZ_MENU_AT");
+        return env ? float(std::atof(env)) : 0.0f;
+    }();
+    if (menu_at <= 0.0f) {
+        return;
+    }
+    static const auto first = std::chrono::steady_clock::now();
+    static int shown_tab = -1;
+    const float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - first).count() - menu_at;
+    if (t >= 0.0f && int(t / 4.0f) != shown_tab) {
+        std::scoped_lock lock{imgui_mutex};
+        if (initialized) {
+            shown_tab = int(t / 4.0f);
+            SetOpen(true);
+            MzSettings::Get().menu_tab = shown_tab % kMenuTabs;
+        }
+    }
+}
+
+// Asked by the presenter every frame: the overlay draws only when this is true.
 bool Visible() {
+    OpenMenuForTest();
     const auto& s = MzSettings::Get();
     return initialized && (loading || background_total || PrefetchActive() || CompileNoteActive() ||
                            menu_open || text_entry_active || choice_active || choice_retiring ||

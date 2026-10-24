@@ -25,7 +25,7 @@ Starting
 
 While playing
 - Insert on the keyboard, or R3 + L2 on a controller, opens the port's menu (display mode,
-  VSync, frame rate limit, overlay).
+  VSync, frame rate limit, controller vibration, mouse camera, overlay).
 - Render resolution in that menu draws the game above 1080p, up to 4K and 8K (Apply and
   restart).
 - Match refresh rate (on by default): in Borderless and Fullscreen, a display whose refresh
