@@ -122,11 +122,12 @@ def play_without_window():
 
 
 PAGES = (('play', 'Play'), ('graphics', 'Graphics'), ('display', 'Display & FPS'), ('game', 'Game'),
-         ('controls', 'Controls'), ('advanced', 'Advanced'))
+         ('controls', 'Controls'), ('achievements', 'Achievements'), ('advanced', 'Advanced'))
 ANISOTROPY = (('Game default', '0'), ('2x', '2'), ('4x', '4'), ('8x', '8'), ('16x', '16'))
 # GODZILLA's look: near black, the atomic blue of its menus and HUD, the red of the ゴジラ in its logo.
 BG, PANEL, CARD, LINE = '#06080c', '#0b0f15', '#121a24', '#1d2836'
 TEXT, MUTED, ACCENT, ACCENT_HI, RED = '#e6edf5', '#7f8da0', '#1680d8', '#4cb4ff', '#d3202a'
+GRADE_COLOURS = {'Platinum': '#a9d8f5', 'Gold': '#e2b44c', 'Silver': '#c3cad3', 'Bronze': '#c98552'}
 
 
 def display_refresh():
@@ -297,6 +298,11 @@ class Launcher:
                               ('selectForeground', '#f2f8ff'), ('font', base)):
             self.root.option_add(f'*TCombobox*Listbox.{option}', value)
         s.configure('TEntry', fieldbackground=CARD, foreground=TEXT, insertcolor=TEXT, padding=self.px(4))
+        s.configure('Trophy.Horizontal.TProgressbar', background=ACCENT, troughcolor=CARD, bordercolor=LINE,
+                    lightcolor=ACCENT_HI, darkcolor=ACCENT, thickness=self.px(10))
+        s.configure('Vertical.TScrollbar', background='#26364a', troughcolor=PANEL, bordercolor=PANEL, arrowcolor=MUTED,
+                    lightcolor='#26364a', darkcolor='#26364a', arrowsize=self.px(14))
+        s.map('Vertical.TScrollbar', background=[('active', '#33475f')])
         s.configure('Horizontal.TScale', background=ACCENT, troughcolor=CARD, bordercolor=LINE, lightcolor=ACCENT_HI,
                     darkcolor=ACCENT, sliderlength=self.px(14), gripcount=0)
         s.map('Horizontal.TScale', background=[('active', ACCENT_HI)])
@@ -349,7 +355,9 @@ class Launcher:
         self.build_display()
         self.build_game()
         self.build_controls()
+        self.build_achievements()
         self.build_advanced()
+        self.root.bind_all('<MouseWheel>', self.wheel)
         for var in (self.mode_var, self.resolution_var, self.vsync_var, self.match_refresh_var, self.fps_var):
             var.trace_add('write', lambda *_a: self.update_summary())
         self.update_summary()
@@ -371,6 +379,8 @@ class Launcher:
             row.configure(bg=PANEL if active else BG)
             label.configure(bg=PANEL if active else BG, fg=ACCENT_HI if active else TEXT)
             bar.configure(bg=ACCENT_HI if active else BG)
+        if name == 'achievements':
+            self.refresh_achievements()  # the game may have unlocked some since
 
     def page(self, name, title, subtitle):
         """A settings page: its title, a line under it, then rows (grid, two columns)."""
@@ -617,6 +627,126 @@ class Launcher:
                                                              padx=(0, self.px(28)))
         ttk.Button(page, text='Default keys', command=self.default_keys).grid(row=16, column=0, sticky='w',
                                                                               pady=self.px(14))
+
+    # ---- the Achievements page ----------------------------------------------------------------
+    def build_achievements(self):
+        tk, ttk = self.tk, self.ttk
+        outer = ttk.Frame(self.content)
+        self.pages['achievements'] = outer
+        head = ttk.Frame(outer, padding=(self.px(32), self.px(26), self.px(32), self.px(4)))
+        head.pack(fill='x')
+        head.columnconfigure(1, weight=1)
+        ttk.Label(head, text='ACHIEVEMENTS', style='Heading.TLabel').grid(row=0, column=0, columnspan=3, sticky='w')
+        ttk.Label(head, text='GODZILLA\'s 45 trophies and the ones you unlocked with this port.',
+                  style='Muted.TLabel').grid(row=1, column=0, columnspan=3, sticky='w')
+        self.trophy_count = tk.Label(head, text='', bg=PANEL, fg=TEXT, font=(self.title_face, 30))
+        self.trophy_count.grid(row=2, column=0, rowspan=2, sticky='w', pady=(self.px(14), 0), padx=(0, self.px(22)))
+        self.trophy_bar = ttk.Progressbar(head, style='Trophy.Horizontal.TProgressbar', maximum=45)
+        self.trophy_bar.grid(row=2, column=1, sticky='we', pady=(self.px(22), 0))
+        grades = tk.Frame(head, bg=PANEL)
+        grades.grid(row=3, column=1, sticky='w', pady=(self.px(6), 0))
+        self.grade_labels = {}
+        for grade in ('Platinum', 'Gold', 'Silver', 'Bronze'):
+            tk.Label(grades, text='●', bg=PANEL, fg=GRADE_COLOURS[grade], font=self.font(10)).pack(side='left')
+            label = tk.Label(grades, text='', bg=PANEL, fg=TEXT, font=self.font(10))
+            label.pack(side='left', padx=(self.px(4), self.px(18)))
+            self.grade_labels[grade] = label
+        filters = ttk.Frame(head)
+        filters.grid(row=2, column=2, rowspan=2, sticky='e', padx=(self.px(22), 0), pady=(self.px(14), 0))
+        self.trophy_filter = self.tk.StringVar(value='All trophies')
+        box = ttk.Combobox(filters, textvariable=self.trophy_filter, values=('All trophies', 'Unlocked', 'Locked'),
+                           state='readonly', width=14)
+        box.pack(side='left')
+        box.bind('<<ComboboxSelected>>', lambda _e: self.refresh_achievements())
+        ttk.Button(filters, text='Refresh', command=self.refresh_achievements).pack(side='left', padx=(self.px(8), 0))
+
+        holder = ttk.Frame(outer, padding=(self.px(32), self.px(12), self.px(16), self.px(12)))
+        holder.pack(fill='both', expand=True)
+        self.trophy_canvas = tk.Canvas(holder, bg=PANEL, highlightthickness=0, bd=0)
+        bar = ttk.Scrollbar(holder, orient='vertical', command=self.trophy_canvas.yview)
+        self.trophy_list = tk.Frame(self.trophy_canvas, bg=PANEL)
+        window = self.trophy_canvas.create_window(0, 0, window=self.trophy_list, anchor='nw')
+        self.trophy_list.bind('<Configure>', lambda _e: self.trophy_canvas.configure(
+            scrollregion=self.trophy_canvas.bbox('all')))
+        self.trophy_canvas.bind('<Configure>', lambda e: self.trophy_canvas.itemconfigure(window, width=e.width))
+        self.trophy_canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side='right', fill='y', padx=(self.px(8), 0))
+        self.trophy_canvas.pack(side='left', fill='both', expand=True)
+        self.trophy_icons = {}    # (game folder, id) -> PNG bytes of the dump's trophy00.trp
+        self.trophy_photos = {}   # (id, locked) -> the icon as shown
+
+    def wheel(self, event):
+        """The mouse wheel scrolls the trophy list (not an open drop-down list)."""
+        if self.current == 'achievements' and 'popdown' not in str(event.widget):
+            self.trophy_canvas.yview_scroll(int(-event.delta / 120), 'units')
+
+    def trophy_photo(self, trophy, png, locked):
+        """The icon at 64 px (scaled); grey and dark while the trophy is locked."""
+        key = (trophy, locked)
+        if key not in self.trophy_photos:
+            photo = None
+            try:
+                import io
+                from PIL import Image, ImageTk
+                size = self.px(64)
+                image = Image.open(io.BytesIO(png)).convert('RGB').resize((size, size), Image.LANCZOS)
+                if locked:
+                    image = image.convert('L').point(lambda v: int(v * 0.45)).convert('RGB')
+                photo = ImageTk.PhotoImage(image)
+            except (ImportError, OSError, ValueError):
+                photo = None
+            self.trophy_photos[key] = photo
+        return self.trophy_photos[key]
+
+    def refresh_achievements(self):
+        tk = self.tk
+        import godzilla_trophies
+        for child in self.trophy_list.winfo_children():
+            child.destroy()
+        folder = self.values['game_dir']
+        if folder not in self.trophy_icons:
+            self.trophy_icons = {folder: godzilla_trophies.read_trp_icons(
+                Path(folder) / 'sce_sys' / 'trophy' / 'trophy00.trp') if folder else {}}
+            self.trophy_photos = {}
+        icons = self.trophy_icons[folder]
+        unlocked = godzilla_trophies.read_unlocked(DATA / 'user' / 'trophies.dat')
+        trophies = godzilla_trophies.TROPHIES
+        got = [i for i in range(len(trophies)) if i in unlocked]
+        self.trophy_count.configure(text=f'{len(got)} / {len(trophies)}')
+        self.trophy_bar.configure(value=len(got), maximum=len(trophies))
+        for grade, label in self.grade_labels.items():
+            ids = [i for i, t in enumerate(trophies) if t[2] == grade]
+            label.configure(text=f'{grade} {sum(i in unlocked for i in ids)} / {len(ids)}')
+        if not icons:
+            tk.Label(self.trophy_list, text='Choose the game folder on the Play page: the icons come from its '
+                                            'sce_sys/trophy/trophy00.trp.', bg=PANEL, fg=MUTED, anchor='w',
+                     font=self.font(10)).pack(fill='x', pady=(0, self.px(10)))
+        show = self.trophy_filter.get()
+        for trophy, (name, description, grade) in enumerate(trophies):
+            done = trophy in unlocked
+            if (show == 'Unlocked' and not done) or (show == 'Locked' and done):
+                continue
+            card = tk.Frame(self.trophy_list, bg=CARD)
+            card.pack(fill='x', pady=(0, self.px(6)))
+            tk.Frame(card, bg=GRADE_COLOURS[grade] if done else LINE, width=self.px(4)).pack(side='left', fill='y')
+            photo = self.trophy_photo(trophy, icons[trophy], not done) if trophy in icons else None
+            if photo:
+                icon = tk.Label(card, image=photo, bg=CARD)
+            else:
+                icon = tk.Frame(card, bg=LINE, width=self.px(64), height=self.px(64))
+            icon.pack(side='left', padx=(self.px(12), self.px(16)), pady=self.px(10))
+            tag = tk.Label(card, text='UNLOCKED' if done else 'LOCKED', bg=CARD, fg=ACCENT_HI if done else MUTED,
+                           font=self.font(9, 'bold'))
+            tag.pack(side='right', padx=self.px(18))
+            text = tk.Frame(card, bg=CARD)
+            text.pack(side='left', fill='x', expand=True, pady=self.px(8))
+            tk.Label(text, text=name, bg=CARD, fg=TEXT if done else '#b4c0ce', anchor='w',
+                     font=self.font(12, 'bold', 'Segoe UI Semibold')).pack(fill='x')
+            tk.Label(text, text=description, bg=CARD, fg=TEXT if done else MUTED, anchor='w', justify='left',
+                     wraplength=self.px(600), font=self.font(10)).pack(fill='x')
+            tk.Label(text, text=grade.upper(), bg=CARD, fg=GRADE_COLOURS[grade] if done else MUTED, anchor='w',
+                     font=self.font(8, 'bold')).pack(fill='x', pady=(self.px(2), 0))
+        self.trophy_canvas.yview_moveto(0)
 
     def build_advanced(self):
         ttk = self.ttk

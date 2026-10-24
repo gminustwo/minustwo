@@ -106,5 +106,42 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(self.launcher.load_settings()['game_dir'], 'D:/G')
 
 
+class TrophyTest(unittest.TestCase):
+    """The Achievements page's trophies (scripts/godzilla_trophies.py)."""
+
+    def test_the_list_is_the_runtimes(self):
+        # The runtime's notice and the launcher tell the same names; the grades are the C table's comments.
+        import re
+        import godzilla_trophies
+        source = (ROOT / 'src' / 'runtime_services.c').read_text(encoding='utf-8')
+        table = re.findall(r'\{"([^"]*)","([^"]*)"\}, /\* (\d+): (\w+) \*/', source)
+        self.assertEqual([(name, text, grade) for name, text, _id, grade in table], list(godzilla_trophies.TROPHIES))
+        self.assertEqual([int(i) for _n, _t, i, _g in table], list(range(45)))
+        grades = [grade for _n, _t, grade in godzilla_trophies.TROPHIES]
+        self.assertEqual((grades.count('Platinum'), grades.count('Gold'), grades.count('Silver'), grades.count('Bronze')),
+                         (1, 3, 11, 30))
+
+    def test_icons_and_unlocked_set_are_read(self):
+        import godzilla_trophies
+        with tempfile.TemporaryDirectory() as folder:
+            names = (b'TROPCONF.ESFM', b'TROP000.PNG', b'TROP007.PNG')
+            payloads = (b'secret', b'\x89PNG zero', b'\x89PNG seven')
+            data_at = 0x60 + 0x40 * len(names)
+            header = bytes((0xDC, 0xA2, 0x4D, 0x00)) + bytes(12) + struct.pack('>II', len(names), 0x40)
+            header += bytes(0x60 - len(header))
+            entries, blob = b'', b''
+            for name, payload in zip(names, payloads):
+                entries += name.ljust(32, b'\0') + struct.pack('>QQ', data_at + len(blob), len(payload)) + bytes(16)
+                blob += payload
+            trp = Path(folder) / 'trophy00.trp'
+            trp.write_bytes(header + entries + blob)
+            self.assertEqual(godzilla_trophies.read_trp_icons(trp), {0: b'\x89PNG zero', 7: b'\x89PNG seven'})
+            self.assertEqual(godzilla_trophies.read_trp_icons(Path(folder) / 'none.trp'), {})
+            unlocked = Path(folder) / 'trophies.dat'
+            unlocked.write_bytes(struct.pack('<4I', (1 << 1) | (1 << 2) | (1 << 7), 0, 1 << 3, 0))
+            self.assertEqual(godzilla_trophies.read_unlocked(unlocked), {1, 2, 7, 67})
+            self.assertEqual(godzilla_trophies.read_unlocked(Path(folder) / 'none.dat'), set())
+
+
 if __name__ == '__main__':
     unittest.main()

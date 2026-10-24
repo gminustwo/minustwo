@@ -697,7 +697,8 @@ static char trophy_names[TROPHY_MAX][64];
 static char trophy_details[TROPHY_MAX][160];
 /* GODZILLA's trophies (CUSA02046) in their PSN order, which is their id: the texts when neither file
  * above is there (the ones in trophy00.trp are encrypted, TROP.ESFM). Their grades match the frames
- * of the icons in the TRP (TROP000.PNG...). */
+ * of the icons in the TRP (TROP000.PNG...). The launcher's Achievements page has the same list
+ * (scripts/godzilla_trophies.py; tests/test_godzilla_scripts.py keeps the two equal). */
 static const char *const godzilla_trophies[45][2]={
     {"GODZILLA","Earn all trophies."}, /* 0: Platinum */
     {"The Scars of Disaster","Finish the tutorial."}, /* 1: Bronze */
