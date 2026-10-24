@@ -38,7 +38,9 @@ KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('mov
         ('touchpad', 'Touchpad', 'Tab'), ('up', 'D-pad up', 'I'), ('down', 'D-pad down', 'K'),
         ('left', 'D-pad left', 'J'), ('right', 'D-pad right', 'L'), ('look_up', 'Camera up', 'Up'),
         ('look_down', 'Camera down', 'Down'), ('look_left', 'Camera left', 'Left'), ('look_right', 'Camera right', 'Right'))
-DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}}
+DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True}
+MODS, MODS_CONFIG, MOD_PRESETS = DATA / 'mods', DATA / 'mods.json', DATA / 'mods_presets.json'
+PATCHES, PATCHES_CONFIG = DATA / 'patches', DATA / 'patches.json'
 
 sys.path.insert(0, str(PORT / 'scripts'))
 
@@ -92,12 +94,26 @@ def game_environment(values):
     """The variables run.py and the game read, from the launcher's settings."""
     env = {**os.environ, 'MZ_GAME_DIR': values['game_dir'], 'MZ_LANGUAGE': values['language'],
            'MZ_UNLOCK_ADDONS': '1' if values['unlock_addons'] else '0', 'MZ_CONFIG': str(INI),
-           'MZ_DATA_DIR': str(DATA), 'PYTHONIOENCODING': 'utf-8'}
+           'MZ_DATA_DIR': str(DATA), 'MZ_MODS_ENABLED': '1' if values.get('mods_enabled', True) else '0',
+           'PYTHONIOENCODING': 'utf-8'}
     changed = {k: v for k, v in values['keys'].items() if v and v != dict((a, d) for a, _, d in KEYS).get(k)}
     if changed:
         # ',' and '=' separate the entries: the runtime knows those two keys as Comma and Equals.
         env['MZ_KEY_MAP'] = ','.join(f'{k}={v.replace(",", "Comma").replace("=", "Equals")}' for k, v in changed.items())
     return env
+
+
+def load_json(path, default):
+    try:
+        value = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        return default
+    return value if isinstance(value, type(default)) else default
+
+
+def write_json(path, value):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
 def game_command():
@@ -122,11 +138,13 @@ def play_without_window():
 
 
 PAGES = (('play', 'Play'), ('graphics', 'Graphics'), ('display', 'Display & FPS'), ('game', 'Game'),
-         ('controls', 'Controls'), ('achievements', 'Achievements'), ('advanced', 'Advanced'))
+         ('controls', 'Controls'), ('mods', 'Mods & patches'), ('achievements', 'Achievements'),
+         ('advanced', 'Advanced'))
 ANISOTROPY = (('Game default', '0'), ('2x', '2'), ('4x', '4'), ('8x', '8'), ('16x', '16'))
 # GODZILLA's look: near black, the atomic blue of its menus and HUD, the red of the ゴジラ in its logo.
 BG, PANEL, CARD, LINE = '#06080c', '#0b0f15', '#121a24', '#1d2836'
 TEXT, MUTED, ACCENT, ACCENT_HI, RED = '#e6edf5', '#7f8da0', '#1680d8', '#4cb4ff', '#d3202a'
+WARN = '#f0a640'  # a file two mods change
 GRADE_COLOURS = {'Platinum': '#a9d8f5', 'Gold': '#e2b44c', 'Silver': '#c3cad3', 'Bronze': '#c98552'}
 
 
@@ -355,6 +373,7 @@ class Launcher:
         self.build_display()
         self.build_game()
         self.build_controls()
+        self.build_mods()
         self.build_achievements()
         self.build_advanced()
         self.root.bind_all('<MouseWheel>', self.wheel)
@@ -381,6 +400,8 @@ class Launcher:
             bar.configure(bg=ACCENT_HI if active else BG)
         if name == 'achievements':
             self.refresh_achievements()  # the game may have unlocked some since
+        if name == 'mods':
+            self.refresh_mods()  # mods may have been added to the folder since
 
     def page(self, name, title, subtitle):
         """A settings page: its title, a line under it, then rows (grid, two columns)."""
@@ -628,6 +649,346 @@ class Launcher:
         ttk.Button(page, text='Default keys', command=self.default_keys).grid(row=16, column=0, sticky='w',
                                                                               pady=self.px(14))
 
+    # ---- the Mods & patches page --------------------------------------------------------------
+    def build_mods(self):
+        """Loose-file mods layered over the game when it starts (scripts/mods.py), in a load order with
+        a details panel for the selected mod, presets, and third-party eboot patches (patches.py)."""
+        tk, ttk = self.tk, self.ttk
+        outer = ttk.Frame(self.content)
+        self.pages['mods'] = outer
+        self.mods_canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
+        bar = ttk.Scrollbar(outer, orient='vertical', command=self.mods_canvas.yview)
+        page = ttk.Frame(self.mods_canvas, padding=(self.px(32), self.px(26), self.px(32), self.px(24)))
+        window = self.mods_canvas.create_window(0, 0, window=page, anchor='nw')
+        page.bind('<Configure>', lambda _e: self.mods_canvas.configure(scrollregion=self.mods_canvas.bbox('all')))
+        self.mods_canvas.bind('<Configure>', lambda e: self.mods_canvas.itemconfigure(window, width=e.width))
+        self.mods_canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side='right', fill='y')
+        self.mods_canvas.pack(side='left', fill='both', expand=True)
+        page.columnconfigure(0, weight=1)
+        ttk.Label(page, text='MODS & PATCHES', style='Heading.TLabel').grid(row=0, column=0, sticky='w')
+        ttk.Label(page, text='Change textures, sounds and text, or the game\'s code. Your game files stay untouched.',
+                  style='Muted.TLabel').grid(row=1, column=0, sticky='w')
+
+        top = ttk.Frame(page)
+        top.grid(row=2, column=0, sticky='we', pady=(self.px(16), 0))
+        self.mods_enabled_var = tk.BooleanVar(value=bool(self.values.get('mods_enabled', True)))
+        ttk.Checkbutton(top, text='Load mods', variable=self.mods_enabled_var,
+                        command=self.refresh_mod_marks).pack(side='left')
+        self.mods_count = ttk.Label(top, text='', style='Muted.TLabel')
+        self.mods_count.pack(side='left', padx=(self.px(18), 0))
+        ttk.Button(top, text='Refresh', command=self.refresh_mods).pack(side='right')
+        ttk.Button(top, text='Open mods folder', command=lambda: self.open_folder(MODS)).pack(
+            side='right', padx=(0, self.px(8)))
+
+        head = ttk.Frame(page)
+        head.grid(row=3, column=0, sticky='we', pady=(self.px(22), 0))
+        ttk.Label(head, text='LOAD ORDER', style='Section.TLabel').pack(side='left')
+        ttk.Label(head, text='Lower in the list wins', style='Muted.TLabel').pack(side='right')
+        tk.Frame(page, bg=LINE, height=self.px(1)).grid(row=4, column=0, sticky='we', pady=(self.px(2), self.px(10)))
+        self.mods_body = ttk.Frame(page)
+        self.mods_body.grid(row=5, column=0, sticky='we')
+        self.mods_body.columnconfigure(0, weight=1)
+        left = ttk.Frame(self.mods_body)
+        left.grid(row=0, column=0, sticky='new')
+        self.mods_list = tk.Frame(left, bg=CARD)
+        self.mods_list.pack(fill='x')
+        self.conflict_line = ttk.Frame(left)
+        self.conflict_line.pack(fill='x', pady=(self.px(8), 0))
+        self.conflict_label = tk.Label(self.conflict_line, text='', bg=PANEL, fg=WARN, font=self.font(10),
+                                       justify='left', anchor='w')
+        self.conflict_label.pack(side='left')
+        self.conflict_toggle = ttk.Button(self.conflict_line, text='Details', command=self.toggle_conflicts)
+        self.conflict_files = ttk.Label(left, text='', style='Muted.TLabel', justify='left')
+        self.conflict_files.pack(anchor='w')
+        self.mod_details = tk.Frame(self.mods_body, bg=CARD, padx=self.px(16), pady=self.px(16))
+
+        page.next_row = 6
+        self.section(page, 'Presets')
+        presets = ttk.Frame(page)
+        presets.grid(row=page.next_row, column=0, sticky='w')
+        page.next_row += 1
+        self.preset_box = ttk.Combobox(presets, values=sorted(load_json(MOD_PRESETS, {})), width=26)
+        self.preset_box.pack(side='left')
+        for text, command in (('Load', self.load_preset), ('Save', self.save_preset), ('Delete', self.delete_preset)):
+            ttk.Button(presets, text=text, command=command).pack(side='left', padx=(self.px(6), 0))
+        ttk.Label(page, text='A preset keeps which mods are on and their order.', style='Muted.TLabel').grid(
+            row=page.next_row, column=0, sticky='w', pady=(self.px(4), 0))
+        page.next_row += 1
+
+        self.section(page, 'Third-party patches')
+        ttk.Label(page, text='shadPS4 and GoldHEN patch files (.xml) for GODZILLA 01.01, in the patches folder. They '
+                             'change the game\'s code when it starts.', style='Muted.TLabel', wraplength=self.px(760),
+                  justify='left').grid(row=page.next_row, column=0, sticky='w')
+        page.next_row += 1
+        self.patches_list = ttk.Frame(page)
+        self.patches_list.grid(row=page.next_row, column=0, sticky='we', pady=(self.px(8), 0))
+        page.next_row += 1
+        ttk.Button(page, text='Open patches folder', command=lambda: self.open_folder(PATCHES)).grid(
+            row=page.next_row, column=0, sticky='w', pady=(self.px(10), 0))
+        page.next_row += 1
+
+        self.section(page, 'Folders')
+        for name, path in (('Mods', MODS), ('Patches', PATCHES)):
+            self.ttk.Label(page, text=f'{name}:  {path}', style='Muted.TLabel', wraplength=self.px(760)).grid(
+                row=page.next_row, column=0, sticky='w')
+            page.next_row += 1
+        self.mod_order, self.mod_vars, self.mod_rows = None, {}, {}
+        self.patch_vars = {}
+        self.selected_mod, self.conflicts_open, self.mod_conflicts = None, False, []
+        self.mod_photo_key, self.mod_photo = None, None
+
+    def open_folder(self, path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        os.startfile(path) if sys.platform == 'win32' else subprocess.Popen(['xdg-open', str(path)])
+
+    def refresh_mods(self):
+        """The load order (mods.json's, new mods last), the patches of this game version and their state."""
+        tk, ttk = self.tk, self.ttk
+        import mods
+        for holder in (self.mods_list, self.patches_list):
+            for widget in holder.winfo_children():
+                widget.destroy()
+        game = self.values['game_dir'] or None
+        try:
+            available = mods.discover(MODS, game)
+        except (OSError, ValueError):
+            available = []
+        config = load_json(MODS_CONFIG, {})
+        if self.mod_order is None or set(self.mod_order) != set(available):
+            known = [n for n in config.get('order', []) if n in available]
+            self.mod_order = known + [n for n in available if n not in known]
+        if self.selected_mod not in available:
+            self.selected_mod = None
+        old = {n: v.get() for n, v in self.mod_vars.items()}
+        self.mod_vars, self.mod_rows = {}, {}
+        if not available:
+            box = tk.Frame(self.mods_list, bg=CARD, pady=self.px(26))
+            box.pack(fill='x')
+            tk.Label(box, text='No mods yet', bg=CARD, fg=TEXT, font=(self.title_face, 16)).pack()
+            tk.Label(box, text='Put each mod in its own folder, or as a .zip, in the mods folder. A mod holds the '
+                               'game\'s folders (sound, ...) with the files it replaces.', bg=CARD, fg=MUTED,
+                     font=self.font(10), wraplength=self.px(560)).pack(pady=(self.px(4), self.px(12)))
+            ttk.Button(box, text='Open mods folder', command=lambda: self.open_folder(MODS)).pack()
+        for index, name in enumerate(self.mod_order):
+            if index:
+                tk.Frame(self.mods_list, bg=LINE, height=self.px(1)).pack(fill='x')
+            chosen = name == self.selected_mod
+            bg = '#18222e' if chosen else CARD
+            line = tk.Frame(self.mods_list, bg=bg, padx=self.px(12), pady=self.px(6))
+            line.pack(fill='x')
+            var = tk.BooleanVar(value=old.get(name, name not in config.get('disabled', [])))
+            self.mod_vars[name] = var
+            check = tk.Checkbutton(line, variable=var, image=self.check_off, selectimage=self.check_on, indicatoron=False,
+                                   bd=0, bg=bg, activebackground=bg, selectcolor=bg, highlightthickness=0,
+                                   relief='flat', offrelief='flat', command=self.refresh_mod_marks, cursor='hand2')
+            check.pack(side='left')
+            tk.Label(line, text=str(index + 1), bg=bg, fg=MUTED, font=self.font(9), width=3, anchor='e').pack(
+                side='left', padx=(self.px(2), self.px(10)))
+            try:
+                title = mods.mod_info(MODS / name, game)['name']
+            except OSError:
+                title = name
+            label = tk.Label(line, text=title, bg=bg, anchor='w', cursor='hand2',
+                             font=self.font(11, 'bold', 'Segoe UI Semibold') if chosen else self.font(11))
+            label.pack(side='left', fill='x', expand=True)
+            for widget in (line, label):
+                widget.bind('<Button-1>', lambda _e, n=name: self.select_mod(n))
+            ttk.Button(line, text='▼', width=2, command=lambda i=index: self.move_mod(i, 1)).pack(side='right')
+            ttk.Button(line, text='▲', width=2, command=lambda i=index: self.move_mod(i, -1)).pack(
+                side='right', padx=(0, self.px(4)))
+            mark = tk.Label(line, text='', bg=bg, fg=WARN, font=self.font(11))
+            mark.pack(side='right', padx=(0, self.px(12)))
+            self.mod_rows[name] = (label, mark, chosen)
+        self.refresh_mod_marks()
+        self.preset_box.configure(values=sorted(load_json(MOD_PRESETS, {})))
+        self.refresh_patches()
+
+    def refresh_patches(self):
+        """The third-party patches for this game version: one check box each, on as patches.json (or
+        the file's isEnabled) says."""
+        ttk = self.ttk
+        import patches
+        chosen = load_json(PATCHES_CONFIG, {})
+        profile = patches.game_profile_for(self.values['game_dir']) if self.values['game_dir'] else None
+        try:
+            found = patches.external_patches(PATCHES, profile[2], profile[1], profile[0]) if profile else []
+        except (OSError, ValueError):
+            found = []
+        old = {k: v.get() for k, v in self.patch_vars.items()}
+        self.patch_vars = {}
+        if not found:
+            ttk.Label(self.patches_list, text='No patch files for this game version yet.', style='Muted.TLabel').pack(
+                anchor='w')
+        for key, _path, meta in found:
+            on = key in chosen.get('enabled', []) or (key not in chosen.get('disabled', []) and
+                                                      meta.get('isEnabled', 'false').lower() == 'true')
+            var = self.tk.BooleanVar(value=old.get(key, on))
+            self.patch_vars[key] = var
+            author = meta.get('Author')
+            text = meta.get('Name', key) + (f'  ·  {author}' if author else '') + f'   ({key.split("/")[0]})'
+            ttk.Checkbutton(self.patches_list, text=text, variable=var).pack(anchor='w')
+            note = (meta.get('Note') or '').strip()
+            if note:
+                ttk.Label(self.patches_list, text=note, style='Muted.TLabel', wraplength=self.px(700),
+                          justify='left').pack(anchor='w', padx=(self.px(30), 0), pady=(0, self.px(4)))
+
+    def refresh_mod_marks(self):
+        """The count of active mods, the files two of them change (the lower one wins) and the details."""
+        import mods
+        active = [n for n in self.mod_order or [] if self.mod_vars[n].get()]
+        try:
+            found = mods.conflicts(MODS, active, self.values['game_dir'] or None)
+        except (OSError, ValueError):
+            found = []
+        self.mod_conflicts = found
+        loading = self.mods_enabled_var.get()
+        total = len(self.mod_order or [])
+        self.mods_count.configure(text=(f'{len(active)} of {total} active' if loading else 'Mods are off')
+                                  if total else '')
+        involved = {name for _path, owners in found for name in owners}
+        for name, (label, mark, chosen) in self.mod_rows.items():
+            on = self.mod_vars[name].get() and loading
+            label.configure(fg=ACCENT_HI if chosen else TEXT if on else MUTED)
+            mark.configure(text='⚠' if name in involved and loading else '')
+        if not found or not loading:
+            summary = ''
+        elif len(found) == 1:
+            summary = f'⚠ 1 file is changed by two mods: {found[0][1][-1]} wins.'
+        else:
+            summary = f'⚠ {len(found)} files are changed by more than one mod: the lower one in the list wins.'
+        self.conflict_label.configure(text=summary)
+        if summary:
+            self.conflict_toggle.configure(text='Hide' if self.conflicts_open else 'Details')
+            self.conflict_toggle.pack(side='left', padx=(self.px(10), 0))
+        else:
+            self.conflict_toggle.pack_forget()
+        lines = [f'{path}:  {" > ".join(owners)}' for path, owners in found[:12]]
+        if len(found) > 12:
+            lines.append(f'… and {len(found) - 12} more')
+        self.conflict_files.configure(text='\n'.join(lines) if self.conflicts_open and summary else '')
+        self.show_mod_details()
+
+    def toggle_conflicts(self):
+        self.conflicts_open = not self.conflicts_open
+        self.refresh_mod_marks()
+
+    def select_mod(self, name):
+        """A click on a mod shows its details; a second click hides them."""
+        self.selected_mod = None if name == self.selected_mod else name
+        self.refresh_mods()
+
+    def move_mod(self, index, step):
+        other = index + step
+        if 0 <= other < len(self.mod_order):
+            self.mod_order[index], self.mod_order[other] = self.mod_order[other], self.mod_order[index]
+            self.refresh_mods()
+
+    def show_mod_details(self):
+        """The selected mod's picture, name, author, version, description, file count and conflicts."""
+        tk, ttk, panel = self.tk, self.ttk, self.mod_details
+        import mods
+        for widget in panel.winfo_children():
+            widget.destroy()
+        panel.grid_forget()
+        name = self.selected_mod
+        if not name:
+            return
+        game = self.values['game_dir'] or None
+        try:
+            info = mods.mod_info(MODS / name, game)
+            count = sum(1 for _file in mods.mod_files(MODS / name, game))
+            has_patches = bool(mods.patch_files(MODS / name))
+        except (OSError, ValueError):
+            return
+        width = self.px(280)
+        picture = self.mod_picture(info['image'], width) if info['image'] else None
+        if picture:
+            tk.Label(panel, image=picture, bg=CARD, bd=0).pack(anchor='w', pady=(0, self.px(12)))
+        tk.Label(panel, text=info['name'], bg=CARD, fg=TEXT, font=(self.title_face, 16), wraplength=width,
+                 justify='left').pack(anchor='w')
+        byline = '  ·  '.join(filter(None, (info['author'] and f'by {info["author"]}',
+                                            info['version'] and f'v{info["version"]}')))
+        if byline:
+            tk.Label(panel, text=byline, bg=CARD, fg=MUTED, font=self.font(9)).pack(anchor='w', pady=(self.px(2), 0))
+        if info['description']:
+            tk.Label(panel, text=info['description'], bg=CARD, fg=TEXT, font=self.font(10), wraplength=width,
+                     justify='left').pack(anchor='w', pady=(self.px(10), 0))
+        facts = ('1 file' if count == 1 else f'{count} files') + ('  ·  game patches' if has_patches else '')
+        tk.Label(panel, text=facts, bg=CARD, fg=MUTED, font=self.font(9)).pack(anchor='w', pady=(self.px(10), 0))
+        for path, owners in [c for c in self.mod_conflicts if name in c[1]][:4]:
+            others = ', '.join(o for o in owners if o != name)
+            tk.Label(panel, text=f'⚠ {Path(path).name} is also in {others}: {owners[-1]} wins.', bg=CARD, fg=WARN,
+                     font=self.font(9), wraplength=width, justify='left').pack(anchor='w', pady=(self.px(4), 0))
+        buttons = tk.Frame(panel, bg=CARD)
+        buttons.pack(anchor='w', pady=(self.px(14), 0))
+        ttk.Button(buttons, text='Open mod folder', command=lambda: self.open_folder(MODS / name)).pack(side='left')
+        if info['url']:
+            import webbrowser
+            ttk.Button(buttons, text='Website', command=lambda: webbrowser.open(info['url'])).pack(
+                side='left', padx=(self.px(6), 0))
+        panel.grid(row=0, column=1, sticky='n', padx=(self.px(16), 0))
+
+    def mod_picture(self, path, width):
+        """A mod's preview scaled to `width` (at most 4:3 tall), or None."""
+        key = (str(path), width)
+        if self.mod_photo_key != key:
+            self.mod_photo_key, self.mod_photo = key, None
+            try:
+                from PIL import Image, ImageTk
+                with Image.open(path) as image:
+                    image = image.convert('RGB')
+                    image.thumbnail((width, width * 3 // 4), Image.LANCZOS)
+                    self.mod_photo = ImageTk.PhotoImage(image)
+            except (ImportError, OSError, ValueError):
+                self.mod_photo = None
+        return self.mod_photo
+
+    def save_preset(self):
+        name = self.preset_box.get().strip()
+        if not name:
+            self.summary.configure(text='Type a name for the preset first.', fg=MUTED)
+            return
+        presets = load_json(MOD_PRESETS, {})
+        presets[name] = {'order': list(self.mod_order or []),
+                         'disabled': [n for n, v in self.mod_vars.items() if not v.get()]}
+        write_json(MOD_PRESETS, presets)
+        self.preset_box.configure(values=sorted(presets))
+        self.summary.configure(text=f'Preset "{name}" saved.', fg=ACCENT_HI)
+
+    def load_preset(self):
+        import mods
+        name = self.preset_box.get().strip()
+        preset = load_json(MOD_PRESETS, {}).get(name)
+        if not isinstance(preset, dict):
+            return
+        self.mod_order, disabled = mods.apply_preset(preset, list(self.mod_order or []))
+        for mod, var in self.mod_vars.items():
+            var.set(mod not in disabled)
+        self.refresh_mods()
+        self.preset_box.set(name)
+
+    def delete_preset(self):
+        presets = load_json(MOD_PRESETS, {})
+        if presets.pop(self.preset_box.get().strip(), None) is not None:
+            write_json(MOD_PRESETS, presets)
+        self.preset_box.configure(values=sorted(presets))
+        self.preset_box.set('')
+
+    def save_mods(self):
+        """mods.json (the order and the mods that are off) and patches.json (the third-party patches,
+        keeping the choices for files that are not there now)."""
+        if self.mod_order:
+            write_json(MODS_CONFIG, {'order': list(self.mod_order),
+                                     'disabled': [n for n, v in self.mod_vars.items() if not v.get()]})
+        if self.patch_vars:
+            chosen = load_json(PATCHES_CONFIG, {})
+            enabled = set(chosen.get('enabled', [])) - set(self.patch_vars)
+            disabled = set(chosen.get('disabled', [])) - set(self.patch_vars)
+            enabled |= {k for k, v in self.patch_vars.items() if v.get()}
+            disabled |= {k for k, v in self.patch_vars.items() if not v.get()}
+            write_json(PATCHES_CONFIG, {'enabled': sorted(enabled), 'disabled': sorted(disabled)})
+
     # ---- the Achievements page ----------------------------------------------------------------
     def build_achievements(self):
         tk, ttk = self.tk, self.ttk
@@ -676,9 +1037,10 @@ class Launcher:
         self.trophy_photos = {}   # (id, locked) -> the icon as shown
 
     def wheel(self, event):
-        """The mouse wheel scrolls the trophy list (not an open drop-down list)."""
-        if self.current == 'achievements' and 'popdown' not in str(event.widget):
-            self.trophy_canvas.yview_scroll(int(-event.delta / 120), 'units')
+        """The mouse wheel scrolls the trophy list and the mods page (not an open drop-down list)."""
+        canvas = {'achievements': self.trophy_canvas, 'mods': self.mods_canvas}.get(self.current)
+        if canvas and 'popdown' not in str(event.widget):
+            canvas.yview_scroll(int(-event.delta / 120), 'units')
 
     def trophy_photo(self, trophy, png, locked):
         """The icon at 64 px (scaled); grey and dark while the trophy is locked."""
@@ -784,12 +1146,14 @@ class Launcher:
     def collect(self):
         self.values['language'] = dict(LANGUAGES)[self.language_var.get()]
         self.values['unlock_addons'] = bool(self.addons_var.get())
+        self.values['mods_enabled'] = bool(self.mods_enabled_var.get())
         defaults = {a: d for a, _, d in KEYS}
         self.values['keys'] = {a: v.get().strip() for a, v in self.key_vars.items() if v.get().strip() != defaults[a]}
 
     def save(self, announce=True):
         self.collect()
         save_settings(self.values)
+        self.save_mods()
         resolution = dict((label, name) for label, name in self.resolution_pairs).get(self.resolution_var.get(), 'native')
         write_ini({'display_mode': dict(DISPLAY_MODES)[self.mode_var.get()], 'vsync': int(self.vsync_var.get()),
                    'match_refresh': int(self.match_refresh_var.get()), 'render_resolution': resolution,

@@ -105,6 +105,21 @@ class LauncherTest(unittest.TestCase):
         self.launcher.SETTINGS.write_text(json.dumps({'game_dir': 'D:/G'}), encoding='utf-8-sig')
         self.assertEqual(self.launcher.load_settings()['game_dir'], 'D:/G')
 
+    def test_mods_switch_reaches_run_py(self):
+        # The Mods & patches page's "Load mods": run.py reads MZ_MODS_ENABLED (mods are on by default).
+        values = {**self.launcher.DEFAULTS, 'game_dir': 'G'}
+        self.assertEqual(self.launcher.game_environment(values)['MZ_MODS_ENABLED'], '1')
+        values['mods_enabled'] = False
+        self.assertEqual(self.launcher.game_environment(values)['MZ_MODS_ENABLED'], '0')
+
+    def test_mod_and_patch_selections_round_trip(self):
+        path = self.launcher.DATA / 'mods.json'
+        self.assertEqual(self.launcher.load_json(path, {}), {})  # none yet
+        self.launcher.write_json(path, {'order': ['B', 'A'], 'disabled': ['A']})
+        self.assertEqual(self.launcher.load_json(path, {}), {'order': ['B', 'A'], 'disabled': ['A']})
+        path.write_text('[1, 2]', encoding='utf-8')  # not what the page writes: the default
+        self.assertEqual(self.launcher.load_json(path, {}), {})
+
 
 class TrophyTest(unittest.TestCase):
     """The Achievements page's trophies (scripts/godzilla_trophies.py)."""

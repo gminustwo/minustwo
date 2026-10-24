@@ -35,6 +35,14 @@ While playing
   right click strong attack, Space Cross, Left Shift Circle, Return Options.
 - The add-ons (pre-order unlocks, diorama figure sets) are unlocked; Settings turns that off.
 
+Mods and patches
+- Put each mod in its own folder (or a .zip) under mods\, holding the game's folders with the
+  files it replaces (sound\st\..., ...). Turn them on and order them on "Mods & patches" in the
+  launcher: when two mods change the same file, the lower one wins. The game files are never
+  changed. A mod.json (name, author, version, description, url) and a preview picture are shown.
+- Third-party patches: shadPS4/GoldHEN XML files for GODZILLA 01.01 in patches\, chosen on the
+  same page.
+
 Files
 - Saves, the shader cache and last_run.log are in the "user" folder. Keep it when you update.
 - settings.json (launcher) and minuszero.ini (display and input) hold your settings.
