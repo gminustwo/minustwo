@@ -29,7 +29,7 @@ LOG = DATA / 'user' / 'last_run.log'
 # This build of the port. A GitHub release is an update when its tag (v0.2.0) holds a higher version.
 VERSION = '0.1.0'
 # The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
-GITHUB_REPO = ''
+GITHUB_REPO = 'gminustwo/minustwo'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
@@ -1337,7 +1337,10 @@ class Launcher:
         try:
             version, url, checksum, page = latest_release()
         except (OSError, ValueError, KeyError) as failure:
-            if manual:
+            if manual and getattr(failure, 'code', None) == 404:  # no release yet (or no repository)
+                self.ui_calls.put(lambda: messagebox.showinfo(
+                    'Minus Two', f'No release has been published yet; you have version {VERSION}.'))
+            elif manual:
                 self.ui_calls.put(lambda error=failure: messagebox.showerror(
                     'Minus Two', f'Could not check for updates: {error}'))
             return
