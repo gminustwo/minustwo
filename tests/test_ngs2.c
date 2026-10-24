@@ -5,8 +5,16 @@
 #include <assert.h>
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
-int64_t runtime_file_open(const char *path, int flags, int mode) { (void)path; (void)flags; (void)mode; return -1; }
-int64_t runtime_file_pread(int fd, void *buffer, uint64_t size, int64_t offset) { (void)fd; (void)buffer; (void)size; (void)offset; return -1; }
+/* One file for sceNgs2ParseWaveformFile, "/app0/long.wav": the bytes of file_data. */
+static unsigned char file_data[200000];
+static size_t file_size;
+int64_t runtime_file_open(const char *path, int flags, int mode) { (void)flags; (void)mode; return strcmp(path,"/app0/long.wav") ? -1 : 3; }
+int64_t runtime_file_pread(int fd, void *buffer, uint64_t size, int64_t offset) {
+    if (fd!=3 || offset<0 || (uint64_t)offset>file_size) return -1;
+    const uint64_t n=size<file_size-(uint64_t)offset ? size : file_size-(uint64_t)offset;
+    memcpy(buffer,file_data+offset,n);
+    return (int64_t)n;
+}
 int64_t runtime_file_close(int fd) { (void)fd; return 0; }
 
 static void put32(unsigned char *p, uint32_t v) { memcpy(p,&v,4); }
@@ -47,6 +55,18 @@ int main(void) {
     assert(info.blocks[1].offset==info.data_offset+200 && info.blocks[1].samples==500 && info.blocks[1].repeats==INFINITE_REPEATS);
     assert(info.blocks[2].offset==info.data_offset+1200 && info.blocks[2].samples==400);
     assert(parse_data((const unsigned char *)"RIFF\0\0\0\0WAVX",12,&info)==ERR_INVALID_WAVEFORM_DATA);
+
+    /* A file is parsed from its first 64 KiB, but its block covers the whole data chunk: GODZILLA
+     * streams a voice line by its block's size (cut to 64 KiB, long lines broke off). */
+    {
+        static int16_t long_pcm[60000];
+        for (int i=0;i<60000;++i) long_pcm[i]=(int16_t)i;
+        file_size=make_wave(file_data,long_pcm,60000,0,0);
+        assert(file_size>64*1024);
+        assert(parse_file("/app0/long.wav",0,&info)==0);
+        assert(info.samples==60000 && info.data_size==120000 && info.block_count==1);
+        assert(info.blocks[0].offset==info.data_offset && info.blocks[0].size==120000 && info.blocks[0].samples==60000);
+    }
 
     /* A system with a sampler rack (default options: SAMPLER_DEFAULT_VOICES voices) and a stereo
      * mastering voice. */
@@ -123,6 +143,19 @@ int main(void) {
     assert(system_render(system,&render,1)==0);
     for (int f=0;f<256;++f) assert(out[2*f]==pcm[199+f]/32768.0f);
     for (int i=0;i<2;++i) assert(system_render(system,&render,1)==0);
+    assert(voice_state(stream,state,sizeof(state))==0 && state[0]==0);
+    memcpy(&decoded,state+16,8);
+    assert(decoded==600);
+
+    /* Its last part (appended without the stream flag) ends it when played, even short of the
+     * stream's count: waiting for more kept the voice playing and the game waiting for it. */
+    param(stream,&sampler_setup); param(stream,&play_event);
+    part.samples=next.samples=900;
+    blocks.data=pcm; blocks.flags=BLOCKS_STREAM; blocks.blocks=&part;
+    param(stream,&blocks);
+    blocks.data=pcm+200; blocks.flags=BLOCKS_APPEND; blocks.blocks=&next;
+    param(stream,&blocks);
+    for (int i=0;i<4;++i) assert(system_render(system,&render,1)==0);
     assert(voice_state(stream,state,sizeof(state))==0 && state[0]==0);
     memcpy(&decoded,state+16,8);
     assert(decoded==600);

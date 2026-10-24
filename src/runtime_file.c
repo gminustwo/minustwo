@@ -294,11 +294,27 @@ static void touch_for_write(void *buffer,uint64_t size) {
         *b=*b;
     }
 }
+/* The guest code that called pread (0: the runtime itself, as sceNgs2ParseWaveformFile does). */
+static __thread const void *sound_caller;
+/* MZ_AUDIO_TRACE=1: every read of a sound file, its result and who asked. */
+static void trace_sound_read(int fd,const char *call,uint64_t size,int64_t offset,int64_t result) {
+    if (!audio_trace()) return;
+    pthread_mutex_lock(&lock);
+    File *f=get(fd);
+    char path[sizeof(f->path)];
+    snprintf(path,sizeof(path),"%s",f ? f->path : "");
+    pthread_mutex_unlock(&lock);
+    if (strstr(path,"sound/"))
+        printf("Audio trace: %s(fd %d %s, %llu @%lld) -> %lld (from %p)\n",call,fd,path,(unsigned long long)size,(long long)offset,
+               (long long)result,sound_caller);
+    sound_caller=NULL;
+}
 static int64_t do_read(int fd,void *buffer,uint64_t size) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
     ssize_t n=host_read(h,buffer,size);
+    trace_sound_read(fd,"read",size,-1,n<0 ? -errno : n);
     if (n<0) { if (audio_trace()) printf("Audio trace: read(fd %d, %llu) failed, errno %d\n",fd,(unsigned long long)size,errno); return -errno; }
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
     return n;
@@ -308,6 +324,7 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
     ssize_t n=pread(h,buffer,size,offset);
+    trace_sound_read(fd,"pread",size,offset,n<0 ? -errno : n);
     if (n<0) { if (audio_trace()) printf("Audio trace: pread(fd %d, %llu @%lld) failed, errno %d\n",fd,(unsigned long long)size,(long long)offset,errno); return -errno; }
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
     return n;
@@ -336,6 +353,8 @@ static int64_t do_lseek(int fd,int64_t offset,int whence) {
         return -EINVAL;
     }
     int64_t r=host_lseek(f->host,offset,whence);
+    if (audio_trace() && strstr(f->path,"sound/"))
+        printf("Audio trace: lseek(fd %d, %lld, %d) -> %lld\n",fd,(long long)offset,whence,(long long)(r<0 ? -errno : r));
     return r<0 ? -errno : r;
 }
 static int64_t do_fstat(int fd,GuestStat *out) {
@@ -459,7 +478,8 @@ static int64_t posix(int64_t r) { if (r<0) { *runtime_errno()=runtime_guest_errn
 PAIR(open,(const char *p,int f,int m),(p,f,m))
 PAIR(close,(int fd),(fd))
 PAIR(read,(int fd,void *b,uint64_t n),(fd,b,n))
-PAIR(pread,(int fd,void *b,uint64_t n,int64_t o),(fd,b,n,o))
+static ABI int64_t sce_pread(int fd,void *b,uint64_t n,int64_t o) { sound_caller=__builtin_return_address(0); return sce(do_pread(fd,b,n,o)); }
+static ABI int64_t posix_pread(int fd,void *b,uint64_t n,int64_t o) { sound_caller=__builtin_return_address(0); return posix(do_pread(fd,b,n,o)); }
 PAIR(write,(int fd,const void *b,uint64_t n),(fd,b,n))
 PAIR(pwrite,(int fd,const void *b,uint64_t n,int64_t o),(fd,b,n,o))
 PAIR(lseek,(int fd,int64_t o,int w),(fd,o,w))

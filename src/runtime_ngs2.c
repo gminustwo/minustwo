@@ -144,8 +144,9 @@ typedef struct Voice {
     /* A stream (blocks flag 1): the game's ring buffer, refilled behind the playing block with
      * blocks it appends (flag 2). A block continues the one before: same decoder, no skip, the
      * first block's sample count for the whole stream. A superframe split by a block end is
-     * decoded from `joined`, then reading goes on at `resume` in the next block. */
-    int stream, starving;
+     * decoded from `joined`, then reading goes on at `resume` in the next block. Appended blocks
+     * without the stream flag are its last (`stream_end`): when they are played it ends. */
+    int stream, starving, stream_end;
     unsigned char joined[SUPERFRAME_MAX];
     const unsigned char *resume;
     uint32_t resume_left;
@@ -432,6 +433,9 @@ static void block_start(Voice *v) {
 }
 /* The game's callback for a finished block (OrbisNgs2VoiceCallbackInfo, 56 bytes). */
 static void block_callback(Voice *v, const WaveBlock *b) {
+    if (tracing() && v->stream)
+        printf("Ngs2 trace: voice %llx block end (%u bytes; callback %s)\n",(unsigned long long)v->handle,b->size,
+               v->callback && (v->callback_flags & CALLBACK_BLOCK_END) ? "on" : "off");
     if (!v->callback || !(v->callback_flags & CALLBACK_BLOCK_END)) return;
     struct { uint64_t data, voice; uint32_t flag, reserved; uint64_t user; const void *address; uint32_t size, repeated, attributes, reserved2; } info={
         v->callback_data,v->handle,CALLBACK_BLOCK_END,0,b->user,v->data ? v->data+b->offset : NULL,b->size,v->repeated,0,0};
@@ -468,13 +472,13 @@ static int join_superframe(Voice *v, uint32_t size) {
  * for the game to append its next block. */
 static int refill(Voice *v) {
     for (int guard=0; guard<4*MAX_BLOCKS+8; ++guard) {
-        if (v->block>=v->block_count) return v->stream && v->block_left ? -1 : 0;
+        if (v->block>=v->block_count) return v->stream && !v->stream_end && v->block_left ? -1 : 0;
         const WaveBlock *b=&v->blocks[v->block];
         if (v->stream && v->block_left && !v->read_left) {
             /* A stream block used up: the next one goes on with it. */
             block_callback(v,b);
             ++blocks_finished; ++v->block;
-            if (v->block>=v->block_count) return -1;
+            if (v->block>=v->block_count) return v->stream_end ? 0 : -1;
             stream_continue(v);
             continue;
         }
@@ -495,8 +499,12 @@ static int refill(Voice *v) {
             static int16_t pcm[256*MAX_CHANNELS]; /* under the lock: guest stacks can be 64 KiB */
             const uint32_t superframe=(uint32_t)v->at9_info.superframeSize;
             if (v->stream && !v->at9_frames && !v->resume && v->read_left<superframe &&
-                !join_superframe(v,superframe))
-                return -1;
+                !join_superframe(v,superframe)) {
+                if (!v->stream_end || v->block+1<v->block_count) return -1;
+                /* The last part ends inside a superframe: nothing more to decode. */
+                block_callback(v,b); ++blocks_finished; v->block=v->block_count;
+                return 0;
+            }
             int used=0;
             const int error=Atrac9Decode(v->at9,v->read,pcm,&used);
             if (error || used<=0 || (uint32_t)used>v->read_left) {
@@ -915,6 +923,7 @@ static int32_t sampler_param(Voice *v, const ParamHeader *h) {
                 b.offset=(uint32_t)offset;
                 v->blocks[v->block_count++]=b;
             }
+            v->stream_end=!(flags & BLOCKS_STREAM);
             if (v->starving) {
                 if (v->block<v->block_count && !v->read_left && !v->resume) stream_continue(v);
                 v->starving=0; v->flags&=~(uint32_t)STATE_EMPTY;
@@ -922,7 +931,7 @@ static int32_t sampler_param(Voice *v, const ParamHeader *h) {
             return 0;
         }
         v->data=data;
-        v->stream=(flags & BLOCKS_STREAM)!=0;
+        v->stream=(flags & BLOCKS_STREAM)!=0; v->stream_end=0;
         v->block_count=count<MAX_BLOCKS ? count : MAX_BLOCKS;
         if (blocks) memcpy(v->blocks,blocks,v->block_count*sizeof(WaveBlock));
         /* A stream played before its data (play) starts now. */
@@ -1014,6 +1023,15 @@ static ABI int32_t voice_state(Handle handle, unsigned char *state, uint64_t siz
         memcpy(state+32,&user,8);
         memcpy(state+40,&v->data,8);
     }
+    /* A stream's state as the game polls it: when the flags change, and every 64th poll. */
+    if (tracing() && v->stream) {
+        static Handle last_voice; static uint32_t last_flags, polls;
+        if (v->handle!=last_voice || v->flags!=last_flags || ++polls%64==0)
+            printf("Ngs2 trace: voice %llx state polled (size %llu): flags 0x%x, %llu samples, %llu bytes, block %u of %u\n",
+                   (unsigned long long)v->handle,(unsigned long long)size,v->flags,(unsigned long long)v->decoded_samples,
+                   (unsigned long long)v->decoded_bytes,v->block,v->block_count);
+        last_voice=v->handle; last_flags=v->flags;
+    }
     pthread_mutex_unlock(&lock);
     return 0;
 }
@@ -1046,7 +1064,9 @@ static WaveBlock make_block(const WaveInfo *w, uint32_t from, uint32_t to, uint3
     b.skip=skip; b.samples=to-from; b.repeats=repeats;
     return b;
 }
-static int32_t parse_waveform(const unsigned char *data, uint64_t size, WaveInfo *out) {
+/* `declared`: `data` is the start of a file (sceNgs2ParseWaveformFile), and the data chunk is as
+ * long as it says, past what was read; otherwise the chunk ends where `data` does. */
+static int32_t parse_waveform(const unsigned char *data, uint64_t size, int declared, WaveInfo *out) {
     if (size<12 || memcmp(data,"RIFF",4) || memcmp(data+8,"WAVE",4)) return ERR_INVALID_WAVEFORM_DATA;
     WaveInfo w; memset(&w,0,sizeof(w));
     int have_format=0, have_data=0, have_loop=0;
@@ -1097,7 +1117,7 @@ static int32_t parse_waveform(const unsigned char *data, uint64_t size, WaveInfo
             }
         } else if (tag==0x61746164) {                                     /* "data" */
             w.data_offset=(uint32_t)(at+8);
-            w.data_size=(uint32_t)(length<=avail ? length : avail);
+            w.data_size=(uint32_t)(length<=avail || declared ? length : avail);
             have_data=1;
         }
         at+=8+(uint64_t)length+(length&1);
@@ -1123,10 +1143,13 @@ static int32_t parse_waveform(const unsigned char *data, uint64_t size, WaveInfo
 }
 static ABI int32_t parse_data(const unsigned char *data, uint64_t size, WaveInfo *out) {
     if (!data || !out) return ERR_INVALID_OUT_ADDRESS;
-    return parse_waveform(data,size,out);
+    return parse_waveform(data,size,0,out);
 }
 /* The header of a waveform file (from `offset`); only the first 64 KiB are read for the chunks
- * before the samples. */
+ * before the samples. The blocks cover the whole data chunk: GODZILLA streams a voice line by the
+ * size of its block, and with the block cut to what was read, every line longer than ~7 s ended
+ * at 64 KiB of its file, short of its sample count: the voice waited for the rest (the line broke
+ * off) and the game for the voice (its dialogue stayed open). */
 static ABI int32_t parse_file(const char *path, uint64_t offset, WaveInfo *out) {
     if (!path || !out) return ERR_INVALID_OUT_ADDRESS;
     int64_t fd=runtime_file_open(path,0,0);
@@ -1136,16 +1159,7 @@ static ABI int32_t parse_file(const char *path, uint64_t offset, WaveInfo *out) 
     int64_t got=head ? runtime_file_pread((int)fd,head,HEAD,(int64_t)offset) : -1;
     runtime_file_close((int)fd);
     if (got<12) { free(head); return ERR_INVALID_WAVEFORM_DATA; }
-    /* The data chunk's size may reach past what was read: parse with the size it declares. */
-    const int32_t result=parse_waveform(head,(uint64_t)got,out);
-    if (!result) {
-        uint64_t at=12;
-        while (at+8<=(uint64_t)got) {
-            const uint32_t tag=read32(head,at), length=read32(head,at+4);
-            if (tag==0x61746164) { out->data_size=length; break; }
-            at+=8+(uint64_t)length+(length&1);
-        }
-    }
+    const int32_t result=parse_waveform(head,(uint64_t)got,1,out);
     free(head);
     return result;
 }
