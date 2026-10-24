@@ -312,6 +312,10 @@ static ABI int32_t audio_volume(int32_t handle, int32_t flags, const int32_t *vo
         p->volume[c]=volume[c];
     }
     pthread_mutex_unlock(&p->lock);
+    /* MZ_AUDIO_TRACE=1: the volumes the game sets (VOLUME_0DB is full). */
+    static int trace=-1;
+    if (trace<0) { const char *e=getenv("MZ_AUDIO_TRACE"); trace=e && e[0]=='1'; }
+    if (trace) printf("Audio trace: port %d volume flags 0x%x: %d %d\n",(int)(p-ports),flags,volume[0],volume[1]);
     return 0;
 }
 static ABI int32_t audio_state(int32_t handle, PortState *state) {

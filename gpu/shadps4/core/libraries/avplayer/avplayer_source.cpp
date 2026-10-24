@@ -66,8 +66,8 @@ bool AvPlayerSource::Init(const AvPlayerInitData& init_data, std::string_view pa
     m_max_num_video_framebuffers =
         std::min(std::max(2, init_data.num_output_video_framebuffers), 16);
     if (AvTrace()) {
-        std::printf("AvPlayer trace: %d video frame buffers asked, %u used\n",
-                    init_data.num_output_video_framebuffers, m_max_num_video_framebuffers);
+        std::printf("AvPlayer trace: %.*s: %d video frame buffers asked, %u used\n", int(path.size()),
+                    path.data(), init_data.num_output_video_framebuffers, m_max_num_video_framebuffers);
     }
 
     AVFormatContext* context = avformat_alloc_context();
