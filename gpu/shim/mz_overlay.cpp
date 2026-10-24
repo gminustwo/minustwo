@@ -353,12 +353,7 @@ void PerformanceTab() {
     if (BeginRows("##live")) {
         static const char* const fps_labels[] = {"30", "60", "100", "120", "144", "180", "240", "Unlimited"};
         ChoiceRow("Frame rate limit", s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
-                  "Caps the frame rate. The engine frame rate (below) is the highest it can go.");
-        static const char* const engine_labels[] = {"60 (original)", "100", "120", "144", "180", "240"};
-        static_assert(std::size(engine_labels) == G::EngineFps.size());
-        ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(), int(G::EngineFps.size()),
-                  "The highest frame rate the game itself runs at. 60 for spots that break above it (a ledge "
-                  "Kratos cannot cross, a button-mash prompt). R3 + L1 + R1 or F9 go through the list.");
+                  "Caps the frame rate. GODZILLA itself runs at up to 60 frames per second.");
         const int effective = G::EffectiveFps(s.fps_limit, MzSettings::EngineFpsNow());
         if (s.fps_limit == 0 || effective < s.fps_limit) {
             char text[48];
