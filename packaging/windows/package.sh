@@ -24,6 +24,8 @@ export USERPROFILE=${USERPROFILE:-$(cygpath -w "/c/Users/$(id -un)")}
 if [[ ! -x out/pyenv/Scripts/python.exe ]]; then
     "$python" -m venv out/pyenv
 fi
+# MSYS2 shells may lack LOCALAPPDATA: pip would put its cache in the working directory.
+export PIP_CACHE_DIR=${PIP_CACHE_DIR:-$PWD/out/pip-cache}
 out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyinstaller pillow iced-x86==1.21.0
 # The scripts run inside MinusZero.exe (--script): the standard modules they import come along.
 hidden=()
