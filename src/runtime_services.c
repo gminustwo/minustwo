@@ -643,8 +643,8 @@ static ABI int32_t ime_term(void) { memset(&ime,0,sizeof(ime)); return 0; }
 /* ---- Trophies: unlocks are kept on disk and reported back to the game ----
  * The count of trophies and their icons (TROP000.PNG, TROP001.PNG...) come from the game's
  * own sce_sys/trophy/trophy00.trp. The unlocked set is saved in <user dir>/trophies.dat
- * (user dir: MZ_USER_DIR, or "user"). The texts come from <user dir>/trophy_texts.txt (written by the
- * launcher in its language) or, without it, from a hand-made trophy_names.txt. */
+ * (user dir: MZ_USER_DIR, or "user"). The texts come from <user dir>/trophy_texts.txt or
+ * trophy_names.txt when one is there, otherwise from GODZILLA's list built in (English). */
 #define TROPHY_MAX 128
 #define TROPHY_ALREADY_UNLOCKED ((int32_t)0x80551609)
 static uint32_t trophy_flags[4];
@@ -688,13 +688,63 @@ static int trophy_icon(int32_t id,const unsigned char **png,uint64_t *size) {
     }
     return 0;
 }
-/* Texts: <user dir>/trophy_texts.txt (the launcher writes it in its language on every start) or, when
- * there is none, <user dir>/trophy_names.txt. One "ID=Name | Description" per line (the description is
- * optional), "@label=text" for the labels of the notice and of the trophy list, # starts a comment. */
+/* Texts: <user dir>/trophy_texts.txt or, when there is none, <user dir>/trophy_names.txt. One
+ * "ID=Name | Description" per line (the description is optional), "@label=text" for the labels of the
+ * notice and of the trophy list, # starts a comment. Without either, GODZILLA's own (below). */
 static const char *const trophy_label_keys[9]={"heading","notice","unlocked","locked","all","only_unlocked","only_locked","counter","hint"};
 static char trophy_label[9][200];
 static char trophy_names[TROPHY_MAX][64];
 static char trophy_details[TROPHY_MAX][160];
+/* GODZILLA's trophies (CUSA02046) in their PSN order, which is their id: the texts when neither file
+ * above is there (the ones in trophy00.trp are encrypted, TROP.ESFM). Their grades match the frames
+ * of the icons in the TRP (TROP000.PNG...). */
+static const char *const godzilla_trophies[45][2]={
+    {"GODZILLA","Earn all trophies."}, /* 0: Platinum */
+    {"The Scars of Disaster","Finish the tutorial."}, /* 1: Bronze */
+    {"Recurring Nightmare","Go ashore for the first time in God of Destruction mode."}, /* 2: Bronze */
+    {"Path of Humanity","Clear Stage 7 in God of Destruction mode."}, /* 3: Bronze */
+    {"Deep-Sea Slumber","Clear Stage 9 in God of Destruction mode."}, /* 4: Bronze */
+    {"A Monster's Legacy","Clear the Final Stage in God of Destruction mode."}, /* 5: Silver */
+    {"Mechagodzilla Hunter","Destroy all 4 Mechagodzillas in God of Destruction mode."}, /* 6: Silver */
+    {"Amateur Photographer","Collect first set of data at a photo location in God of Destruction mode."}, /* 7: Bronze */
+    {"Photography Enthusiast","Collect 50% of data at photo locations in God of Destruction mode."}, /* 8: Bronze */
+    {"Photographer Extraordinaire","Collect 100% of data at photo locations in God of Destruction mode."}, /* 9: Gold */
+    {"God of Destruction","Clear all areas in God of Destruction mode."}, /* 10: Silver */
+    {"Bonus Beginner","Get your first Extra Bonus"}, /* 11: Bronze */
+    {"Our Hero Jet-Jaguar","Defeat Jet-Jaguar 3 times in one playthrough of God of Destruction mode."}, /* 12: Silver */
+    {"Kaiju Killer","Defeat all types of Kaiju in God of Destruction mode."}, /* 13: Silver */
+    {"Advanced Weapon Destroyer","Destroy all G-Force advanced weaponry in God of Destruction mode."}, /* 14: Silver */
+    {"Helicopter Swatter","Destroy 20 or more helicopters in one area in God of Destruction mode."}, /* 15: Bronze */
+    {"Jet Fighter Downer","Destroy 5 or more jet fighters in one area in God of Destruction mode."}, /* 16: Bronze */
+    {"Fury 10","Reach 10 fury in God of Destruction mode."}, /* 17: Bronze */
+    {"Fury 30","Reach 30 fury in God of Destruction mode."}, /* 18: Bronze */
+    {"Fury 50","Reach 50 fury in God of Destruction mode."}, /* 19: Silver */
+    {"100% Destruction","Reach 100% destruction rate in any area in God of Destruction mode."}, /* 20: Bronze */
+    {"80m and Growing","Grow Godzilla to a height of 80m or more in God of Destruction mode."}, /* 21: Bronze */
+    {"90m and Still Growing","Grow Godzilla to a height of 90m or more in God of Destruction mode."}, /* 22: Bronze */
+    {"100m Tall","Grow Godzilla to a height of 100m in God of Destruction mode."}, /* 23: Silver */
+    {"Challenger","Play King of Kaiju mode for the first time."}, /* 24: Bronze */
+    {"King of Kaiju","Clear King of Kaiju mode for the first time."}, /* 25: Bronze */
+    {"Finished in 10","Clear King of Kaiju mode in 10 minutes or less."}, /* 26: Bronze */
+    {"Finished in 8","Clear King of Kaiju mode in 8 minutes or less."}, /* 27: Silver */
+    {"Finished in 6","Clear King of Kaiju mode in 6 minutes or less."}, /* 28: Gold */
+    {"VS Beginner","First time playing VS Mode"}, /* 29: Bronze */
+    {"VS Winner","First victory in VS Mode"}, /* 30: Bronze */
+    {"VS 10","Play VS Mode 10 times"}, /* 31: Bronze */
+    {"Indication of Evolution","Evolve Godzilla in Evolution mode for the first time"}, /* 32: Bronze */
+    {"Showa Demon","Obtain Showa-style Godzilla skills in Evolution mode. (Jump Attack, Back Charge)"}, /* 33: Bronze */
+    {"Killer Breath","Unlock all atomic breath types for Godzilla in Evolution mode."}, /* 34: Bronze */
+    {"Perfect Being","Complete all evolutions for Godzilla in Evolution mode."}, /* 35: Silver */
+    {"Kaiju Sighting","See your first Kaiju outside of Godzilla and unlock it for play."}, /* 36: Bronze */
+    {"Kaiju Collector","See and unlock all available Kaiju."}, /* 37: Bronze */
+    {"Kaiju Master","Evolve every Kaiju to maximum level."}, /* 38: Gold */
+    {"Diorama Beginner","Use Diorama mode for the first time."}, /* 39: Bronze */
+    {"Figure Collector","Earn all figures in Diorama mode."}, /* 40: Bronze */
+    {"Base Master","Earn all bases in Diorama mode."}, /* 41: Bronze */
+    {"Godzilla Fan","View the Kaiju Guide for the first time."}, /* 42: Bronze */
+    {"Godzilla Expert","Collect all entries in the Kaiju Guide."}, /* 43: Silver */
+    {"Crazy for Godzilla","View all entries in the Kaiju Guide."}, /* 44: Bronze */
+};
 static FILE *trophy_open_text(char *path,size_t size) {
     const char *dir=getenv("MZ_USER_DIR");
     static const char *const files[2]={"trophy_texts.txt","trophy_names.txt"};
@@ -708,7 +758,15 @@ static FILE *trophy_open_text(char *path,size_t size) {
 static void trophy_load_names(void) {
     char path[512];
     FILE *f=trophy_open_text(path,sizeof(path));
-    if (!f) return;
+    if (!f) {
+        /* The notice showed "Trophy ID 7" and nothing under it. */
+        for (int id=0;id<45;id++) {
+            snprintf(trophy_names[id],sizeof(trophy_names[id]),"%s",godzilla_trophies[id][0]);
+            snprintf(trophy_details[id],sizeof(trophy_details[id]),"%s",godzilla_trophies[id][1]);
+        }
+        printf("Runtime: trophies: GODZILLA's 45 trophy texts (built in)\n");
+        return;
+    }
     char line[512];
     unsigned loaded=0;
     while (fgets(line,sizeof(line),f)) {

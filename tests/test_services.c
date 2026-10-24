@@ -8,6 +8,12 @@ int mzgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (
 int mzgpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
 static char last_toast[256];
 void mzgpu_toast(const char *text) { snprintf(last_toast,sizeof(last_toast),"%s",text ? text : ""); }
+static char last_trophy[256], last_trophy_detail[256];
+void mzgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {
+    (void)png; (void)png_size;
+    snprintf(last_trophy,sizeof(last_trophy),"%s",title ? title : "");
+    snprintf(last_trophy_detail,sizeof(last_trophy_detail),"%s",detail ? detail : "");
+}
 void mzgpu_trophy_setup(const MzGpuTrophyLabels *labels, const MzGpuTrophyInfo *items,
                                 int count, const volatile uint32_t *unlocked) {
     (void)labels; (void)items; (void)count; (void)unlocked;
@@ -267,10 +273,22 @@ int main(void) {
     assert(playgo_todo(handle,&chunk,1)==0 && playgo_todo(handle,NULL,1)==PLAYGO_BAD_POINTER);
     assert(playgo_close(handle)==0 && playgo_close(handle)==PLAYGO_BAD_HANDLE && playgo_terminate()==0);
 
-    /* Trophies: nothing unlocked. */
+    /* Trophies: nothing unlocked (a user dir without trophies.dat or texts; unlocks are not saved). */
+#ifdef _WIN32
+    _putenv("MZ_USER_DIR=services-test-no-user-dir");
+#else
+    setenv("MZ_USER_DIR","services-test-no-user-dir",1);
+#endif
     uint32_t flags[4]={~0u,~0u,~0u,~0u}, count=7;
     assert(trophy_unlock_state(1,1,flags,&count)==0 && !flags[0] && !flags[3] && count==0);
     assert(trophy_unlock_state(1,1,NULL,&count)==TROPHY_INVALID && trophy_release(0)==TROPHY_INVALID);
+    /* Without a text file the notice tells GODZILLA's own trophy by its id (it said "Trophy ID 7"). */
+    assert(trophy_unlock(1,1,7,NULL)==0);
+    assert(!strcmp(last_trophy,"Amateur Photographer") &&
+           !strcmp(last_trophy_detail,"Collect first set of data at a photo location in God of Destruction mode."));
+    assert(trophy_unlock(1,1,7,NULL)==TROPHY_ALREADY_UNLOCKED);
+    assert(trophy_unlock(1,1,1,NULL)==0 && !strcmp(last_trophy,"The Scars of Disaster"));
+    assert(!strcmp(trophy_names[44],"Crazy for Godzilla") && !strcmp(trophy_names[0],"GODZILLA"));
 
     float ratio=0; assert(safe_area(&ratio)==0 && ratio==1.0f && safe_area(NULL)==SYSTEM_PARAMETER);
 

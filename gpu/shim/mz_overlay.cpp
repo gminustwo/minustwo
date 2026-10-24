@@ -733,7 +733,8 @@ void BackgroundLoading() {
 }
 
 // Trophy texts and list (set once by mzgpu_trophy_setup from the runtime, which reads them from the
-// launcher's trophy_texts.txt): the labels of the notice and of the in-game trophy window.
+// user's trophy_texts.txt, or GODZILLA's list built in): the labels of the notice and of the in-game
+// trophy window.
 struct TrophyLabels {
     std::string heading = "Trophies", notice = "TROPHY UNLOCKED", unlocked = "UNLOCKED", locked = "LOCKED";
     std::string all = "All trophies", only_unlocked = "Unlocked", only_locked = "Locked";
