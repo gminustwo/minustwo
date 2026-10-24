@@ -80,6 +80,10 @@ enum { KIND_SAMPLER, KIND_SUBMIXER, KIND_REVERB, KIND_EQ, KIND_MASTERING };
 #define STATE_STOPPED 0x08
 #define STATE_ERROR 0x10
 #define STATE_EMPTY 0x20
+/* OrbisNgs2SamplerVoiceWaveformBlocksParam flags, as Godzilla's streams use them: the first
+ * blocks of a stream, then the parts it appends. */
+#define BLOCKS_STREAM 0x1
+#define BLOCKS_APPEND 0x2
 
 #define WAVE_PCM_I8 0x10
 #define WAVE_PCM_U8 0x11
@@ -98,6 +102,8 @@ enum { KIND_SAMPLER, KIND_SUBMIXER, KIND_REVERB, KIND_EQ, KIND_MASTERING };
 #define MAX_MATRICES 16
 #define MAX_BLOCKS 64
 #define MAX_POINTS 32
+#define SAMPLER_DEFAULT_VOICES 256
+#define SUPERFRAME_MAX 4096
 #define INFINITE_REPEATS 0x7fffffffu
 
 typedef uint64_t Handle;
@@ -135,6 +141,14 @@ typedef struct Voice {
     void *at9;
     Atrac9CodecInfo at9_info;
     uint32_t at9_frames, at9_superframe_left;
+    /* A stream (blocks flag 1): the game's ring buffer, refilled behind the playing block with
+     * blocks it appends (flag 2). A block continues the one before: same decoder, no skip, the
+     * first block's sample count for the whole stream. A superframe split by a block end is
+     * decoded from `joined`, then reading goes on at `resume` in the next block. */
+    int stream, starving;
+    unsigned char joined[SUPERFRAME_MAX];
+    const unsigned char *resume;
+    uint32_t resume_left;
     float pcm[256*MAX_CHANNELS];   /* decoded frames waiting to be resampled */
     uint32_t pcm_count, pcm_pos;
     double frac;
@@ -274,9 +288,12 @@ static ABI int32_t system_destroy(Handle handle, BufferInfo *out) {
 typedef struct { uint32_t max_voices, max_ports, max_matrices; char name[16]; } RackOptions;
 /* OrbisNgs2RackOption: size, name[16] @8, flags @24, maxGrainSamples @28, maxVoices @32,
  * maxInputDelayBlocks @36, maxMatrices @40, maxPorts @44. */
-static RackOptions rack_options(const unsigned char *option) {
+static RackOptions rack_options(uint32_t id, const unsigned char *option) {
     RackOptions o={1,1,1,""};
-    if (!option) return o;
+    /* No option: the library's defaults. A sampler rack then has many voices (Godzilla takes
+     * one handle per voice that sceNgs2RackGetInfo reports; with 1, its streams, narration and
+     * sound effects took the same voice from each other). */
+    if (!option) { if (rack_kind(id)==KIND_SAMPLER) o.max_voices=SAMPLER_DEFAULT_VOICES; return o; }
     uint64_t size; memcpy(&size,option,8);
     if (size<48) return o;
     memcpy(o.name,option+8,16); o.name[15]=0;
@@ -289,7 +306,7 @@ static RackOptions rack_options(const unsigned char *option) {
 static ABI int32_t rack_query_size(uint32_t id, const unsigned char *option, BufferInfo *out) {
     if (rack_kind(id)<0) return ERR_INVALID_RACK_ID;
     if (!out) return ERR_INVALID_BUFFER_INFO;
-    out->size=16*1024+(uint64_t)rack_options(option).max_voices*1024;
+    out->size=16*1024+(uint64_t)rack_options(id,option).max_voices*1024;
     return 0;
 }
 static ABI int32_t rack_create(Handle system, uint32_t id, const unsigned char *option, const BufferInfo *buffer, Handle *out) {
@@ -297,7 +314,7 @@ static ABI int32_t rack_create(Handle system, uint32_t id, const unsigned char *
     if (kind<0) return ERR_INVALID_RACK_ID;
     if (!out) return ERR_INVALID_OUT_ADDRESS;
     if (!buffer) return ERR_INVALID_BUFFER_INFO;
-    const RackOptions o=rack_options(option);
+    const RackOptions o=rack_options(id,option);
     if (tracing() && option) {
         printf("Ngs2 trace: rack 0x%x option:",id);
         for (int i=0;i<48;++i) printf(" %08x",read32(option,(size_t)i*4));
@@ -411,6 +428,7 @@ static void block_start(Voice *v) {
         }
         v->at9_frames=0; v->at9_superframe_left=(uint32_t)v->at9_info.superframeSize;
     }
+    v->resume=NULL; v->resume_left=0; v->starving=0;
 }
 /* The game's callback for a finished block (OrbisNgs2VoiceCallbackInfo, 56 bytes). */
 static void block_callback(Voice *v, const WaveBlock *b) {
@@ -420,11 +438,47 @@ static void block_callback(Voice *v, const WaveBlock *b) {
     _Static_assert(sizeof(info)==56,"OrbisNgs2VoiceCallbackInfo layout");
     v->callback(&info);
 }
-/* Decodes the next frames of the current block into v->pcm; 0 once the waveform has ended. */
+/* The next block of a stream continues it: the reading position only. */
+static void stream_continue(Voice *v) {
+    const WaveBlock *b=&v->blocks[v->block];
+    v->read=v->data+b->offset;
+    v->read_left=b->size;
+}
+/* A superframe that the end of the current stream block splits: its rest from the next blocks,
+ * all into v->joined. 0 while the game has not appended enough yet (nothing is consumed). */
+static int join_superframe(Voice *v, uint32_t size) {
+    uint32_t have=v->read_left;
+    for (uint32_t i=v->block+1;i<v->block_count && have<size;++i) have+=v->blocks[i].size;
+    if (have<size || size>SUPERFRAME_MAX) return 0;
+    uint32_t got=v->read_left;
+    memcpy(v->joined,v->read,got);
+    while (got<size) {
+        block_callback(v,&v->blocks[v->block]);
+        ++blocks_finished; ++v->block;
+        stream_continue(v);
+        const uint32_t n=size-got<v->read_left ? size-got : v->read_left;
+        memcpy(v->joined+got,v->read,n);
+        got+=n; v->read+=n; v->read_left-=n;
+    }
+    v->resume=v->read; v->resume_left=v->read_left;
+    v->read=v->joined; v->read_left=size;
+    return 1;
+}
+/* Decodes the next frames into v->pcm: 1, 0 once the waveform has ended, -1 while a stream waits
+ * for the game to append its next block. */
 static int refill(Voice *v) {
     for (int guard=0; guard<4*MAX_BLOCKS+8; ++guard) {
-        if (v->block>=v->block_count) return 0;
+        if (v->block>=v->block_count) return v->stream && v->block_left ? -1 : 0;
         const WaveBlock *b=&v->blocks[v->block];
+        if (v->stream && v->block_left && !v->read_left) {
+            /* A stream block used up: the next one goes on with it. */
+            block_callback(v,b);
+            ++blocks_finished; ++v->block;
+            if (v->block>=v->block_count) return -1;
+            stream_continue(v);
+            continue;
+        }
+        if (v->stream && !v->block_left) { block_callback(v,b); v->block=v->block_count; return 0; }
         if (!v->block_left || !v->read_left) {
             ++blocks_finished;
             const uint32_t repeats=b->repeats;
@@ -439,6 +493,10 @@ static int refill(Voice *v) {
         uint32_t frames=0;
         if (v->format.type==WAVE_ATRAC9) {
             static int16_t pcm[256*MAX_CHANNELS]; /* under the lock: guest stacks can be 64 KiB */
+            const uint32_t superframe=(uint32_t)v->at9_info.superframeSize;
+            if (v->stream && !v->at9_frames && !v->resume && v->read_left<superframe &&
+                !join_superframe(v,superframe))
+                return -1;
             int used=0;
             const int error=Atrac9Decode(v->at9,v->read,pcm,&used);
             if (error || used<=0 || (uint32_t)used>v->read_left) {
@@ -450,8 +508,9 @@ static int refill(Voice *v) {
             v->at9_superframe_left=(uint32_t)used<=v->at9_superframe_left ? v->at9_superframe_left-(uint32_t)used : 0;
             if (++v->at9_frames==(uint32_t)v->at9_info.framesInSuperframe) {
                 const uint32_t pad=v->at9_superframe_left<v->read_left ? v->at9_superframe_left : v->read_left;
-                v->read+=pad; v->read_left-=pad;
+                v->read+=pad; v->read_left-=pad; v->decoded_bytes+=pad;
                 v->at9_frames=0; v->at9_superframe_left=(uint32_t)v->at9_info.superframeSize;
+                if (v->resume) { v->read=v->resume; v->read_left=v->resume_left; v->resume=NULL; }
             }
             frames=(uint32_t)v->at9_info.frameSamples;
             const int decoded=v->at9_info.channels;
@@ -493,7 +552,7 @@ static int refill(Voice *v) {
     return 0;
 }
 static int next_frame(Voice *v, float *out) {
-    while (v->pcm_pos>=v->pcm_count) if (!refill(v)) return 0;
+    while (v->pcm_pos>=v->pcm_count) { const int r=refill(v); if (r<=0) return r; }
     memcpy(out,v->pcm+v->pcm_pos*v->format.channels,v->format.channels*sizeof(float));
     ++v->pcm_pos;
     return 1;
@@ -532,8 +591,17 @@ static void sampler_render(Voice *v, float *out, uint32_t frames, uint32_t rate)
     const double step=(double)v->format.rate*(double)v->pitch/(double)rate;
     for (uint32_t f=0;f<frames;++f) {
         while (v->frac>=1.0) {
+            float next[MAX_CHANNELS]={0};
+            const int r=v->ended ? 0 : next_frame(v,next);
+            if (r<0) {
+                /* The stream's next block is not there yet: silence until the game appends it. */
+                memset(out+f*(uint32_t)channels,0,(size_t)(frames-f)*(size_t)channels*sizeof(float));
+                v->flags|=STATE_EMPTY; v->starving=1;
+                return;
+            }
             memcpy(v->prev,v->cur,sizeof(v->cur));
-            if (!v->ended && !next_frame(v,v->cur)) { v->ended=1; memset(v->cur,0,sizeof(v->cur)); }
+            if (r) memcpy(v->cur,next,sizeof(v->cur));
+            else if (!v->ended) { v->ended=1; memset(v->cur,0,sizeof(v->cur)); }
             v->frac-=1.0;
         }
         int finished=0;
@@ -606,7 +674,7 @@ static void system_grain(System *s, uint32_t frames) {
         if (r->kind!=KIND_SAMPLER) continue;
         for (uint32_t i=0;i<r->max_voices;++i) {
             Voice *v=&r->voices[i];
-            if (!(v->flags & STATE_PLAYING) || (v->flags & STATE_PAUSED)) continue;
+            if (!(v->flags & STATE_PLAYING) || (v->flags & (STATE_PAUSED|STATE_EMPTY))) continue;
             sampler_render(v,grain,frames,s->sample_rate);
             route(v,grain,frames,(int)v->format.channels);
         }
@@ -723,24 +791,32 @@ static void trace_param(const Voice *v, const ParamHeader *h) {
     for (unsigned i=0;i<(h->size-8u)/4u && i<10;++i) printf(" %08x",words[i]);
     putchar('\n');
 }
+/* A sampler voice starts on its first block. */
+static void sampler_start(Voice *v) {
+    v->flags&=~(uint32_t)STATE_EMPTY;
+    block_start(v);
+    ++voices_played;
+    if (tracing()) {
+        const Voice *d=v->ports[0].dest;
+        printf("Ngs2 trace: voice %llx plays %u blocks, first %u bytes at +%u (skip %u, %u samples), port 0 to %s %u (volume %.2f, matrix %d); data %p: %02x %02x %02x %02x, block: %02x %02x %02x %02x\n",
+               (unsigned long long)v->handle,v->block_count,v->blocks[0].size,v->blocks[0].offset,v->blocks[0].skip,
+               v->blocks[0].samples,d ? kind_name(d->rack->kind) : "nothing",d ? d->index : 0,v->ports[0].volume,
+               v->ports[0].matrix,(const void *)v->data,v->data[0],v->data[1],v->data[2],v->data[3],
+               v->data[v->blocks[0].offset],v->data[v->blocks[0].offset+1],v->data[v->blocks[0].offset+2],
+               v->data[v->blocks[0].offset+3]);
+    }
+}
 static void play(Voice *v) {
     v->flags=STATE_IN_USE|STATE_PLAYING;
     if (v->rack->kind==KIND_SAMPLER) {
         v->block=0; v->repeated=0; v->ended=0; v->exit_loop=0; v->frac=1.0;
         memset(v->prev,0,sizeof(v->prev)); memset(v->cur,0,sizeof(v->cur));
         envelope_restart(v);
-        if (!v->block_count || !format_supported(&v->format)) { v->flags=STATE_EMPTY; return; }
-        block_start(v);
-        ++voices_played;
-        if (tracing()) {
-            const Voice *d=v->ports[0].dest;
-            printf("Ngs2 trace: voice %llx plays %u blocks, first %u bytes at +%u (skip %u, %u samples), port 0 to %s %u (volume %.2f, matrix %d); data %p: %02x %02x %02x %02x, block: %02x %02x %02x %02x\n",
-                   (unsigned long long)v->handle,v->block_count,v->blocks[0].size,v->blocks[0].offset,v->blocks[0].skip,
-                   v->blocks[0].samples,d ? kind_name(d->rack->kind) : "nothing",d ? d->index : 0,v->ports[0].volume,
-                   v->ports[0].matrix,(const void *)v->data,v->data[0],v->data[1],v->data[2],v->data[3],
-                   v->data[v->blocks[0].offset],v->data[v->blocks[0].offset+1],v->data[v->blocks[0].offset+2],
-                   v->data[v->blocks[0].offset+3]);
-        }
+        if (!format_supported(&v->format)) { v->flags=STATE_EMPTY; return; }
+        /* A stream: played (and paused) before its data is read, given its blocks after. It waits
+         * empty, in use and playing; the blocks start it (SAMPLER_WAVEFORM_BLOCKS). */
+        if (!v->block_count) { v->flags|=STATE_EMPTY; return; }
+        sampler_start(v);
     }
 }
 static int32_t voice_event(Voice *v, uint32_t event) {
@@ -815,15 +891,47 @@ static int32_t sampler_param(Voice *v, const ParamHeader *h) {
         const uint32_t flags=read32(p,16), count=read32(p,20);
         const WaveBlock *blocks; memcpy(&blocks,p+24,8);
         if (!blocks && count) blocks=(const WaveBlock *)(p+32);
-        (void)flags;
+        if (tracing())
+            for (uint32_t i=0;i<count && i<4;++i) {
+                const WaveBlock *b=blocks ? &blocks[i] : NULL;
+                if (b) printf("Ngs2 trace: voice %llx blocks flags %u: block %u offset %u size %u repeats %u skip %u samples %u (playing block %u of %u)\n",
+                              (unsigned long long)v->handle,flags,i,b->offset,b->size,b->repeats,b->skip,b->samples,v->block,v->block_count);
+            }
+        if ((flags & BLOCKS_APPEND) && v->stream && v->data && v->block_count && blocks) {
+            /* The stream's next part: after the blocks still to play. Its own data address (the
+             * ring position the game refilled) becomes an offset from the stream's. */
+            const uint32_t played=v->block<v->block_count ? v->block : v->block_count;
+            memmove(v->blocks,v->blocks+played,(v->block_count-played)*sizeof(WaveBlock));
+            v->block_count-=played; v->block-=played;
+            const int64_t shift=data-v->data;
+            for (uint32_t i=0;i<count && v->block_count<MAX_BLOCKS;++i) {
+                WaveBlock b=blocks[i];
+                const int64_t offset=(int64_t)b.offset+shift;
+                if (offset<0 || offset>(int64_t)UINT32_MAX-b.size) { ++decode_errors; continue; }
+                b.offset=(uint32_t)offset;
+                v->blocks[v->block_count++]=b;
+            }
+            if (v->starving) {
+                if (v->block<v->block_count && !v->read_left && !v->resume) stream_continue(v);
+                v->starving=0; v->flags&=~(uint32_t)STATE_EMPTY;
+            }
+            return 0;
+        }
         v->data=data;
+        v->stream=(flags & BLOCKS_STREAM)!=0;
         v->block_count=count<MAX_BLOCKS ? count : MAX_BLOCKS;
         if (blocks) memcpy(v->blocks,blocks,v->block_count*sizeof(WaveBlock));
+        /* A stream played before its data (play) starts now. */
+        if ((v->flags & STATE_PLAYING) && (v->flags & STATE_EMPTY) && v->block_count) sampler_start(v);
         return 0;
     }
     case SAMPLER_WAVEFORM_ADDRESS: {
         const unsigned char *from, *to; memcpy(&from,p+8,8); memcpy(&to,p+16,8);
-        if (v->data==from) { if (v->read) v->read=to+(v->read-from); v->data=to; }
+        if (v->data==from) {
+            if (v->resume) v->resume=to+(v->resume-from);
+            else if (v->read) v->read=to+(v->read-from);
+            v->data=to;
+        }
         return 0;
     }
     case SAMPLER_WAVEFORM_FRAME_OFFSET: return 0;

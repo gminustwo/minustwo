@@ -48,7 +48,8 @@ int main(void) {
     assert(info.blocks[2].offset==info.data_offset+1200 && info.blocks[2].samples==400);
     assert(parse_data((const unsigned char *)"RIFF\0\0\0\0WAVX",12,&info)==ERR_INVALID_WAVEFORM_DATA);
 
-    /* A system with a sampler rack (default options: one voice) and a stereo mastering voice. */
+    /* A system with a sampler rack (default options: SAMPLER_DEFAULT_VOICES voices) and a stereo
+     * mastering voice. */
     BufferInfo buffer={0};
     Handle system=0, sampler_rack=0, mastering_rack=0, sampler=0, master=0;
     assert(system_query_size(NULL,&buffer)==0 && buffer.size);
@@ -58,7 +59,8 @@ int main(void) {
     put32(option,sizeof(option)); put32(option+32,1);
     assert(rack_create(system,RACK_MASTERING,option,&buffer,&mastering_rack)==0);
     assert(rack_create(system,0x9999,NULL,&buffer,&sampler_rack)==ERR_INVALID_RACK_ID);
-    assert(rack_voice(sampler_rack,0,&sampler)==0 && rack_voice(sampler_rack,1,&sampler)==ERR_INVALID_VOICE_INDEX);
+    assert(rack_voice(sampler_rack,SAMPLER_DEFAULT_VOICES-1,&sampler)==0 &&
+           rack_voice(sampler_rack,SAMPLER_DEFAULT_VOICES,&sampler)==ERR_INVALID_VOICE_INDEX);
     assert(rack_voice(sampler_rack,0,&sampler)==0 && rack_voice(mastering_rack,0,&master)==0);
 
     struct { ParamHeader h; uint32_t a, b; } setup={{16,0,0x30000000},2,0}, output={{16,0,0x30000005},0,0};
@@ -92,6 +94,38 @@ int main(void) {
     assert(voice_state(sampler,state,sizeof(state))==0 && state[0]==0);
     uint64_t decoded; memcpy(&decoded,state+16,8);
     assert(decoded==1000);
+
+    /* A stream (GODZILLA's voice lines): played and paused before its data, then its ring buffer's
+     * first part (blocks flag 1, the whole stream's sample count); it waits empty when that part is
+     * played, and the part the game appends (flag 3, its own data address, the same skip and count
+     * again) goes on with it until the stream's count. */
+    Handle stream=0;
+    assert(rack_voice(sampler_rack,1,&stream)==0);
+    struct { ParamHeader h; uint32_t event; } pause_event={{12,0,PARAM_EVENT},EVENT_PAUSE},
+        resume_event={{12,0,PARAM_EVENT},EVENT_RESUME};
+    param(stream,&sampler_setup); param(stream,&patch); param(stream,&play_event); param(stream,&pause_event);
+    assert(voice_state(stream,state,sizeof(state))==0 &&
+           state[0]==(STATE_IN_USE|STATE_PLAYING|STATE_PAUSED|STATE_EMPTY));
+    WaveBlock part={0,200*2,0,0,600,0,0};
+    blocks.data=pcm; blocks.flags=BLOCKS_STREAM; blocks.count=1; blocks.blocks=&part;
+    param(stream,&blocks); param(stream,&resume_event);
+    assert(voice_state(stream,state,sizeof(state))==0 && state[0]==(STATE_IN_USE|STATE_PLAYING));
+    assert(system_render(system,&render,1)==0);
+    /* (The resampler needs the next sample for a frame: the wait starts one frame early, and the
+     * first frame after it is the sample it held back.) */
+    for (int f=1;f<200;++f) assert(out[2*f]==pcm[f-1]/32768.0f);
+    for (int f=200;f<256;++f) assert(out[2*f]==0.0f);
+    assert(voice_state(stream,state,sizeof(state))==0 && (state[0] & STATE_EMPTY) && (state[0] & STATE_PLAYING));
+    WaveBlock next={0,400*2,0,256,600,0,0};
+    blocks.data=pcm+200; blocks.flags=BLOCKS_STREAM|BLOCKS_APPEND; blocks.blocks=&next;
+    param(stream,&blocks);
+    assert(voice_state(stream,state,sizeof(state))==0 && !(state[0] & STATE_EMPTY));
+    assert(system_render(system,&render,1)==0);
+    for (int f=0;f<256;++f) assert(out[2*f]==pcm[199+f]/32768.0f);
+    for (int i=0;i<2;++i) assert(system_render(system,&render,1)==0);
+    assert(voice_state(stream,state,sizeof(state))==0 && state[0]==0);
+    memcpy(&decoded,state+16,8);
+    assert(decoded==600);
 
     /* Destroying hands the game's buffers back. */
     BufferInfo back={0};
