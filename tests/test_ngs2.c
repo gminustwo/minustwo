@@ -127,6 +127,17 @@ int main(void) {
     memcpy(&decoded,state+16,8);
     assert(decoded==600);
 
+    /* A voice played again reports what it decoded since: a stream's reader refills its ring by the
+     * decoded size, and the sizes of earlier sounds made it overwrite what was still to play. */
+    WaveBlock whole={0,1000*2,0,0,1000,0,0};
+    blocks.data=pcm; blocks.flags=0; blocks.blocks=&whole;
+    param(stream,&blocks); param(stream,&play_event);
+    assert(system_render(system,&render,1)==0);
+    assert(voice_state(stream,state,sizeof(state))==0);
+    uint64_t decoded_bytes;
+    memcpy(&decoded,state+16,8); memcpy(&decoded_bytes,state+24,8);
+    assert(decoded==256 && decoded_bytes==512);
+
     /* Destroying hands the game's buffers back. */
     BufferInfo back={0};
     assert(rack_destroy(sampler_rack,&back)==0 && system_destroy(system,&back)==0);

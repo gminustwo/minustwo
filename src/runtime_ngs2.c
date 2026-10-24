@@ -811,6 +811,10 @@ static void play(Voice *v) {
     if (v->rack->kind==KIND_SAMPLER) {
         v->block=0; v->repeated=0; v->ended=0; v->exit_loop=0; v->frac=1.0;
         memset(v->prev,0,sizeof(v->prev)); memset(v->cur,0,sizeof(v->cur));
+        /* What the voice state reports counts from this play: a stream's reader takes the decoded
+         * size as the part of its ring buffer it may refill (with the counts of the sounds a reused
+         * voice played before, it overwrote what was still to play: voice lines broke off). */
+        v->decoded_samples=0; v->decoded_bytes=0;
         envelope_restart(v);
         if (!format_supported(&v->format)) { v->flags=STATE_EMPTY; return; }
         /* A stream: played (and paused) before its data is read, given its blocks after. It waits
