@@ -18,6 +18,7 @@
 #include "mz_toggles.h"
 #include "mz_settings.h"
 #include "mz_graphics.h"
+#include "mz_present_trace.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -79,6 +80,9 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
         swap_thread = std::jthread([&](std::stop_token token) { SwapThread(token); });
     }
     present_thread = std::jthread([&](std::stop_token token) { PresentThread(token); });
+    if (MzPresentTrace::Enabled()) {
+        MzPresentTrace::StartVblankLog();
+    }
 }
 
 void VideoOutDriver::RunPresenter(std::function<void()> work, bool if_idle) {
@@ -301,6 +305,11 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 }
 
 void VideoOutDriver::Flip(const Request& req) {
+    if (MzPresentTrace::Enabled()) {
+        std::printf("PresentTrace: flip %llu %.3f\n",
+                    static_cast<unsigned long long>(req.frame ? req.frame->trace_seq : 0),
+                    MzPresentTrace::NowMs());
+    }
     // Update HDR status before presenting, then present the frame (minuszero: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
         presenter->SetHDR(hdr);

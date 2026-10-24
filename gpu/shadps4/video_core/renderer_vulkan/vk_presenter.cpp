@@ -15,6 +15,7 @@
 #include "mz_overlay.h"
 #include "mz_settings.h"
 #include "mz_graphics.h"
+#include "mz_present_trace.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
@@ -548,6 +549,53 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     });
 }
 
+// minuszero: MZ_PRESENT_TRACE (mz_present_trace.h): the finished frame at Cols x Rows points,
+// written once the GPU is done.
+static void TraceSamples(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
+                         const Frame& frame) {
+    using MzPresentTrace::Cols, MzPresentTrace::Rows;
+    const u32 texel = frame.format == vk::Format::eR16G16B16A16Sfloat ? 8 : 4;
+    const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                       .size = VkDeviceSize(Cols) * Rows * texel,
+                                       .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    const VmaAllocationCreateInfo alloc_ci{
+        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST};
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &buffer, &allocation,
+                        &info) != VK_SUCCESS) {
+        return;
+    }
+    std::vector<vk::BufferImageCopy> regions;
+    regions.reserve(Cols * Rows);
+    for (u32 row = 0; row < Rows; ++row) {
+        for (u32 col = 0; col < Cols; ++col) {
+            regions.push_back({
+                .bufferOffset = VkDeviceSize(regions.size()) * texel,
+                .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                .imageOffset = {s32((col * 2 + 1) * frame.width / (Cols * 2)),
+                                s32((row * 2 + 1) * frame.height / (Rows * 2)), 0},
+                .imageExtent = {1, 1, 1},
+            });
+        }
+    }
+    const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                  .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                                  .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
+    cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &done});
+    cmdbuf.copyImageToBuffer(frame.image, vk::ImageLayout::eGeneral, buffer, regions);
+    scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
+                                      size = buffer_ci.size, texel, seq = frame.trace_seq,
+                                      made = MzPresentTrace::NowMs()] {
+        vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+        MzPresentTrace::WriteSamples(seq, made, texel, info.pMappedData, size);
+        vmaDestroyBuffer(allocator, buffer, allocation);
+    });
+}
+
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
     // minuszero: MZ_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
@@ -695,6 +743,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                 frame->width, frame->height, "output", frame_dump_index);
         ++frame_dump_index;
     }
+    frame->trace_seq = 0;
+    if (MzPresentTrace::Enabled()) {
+        static u64 trace_seq = 0;
+        frame->trace_seq = ++trace_seq;
+        TraceSamples(instance, draw_scheduler, cmdbuf, *frame);
+    }
 
     // Flush frame creation commands.
     frame->ready_semaphore = draw_scheduler.GetWorkSemaphore()->Handle();
@@ -788,6 +842,7 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
         .imageMemoryBarrierCount = 1,
         .pImageMemoryBarriers = &post_barrier,
     });
+    frame->trace_seq = 0;
 
     // Flush frame creation commands.
     frame->ready_semaphore = scheduler.GetWorkSemaphore()->Handle();
@@ -1034,6 +1089,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     }
 
+    if (MzPresentTrace::Enabled()) {
+        std::printf("PresentTrace: %s %llu %.3f\n", is_reusing_frame ? "redraw" : "present",
+                    static_cast<unsigned long long>(frame->trace_seq), MzPresentTrace::NowMs());
+    }
     free_frame();
     if (!is_reusing_frame && is_game_frame) {
         DebugState.IncFlipFrameNum();

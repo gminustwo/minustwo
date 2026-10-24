@@ -38,6 +38,7 @@ struct Frame {
     bool is_hdr{false};
     u8 id{};
     vk::Format format{}; ///< minuszero: of `image` (screenshots)
+    u64 trace_seq{};     ///< minuszero: MZ_PRESENT_TRACE number of the game frame, 0 otherwise
 };
 
 enum SchedulerType {

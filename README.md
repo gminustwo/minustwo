@@ -148,6 +148,9 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
   font calls; `MZ_FRAME_STATS=1` frame rate and pacing; `MZ_CAPTURE_TRIGGER=<file>` records every pass of the next
   frame; `MZ_SCENE_DEBUG=<file>` (created while the game runs) prints which passes of one frame are drawn above
   1080p and why the others are not; `MZ_SCENE_SIZE=<width>x<height>` overrides the render resolution.
+- `MZ_PRESENT_TRACE=<file>` samples every frame the game shows into `<file>` and logs its flip, its present and every
+  display vblank; `python tools/present_report.py <run.log> <file> <movie.mp4>` matches those frames to the movie's
+  own and tells how long each movie frame stayed on screen (with `MZ_AVPLAYER_TRACE=1`, only while the movie plays).
 - `out/minuszero.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports
