@@ -78,7 +78,7 @@ struct Values {
     std::atomic<int> mouse_aim_sensitivity{100};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
-    std::atomic<int> engine_fps{120};
+    std::atomic<int> engine_fps{60};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
     /// MzGraphics::Anisotropies; the samplers read startup_anisotropy.
@@ -90,7 +90,7 @@ struct Values {
     int startup_render_resolution = 0;
     /// The engine rate this launch really runs at (run.py's MZ_ENGINE_FPS): 60 when the frame
     /// rate patch does not apply to this game build.
-    std::atomic<int> applied_engine_fps{120};
+    std::atomic<int> applied_engine_fps{60};
     /// The game's maximum frame rate, read every frame (src/probe.c finds it): as a float and
     /// rounded. Null when this eboot.bin's code does not match. engine_fps is written there live.
     std::atomic<float*> engine_fps_global{nullptr};

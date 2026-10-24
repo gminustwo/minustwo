@@ -6,6 +6,8 @@
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
 int mzgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
 int mzgpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
+static char last_toast[256];
+void mzgpu_toast(const char *text) { snprintf(last_toast,sizeof(last_toast),"%s",text ? text : ""); }
 void mzgpu_trophy_setup(const MzGpuTrophyLabels *labels, const MzGpuTrophyInfo *items,
                                 int count, const volatile uint32_t *unlocked) {
     (void)labels; (void)items; (void)count; (void)unlocked;
@@ -57,17 +59,50 @@ int main(void) {
     unsigned char param[128]={0}, result[64]={0}; /* the game zeroes the pointers it does not want */
     uint32_t value;
 
-    /* MsgDialog: a user message finishes with OK; a progress bar runs until closed. */
+    /* MsgDialog. Result: mode, result (0 OK, 1 cancelled), button. A message without its user
+     * parameter is acknowledged at once. */
     assert(msg_init()==0);
     memset(param+56,0,4); param[56]=1;
     assert(msg_open(param)==0 && msg_status()==DIALOG_FINISHED);
     assert(msg_result(result)==0);
+    memcpy(&value,result,4); assert(value==1);
+    memcpy(&value,result+4,4); assert(value==0);
+    memcpy(&value,result+8,4); assert(value==1);
+    /* Yes/No is shown over the game; the player's answer is the button (No = 2). */
+    struct { uint32_t type, pad; const char *text; const char *const *labels; } user={1,0,"Create save data?",NULL};
+    const void *user_ptr=&user;
+    memcpy(param+64,&user_ptr,8);
+    assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING);
+    assert(choice_count==2 && choice_focus==0 && !strcmp(shown_items[1],"No") && !strcmp(shown_title,"Create save data?"));
+    choice_next=1;
+    assert(msg_status()==DIALOG_FINISHED && msg_result(result)==0);
+    memcpy(&value,result+4,4); assert(value==0);
+    memcpy(&value,result+8,4); assert(value==2);
+    assert(msg_close()==0); /* closing a finished dialog is no error */
+    /* Two buttons of the game's own; cancelling is result 1. */
+    const char *const labels[2]={"Retry","Quit"};
+    user.type=9; user.labels=labels;
+    assert(msg_open(param)==0 && !strcmp(shown_items[0],"Retry") && !strcmp(shown_items[1],"Quit"));
+    choice_next=-2;
+    assert(msg_status()==DIALOG_FINISHED && msg_result(result)==0);
     memcpy(&value,result+4,4); assert(value==1);
+    /* A wait message has no button: a notice until the game closes it. */
+    user.type=5;
+    assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING && !strcmp(last_toast,"Create save data?"));
+    assert(msg_result(result)==DIALOG_NOT_FINISHED);
+    assert(msg_close()==0 && msg_status()==DIALOG_FINISHED);
+    /* MZ_AUTO_DIALOGS answers with the focused button (No when No has the focus). */
+    _putenv("MZ_AUTO_DIALOGS=1");
+    user.type=7;
+    assert(msg_open(param)==0 && msg_status()==DIALOG_FINISHED && msg_result(result)==0);
+    memcpy(&value,result+8,4); assert(value==2);
+    _putenv("MZ_AUTO_DIALOGS=");
+    memset(param+64,0,8);
     param[56]=2;
     assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING);
     assert(msg_result(result)==DIALOG_NOT_FINISHED);
     assert(msg_progress(0,50)==0 && msg_progress(1,50)==DIALOG_PARAM_INVALID);
-    assert(msg_close()==0 && msg_status()==DIALOG_FINISHED && msg_close()==DIALOG_NOT_RUNNING);
+    assert(msg_close()==0 && msg_status()==DIALOG_FINISHED && msg_close()==0); /* finished: nothing to close */
     assert(msg_progress(0,100)==DIALOG_NOT_RUNNING);
     assert(msg_result(NULL)==DIALOG_ARG_NULL);
     assert(msg_term()==0 && msg_open(NULL)==DIALOG_ARG_NULL);

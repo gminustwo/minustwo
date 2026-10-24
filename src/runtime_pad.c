@@ -2,8 +2,8 @@
  * by the window thread (gpu/shim/window.cpp); here state is only sampled.
  *
  * Default keyboard layout (MZ_KEY_MAP changes the buttons, see apply_button_map):
- *   WASD left stick (walk), arrow keys or the mouse right stick (camera), Space Cross,
- *   LShift Circle, E Square, Q Triangle, 1 L1, 3 R1, R L2, F R2, Z L3, C R3,
+ *   WASD left stick (walk), Q L1 and E R1 (turn), arrow keys or the mouse right stick (camera),
+ *   left click Square, right click Triangle, Space Cross, LShift Circle, R L2, F R2, Z L3, C R3,
  *   Enter Options, Tab and Backspace the touchpad click,
  *   IJKL d-pad (I up, K down, J left, L right).
  * MZ_KEY_MAP also takes the mouse: Mouse Left, Mouse Right, Mouse Middle, Mouse Back,
@@ -155,9 +155,15 @@ static ButtonMap pad_map={{
     {SDL_GAMEPAD_BUTTON_DPAD_UP,BTN_UP}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN,BTN_DOWN},
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT,BTN_LEFT}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT,BTN_RIGHT},
 },15};
+/* Mouse sources of the keyboard map, numbered above every SDL scancode. Buttons are sampled like
+ * keys; the wheel has no held state, so each notch becomes a short press (WHEEL_PRESS_US down,
+ * then WHEEL_GAP_US up) that the game sees across several reads. */
+enum { MOUSE_LEFT=0x10000, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_BACK, MOUSE_FORWARD, WHEEL_UP, WHEEL_DOWN };
+/* GODZILLA turns with L1 and R1 and walks with the left stick: Q and E turn, WASD walk, the mouse
+ * moves the camera, its buttons are the normal (Square) and strong (Triangle) attacks. */
 static ButtonMap key_map={{
-    {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
-    {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
+    {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {MOUSE_LEFT,BTN_SQUARE},
+    {MOUSE_RIGHT,BTN_TRIANGLE}, {SDL_SCANCODE_Q,BTN_L1}, {SDL_SCANCODE_E,BTN_R1},
     {SDL_SCANCODE_R,BTN_L2}, {SDL_SCANCODE_F,BTN_R2}, {SDL_SCANCODE_Z,BTN_L3}, {SDL_SCANCODE_C,BTN_R3},
     {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT},
     {SDL_SCANCODE_I,BTN_UP}, {SDL_SCANCODE_K,BTN_DOWN}, {SDL_SCANCODE_J,BTN_LEFT}, {SDL_SCANCODE_L,BTN_RIGHT},
@@ -173,10 +179,6 @@ static char *trim(char *text) {
     return text;
 }
 
-/* Mouse sources of the keyboard map, numbered above every SDL scancode. Buttons are sampled like
- * keys; the wheel has no held state, so each notch becomes a short press (WHEEL_PRESS_US down,
- * then WHEEL_GAP_US up) that the game sees across several reads. */
-enum { MOUSE_LEFT=0x10000, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_BACK, MOUSE_FORWARD, WHEEL_UP, WHEEL_DOWN };
 enum { WHEEL_PRESS_US=60000, WHEEL_GAP_US=40000, WHEEL_MAX_PENDING=4 };
 static const struct { const char *name; int source; } mouse_names[]={
     {"Mouse Left",MOUSE_LEFT}, {"Mouse Right",MOUSE_RIGHT}, {"Mouse Middle",MOUSE_MIDDLE},

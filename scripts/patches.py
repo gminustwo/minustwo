@@ -225,13 +225,11 @@ def available_patches(xml, app_version):
     return {m.get('Name') for m in ET.parse(xml).getroot().iter('Metadata') if m.get('AppVer')==app_version}
 
 
-# MinusZero notes: the texture fix and the resolution patches both resize the video arena;
-# enable one, never both. A chosen resolution patch replaces the default texture fix.
+# Only one resolution patch at a time; patches a chosen resolution patch replaces (none for GODZILLA).
 EXCLUSIVE_PREFIX='Resolution Patch'
-REPLACED_BY_EXCLUSIVE={'Bug Fix - Texture Corruption Fix'}
-# Fixes with nothing to choose: not offered in the launcher and applied even with its saved list,
-# which predates them (the startup black screen fix sets a value the game overwrites at once).
-ALWAYS_ON={'Bug Fix - Startup Black Screen'}
+REPLACED_BY_EXCLUSIVE=set()
+# Fixes with nothing to choose, applied whatever list the launcher saved (none for GODZILLA).
+ALWAYS_ON=set()
 
 
 def selected_patches(xml, app_version, extra, only=False):

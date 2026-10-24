@@ -34,7 +34,7 @@ done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed --copy-metadata pillow \
     --name "MinusZero" --icon "$(cygpath -w "$PWD/launcher/minuszero.ico")" --distpath out/pyi-dist \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" "${hidden[@]}" \
-    "$(cygpath -w "$PWD/launcher/mz_launcher_win.py")"
+    "$(cygpath -w "$PWD/launcher/minuszero_launcher.py")"
 
 # The package is assembled in a fresh staging folder and zipped from there; dist/minuszero-windows
 # (a playable copy that may hold saves and settings) is only refreshed afterwards.
@@ -43,13 +43,7 @@ rm -rf -- out/stage
 mkdir -p "$dest/bin" "$dest/launcher"
 cp -r "out/pyi-dist/MinusZero/." "$dest/"
 llvm-strip -o "$dest/Play MinusZero.exe" out/minuszero-play.exe
-# Until scripts/legacy.py goes: the same launcher and windowless start under their former names, which
-# installed updaters look for in the download and existing shortcuts point to.
-legacy_names=$(out/pyenv/Scripts/python.exe -c "import sys; sys.path.insert(0, 'scripts'); import legacy; print(legacy.LEGACY_EXE); print(legacy.LEGACY_PLAY_EXE)" | tr -d '\r')
-cp "$dest/MinusZero.exe" "$dest/$(sed -n 1p <<< "$legacy_names")"
-cp "$dest/Play MinusZero.exe" "$dest/$(sed -n 2p <<< "$legacy_names")"
-cp launcher/minuszero.ico launcher/minuszero.png launcher/logo.png launcher/Cinzel-Black.ttf launcher/OFL-Cinzel.txt "$dest/launcher/"
-cp launcher/BodoniModa.ttf launcher/OFL-BodoniModa.txt "$dest/launcher/"
+cp launcher/minuszero.ico launcher/minuszero.png "$dest/launcher/"
 # The executables without debug information (out/ keeps the symbols for crash reports).
 for exe in minuszero.exe minuszero-gpu-capabilities.exe; do
     llvm-strip --strip-debug -o "$dest/bin/$exe" "out/$exe"
@@ -60,21 +54,16 @@ ldd "$dest/bin/minuszero.exe" "$dest/bin/minuszero-gpu-capabilities.exe" |
         cp -u "$dll" "$dest/bin/"
     done
 cp -r scripts patches "$dest/"
-mkdir -p "$dest/tools" "$dest/docs"
-cp tools/xvag_voice_swap.py "$dest/tools/"
-cp docs/VOICE_REPLACEMENT.md "$dest/docs/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
 find "$dest" -name __pycache__ -prune -exec rm -r {} +
-[[ -f $dest/scripts/discord_presence.py ]] || { echo 'scripts/discord_presence.py is missing from the package' >&2; exit 1; }
-grep -Eq "^CLIENT_ID = '[0-9]+'" "$dest/scripts/discord_presence.py" ||
-    echo 'Warning: CLIENT_ID is empty in discord_presence.py; Discord Rich Presence will not start.' >&2
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.
 forbidden=$(find "$dest" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
     -o -iname user -o -iname cache -o -iname '*.log' -o -iname minuszero.ini -o -iname settings.json \
     -o -iname game_icon.ico \
     -o -iname mods.json -o -iname patches.json -o -iname fsr4_shaders -o -iname 'nvngx_dlss*.dll' \
-    -o -iname '*.spv' -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' \) -print)
+    -o -iname '*.spv' -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' -o -iname '*.pac' \
+    -o -iname '*.at9' -o -iname '*.mp4' -o -iname 'pic1.png' -o -iname 'icon0.png' \) -print)
 if [[ -n $forbidden ]]; then
     echo "Package holds files that must not ship:" >&2
     echo "$forbidden" >&2

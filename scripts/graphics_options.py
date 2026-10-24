@@ -47,12 +47,11 @@ def default_render_resolution(dmi=Path('/sys/devices/virtual/dmi/id')):
     return STEAM_DECK_RESOLUTION if steam_deck(dmi) else 'native'
 
 
-DEFAULTS = {'render_resolution': default_render_resolution(), 'engine_fps': '120', 'deferred_readback': '1',
+DEFAULTS = {'render_resolution': default_render_resolution(), 'engine_fps': '60', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1', 'monitor': '', 'hdr': '0',
             'glyph_style': 'off', 'anisotropy': '0'}
 RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'
-TEXTURE_FIX = 'Bug Fix - Texture Corruption Fix'
 
 
 def read_ini(path):
@@ -161,7 +160,7 @@ def startup_options(ini, extra=()):
     if options['render_resolution'] not in resolutions(extra):
         options['render_resolution'] = 'native'
     if options['engine_fps'] not in {str(f) for f in ENGINE_FPS}:
-        options['engine_fps'] = '120'
+        options['engine_fps'] = '60'
     for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
         options[key] = '0' if options[key] == '0' else '1'
     monitor = options['monitor']
@@ -207,17 +206,16 @@ def prepare(config, state_path, extra=(), environment=None):
     return options, reverted
 
 
-def patch_names(names, options, texture_fix_available=True):
-    """The launcher's patch list with the resolution and frame rate patches of `options`."""
+def patch_names(names, options):
+    """The launcher's patch list with the resolution and frame rate patches of `options`: a render
+    resolution other than native is a "Resolution Patch - <name>", an engine rate above 60 a
+    "Frame Rate Patch - <rate> FPS" (restrict_to_available drops the ones this game has none of)."""
     names = [n for n in names if not n.startswith(RESOLUTION_PREFIX) and not n.startswith(FPS_PREFIX)]
     resolution = options['render_resolution']
     if resolution != 'native':
-        names = [n for n in names if n != TEXTURE_FIX] + [f'{RESOLUTION_PREFIX} - {resolution}']
-    elif texture_fix_available and TEXTURE_FIX not in names:
-        names.insert(0, TEXTURE_FIX)
-    # The engine rate is chosen live (mz_settings.cpp SyncEngineFps): the highest patch gives
-    # the swing energy fix and a vblank every lower rate fits in.
-    names.append(f'{FPS_PREFIX} - {max(ENGINE_FPS)} FPS')
+        names.append(f'{RESOLUTION_PREFIX} - {resolution}')
+    if options['engine_fps'] != '60':
+        names.append(f"{FPS_PREFIX} - {options['engine_fps']} FPS")
     return names
 
 

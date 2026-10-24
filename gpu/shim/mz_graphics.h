@@ -107,7 +107,7 @@ inline int ParseResolution(std::string_view text) {
 }
 /// A listed ceiling, else 120 (the default patch).
 inline int ParseEngineFps(int value) {
-    return IndexOf(EngineFps, value, -1) >= 0 ? value : 120;
+    return IndexOf(EngineFps, value, -1) >= 0 ? value : 60;
 }
 
 /// Anisotropic filtering forced on the game's mipmapped textures; 0 = the game's own. Samplers
