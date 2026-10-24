@@ -171,6 +171,28 @@ int main(void) {
     memcpy(&decoded,state+16,8); memcpy(&decoded_bytes,state+24,8);
     assert(decoded==256 && decoded_bytes==512);
 
+    /* The mastering matrix and limiter: GODZILLA mixes its buses at -18 dB ({0.126, 0, 0, 0.126})
+     * with the limiter at that level; without them its sound drowned the movies. */
+    struct { ParamHeader h; uint32_t event; } stop_event={{12,0,PARAM_EVENT},EVENT_STOP_IMMEDIATE};
+    param(stream,&stop_event);
+    Handle loud=0;
+    assert(rack_voice(sampler_rack,3,&loud)==0);
+    static const float half[4]={0.5f,0.0f,0.0f,0.5f};
+    struct { ParamHeader h; uint32_t type, count; const float *levels; } master_matrix={{24,0,0x30000001},5,4,half};
+    param(master,&master_matrix);
+    blocks.data=wave; blocks.flags=0; blocks.count=info.block_count; blocks.blocks=info.blocks;
+    param(loud,&sampler_setup); param(loud,&blocks); param(loud,&patch); param(loud,&play_event);
+    assert(system_render(system,&render,1)==0);
+    for (int f=1;f<256;++f) assert(fabsf(out[2*f]-0.5f*pcm[f-1]/32768.0f)<1e-6f && out[2*f+1]==out[2*f]);
+    struct { ParamHeader h; uint32_t on; float threshold; } limiter={{16,0,0x30000003},1,0.1f};
+    param(master,&limiter);
+    float loudest=0.0f;
+    for (int i=0;i<2;++i) {
+        assert(system_render(system,&render,1)==0);
+        for (int k=0;k<256*2;++k) loudest=fmaxf(loudest,fabsf(out[k]));
+    }
+    assert(loudest>0.09f && loudest<=0.1f+1e-6f);
+
     /* Destroying hands the game's buffers back. */
     BufferInfo back={0};
     assert(rack_destroy(sampler_rack,&back)==0 && system_destroy(system,&back)==0);

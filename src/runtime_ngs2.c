@@ -65,6 +65,8 @@ enum { KIND_SAMPLER, KIND_SUBMIXER, KIND_REVERB, KIND_EQ, KIND_MASTERING };
 #define SAMPLER_PITCH 5
 #define SAMPLER_ENVELOPE 6
 #define MIXER_SETUP 0
+#define MASTERING_MATRIX 1
+#define MASTERING_LIMITER 3
 #define MASTERING_OUTPUT 5
 
 #define EVENT_PLAY 0
@@ -130,6 +132,11 @@ typedef struct Voice {
     int depth;                     /* mixer voices: patches between it and a mastering voice */
     uint32_t output;               /* mastering voices: the render buffer they are mixed into */
     float limiter;                 /* mastering voices: the limiter's gain, 1 when nothing is too loud */
+    /* Mastering voices: the levels from their channels to the buffer's (input-major; 1 level: a gain
+     * on the default layout; none: the default layout) and the limiter's threshold (0: full scale). */
+    float master[MAX_CHANNELS*MAX_CHANNELS];
+    uint32_t master_levels;
+    float threshold;
     /* Sampler: the waveform and where playback is in it. */
     WaveFormat format;
     const unsigned char *data;
@@ -734,28 +741,35 @@ static ABI int32_t system_render(Handle handle, const RenderBuffer *buffers, uin
             for (uint32_t i=0;i<r->max_voices;++i) {
                 Voice *v=&r->voices[i];
                 if (!mixer_active(v)) continue;
-                /* A peak limiter at full scale (the game turns the mastering limiter on): the
+                const uint32_t b=v->output;
+                if (b>=count) continue;
+                const int outs=(int)buffers[b].channels;
+                if (!buffers[b].buffer || outs<1 || outs>MAX_CHANNELS) continue;
+                /* The matrix, then a peak limiter at the threshold (full scale without one): the
                  * gain drops at once on a peak and recovers over about 40 ms. */
+                float levels[MAX_CHANNELS][MAX_CHANNELS];
+                const int matrix=v->master_levels==(uint32_t)(v->channels*outs);
+                for (int c=0;c<v->channels;++c) for (int o=0;o<outs;++o)
+                    levels[c][o]=matrix ? v->master[c*outs+o]
+                                        : default_level(c,v->channels,o,outs)*(v->master_levels==1 ? v->master[0] : 1.0f);
+                const float threshold=v->threshold>0.0f ? v->threshold : 1.0f;
                 for (uint32_t f=0;f<frames;++f) {
-                    float peak=0.0f;
-                    for (int c=0;c<v->channels;++c) peak=fmaxf(peak,fabsf(v->input[f*(uint32_t)v->channels+(uint32_t)c]));
-                    if (v->limiter<=0.0f) v->limiter=1.0f;
-                    const float wanted=peak>1.0f ? 1.0f/peak : 1.0f;
-                    v->limiter=wanted<v->limiter ? wanted : v->limiter+(1.0f-v->limiter)*0.0005f;
-                    if (v->limiter<1.0f)
-                        for (int c=0;c<v->channels;++c) v->input[f*(uint32_t)v->channels+(uint32_t)c]*=v->limiter;
-                }
-                for (uint32_t b=v->output;b<count && b==v->output;++b) {
-                    const int outs=(int)buffers[b].channels;
-                    if (!buffers[b].buffer || outs<1 || outs>MAX_CHANNELS) continue;
-                    for (uint32_t f=0;f<frames;++f) for (int o=0;o<outs;++o) {
+                    float mixed[MAX_CHANNELS], peak=0.0f;
+                    for (int o=0;o<outs;++o) {
                         float sum=0.0f;
-                        for (int c=0;c<v->channels;++c) sum+=v->input[f*(uint32_t)v->channels+(uint32_t)c]*default_level(c,v->channels,o,outs);
+                        for (int c=0;c<v->channels;++c) sum+=v->input[f*(uint32_t)v->channels+(uint32_t)c]*levels[c][o];
+                        mixed[o]=sum; peak=fmaxf(peak,fabsf(sum));
+                    }
+                    if (v->limiter<=0.0f) v->limiter=1.0f;
+                    const float wanted=peak>threshold ? threshold/peak : 1.0f;
+                    v->limiter=wanted<v->limiter ? wanted : v->limiter+(1.0f-v->limiter)*0.0005f;
+                    for (int o=0;o<outs;++o) {
+                        const float sum=mixed[o]*v->limiter;
                         const size_t at=(size_t)(done+f)*(size_t)outs+(size_t)o;
                         if (buffers[b].type==WAVE_PCM_I16L) {
                             int16_t *pcm=buffers[b].buffer;
-                            const float mixed=pcm[at]/32768.0f+sum;
-                            pcm[at]=(int16_t)(mixed>=1.0f ? 32767 : mixed<=-1.0f ? -32768 : (int)lrintf(mixed*32767.0f));
+                            const float total=pcm[at]/32768.0f+sum;
+                            pcm[at]=(int16_t)(total>=1.0f ? 32767 : total<=-1.0f ? -32768 : (int)lrintf(total*32767.0f));
                         } else ((float *)buffers[b].buffer)[at]+=sum;
                     }
                 }
@@ -978,7 +992,23 @@ static int32_t mixer_param(Voice *v, const ParamHeader *h) {
         v->output=read32(h,8);
         return 0;
     }
-    return 1; /* envelopes, compressors, limiters, filters, reverb settings: passed through */
+    /* The mastering matrix (type, count, levels) and limiter (on, threshold). GODZILLA sets the
+     * main, music and third bus to {0.126, 0, 0, 0.126}, -18 dB, with the limiter at the same level:
+     * without them everything but the movies (their own audio port) came out up to 18 dB too loud,
+     * and a kaiju's movie went under the music the game starts with it. */
+    if (v->rack->kind==KIND_MASTERING && h->id==((uint32_t)RACK_MASTERING<<16|MASTERING_MATRIX) && h->size>=24) {
+        const uint32_t count=read32(h,12);
+        const float *levels; memcpy(&levels,(const char *)h+16,8);
+        v->master_levels=levels && count<=MAX_CHANNELS*MAX_CHANNELS ? count : 0;
+        if (v->master_levels) memcpy(v->master,levels,v->master_levels*sizeof(float));
+        return 0;
+    }
+    if (v->rack->kind==KIND_MASTERING && h->id==((uint32_t)RACK_MASTERING<<16|MASTERING_LIMITER) && h->size>=16) {
+        float threshold; memcpy(&threshold,(const char *)h+12,4);
+        v->threshold=read32(h,8) && threshold>0.0f && threshold<=1.0f ? threshold : 0.0f;
+        return 0;
+    }
+    return 1; /* envelopes, compressors, filters, reverb settings: passed through */
 }
 static ABI int32_t voice_control(Handle handle, const ParamHeader *params) {
     pthread_mutex_lock(&lock);
