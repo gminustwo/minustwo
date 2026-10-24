@@ -113,6 +113,8 @@ private:
 struct Frame {
     GuestBuffer buffer;
     AvPlayerFrameInfoEx info;
+    /// minuszero: the presentation time in milliseconds, unrounded (info.timestamp is whole ms).
+    double time_ms = 0.0;
 };
 
 class EventCV {
@@ -165,6 +167,9 @@ public:
     bool GetVideoData(AvPlayerFrameInfo& video_info);
     bool GetVideoData(AvPlayerFrameInfoEx& video_info);
     u64 CurrentTime();
+    /// minuszero: the playback clock in milliseconds at `at` (wall time since the start or the
+    /// last loop, without pauses).
+    double ClockMs(std::chrono::high_resolution_clock::time_point at) const;
     bool IsActive();
 
 private:
@@ -250,11 +255,19 @@ private:
     SWRContextPtr m_swr_context{nullptr, &ReleaseSWRContext};
     SWSContextPtr m_sws_context{nullptr, &ReleaseSWSContext};
 
-    std::optional<u64> m_last_audio_ts{};
-    std::optional<std::chrono::high_resolution_clock::time_point> m_last_data_time{};
     std::optional<std::chrono::high_resolution_clock::time_point> m_start_time{};
     std::chrono::high_resolution_clock::time_point m_pause_time{};
     std::chrono::high_resolution_clock::duration m_pause_duration{};
+    // minuszero: the clock's origin (stream time at m_start_time); how far it was set back for
+    // audio that fell behind, and that it was (both set by the audio side); the video clock the
+    // game's asks read (stream ms) and the instant of the ask it last stepped at (filtered); the
+    // last frame handed out.
+    u64 m_clock_base_ts = 0;
+    std::atomic<s64> m_audio_lag_ns{0};
+    std::atomic_bool m_clock_resync{false};
+    std::optional<double> m_video_clock{};
+    std::chrono::high_resolution_clock::time_point m_video_clock_time{};
+    std::optional<u64> m_last_video_ts{};
 };
 
 } // namespace Libraries::AvPlayer
