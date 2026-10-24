@@ -12,6 +12,7 @@
 #include <stop_token>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "common/assert.h"
 #include "core/libraries/avplayer/avplayer.h"
@@ -113,7 +114,14 @@ private:
 struct Frame {
     GuestBuffer buffer;
     AvPlayerFrameInfoEx info;
-    /// minuszero: the presentation time in milliseconds, unrounded (info.timestamp is whole ms).
+};
+
+/// minuszero: a decoded video frame waiting in host memory (NV12 as the game gets it); it is
+/// copied to one of the game's frame buffers when it is handed out.
+struct VideoFrame {
+    std::vector<u8> data;
+    AvPlayerFrameInfoEx info;
+    /// The presentation time in milliseconds, unrounded (info.timestamp is whole ms).
     double time_ms = 0.0;
 };
 
@@ -200,7 +208,7 @@ private:
     AVFramePtr ConvertVideoFrame(const AVFrame& frame);
 
     Frame PrepareAudioFrame(GuestBuffer buffer, const AVFrame& frame);
-    Frame PrepareVideoFrame(GuestBuffer buffer, const AVFrame& frame);
+    VideoFrame PrepareVideoFrame(const AVFrame& frame);
 
     AvPlayerStateCallback& m_state;
 
@@ -222,15 +230,18 @@ private:
     std::unique_ptr<IDataStreamer> m_up_data_streamer;
 
     AvPlayerQueue<GuestBuffer> m_audio_buffers;
-    AvPlayerQueue<GuestBuffer> m_video_buffers;
+    // minuszero: the game's video frame buffers, handed out in turn: the buffer of a frame is
+    // written again only after the others were (see GetVideoData); the size of one.
+    std::vector<GuestBuffer> m_video_buffers;
+    size_t m_next_video_buffer = 0;
+    u32 m_video_buffer_size = 0;
 
     AvPlayerQueue<AVPacketPtr> m_audio_packets;
     AvPlayerQueue<AVPacketPtr> m_video_packets;
 
     AvPlayerQueue<Frame> m_audio_frames;
-    AvPlayerQueue<Frame> m_video_frames;
+    AvPlayerQueue<VideoFrame> m_video_frames;
 
-    std::optional<Frame> m_current_video_frame;
     std::optional<Frame> m_current_audio_frame;
 
     std::optional<s32> m_video_stream_index{};

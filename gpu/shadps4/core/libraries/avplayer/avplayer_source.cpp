@@ -53,6 +53,8 @@ static bool IsStreamSupported(AVStream* stream) {
            codec_id == AV_CODEC_ID_AAC;
 }
 
+static int AvTrace(); // minuszero: MZ_AVPLAYER_TRACE (below)
+
 AvPlayerSource::AvPlayerSource(AvPlayerStateCallback& state) : m_state(state) {}
 
 AvPlayerSource::~AvPlayerSource() {
@@ -63,6 +65,10 @@ bool AvPlayerSource::Init(const AvPlayerInitData& init_data, std::string_view pa
     m_memory_replacement = init_data.memory_replacement;
     m_max_num_video_framebuffers =
         std::min(std::max(2, init_data.num_output_video_framebuffers), 16);
+    if (AvTrace()) {
+        std::printf("AvPlayer trace: %d video frame buffers asked, %u used\n",
+                    init_data.num_output_video_framebuffers, m_max_num_video_framebuffers);
+    }
 
     AVFormatContext* context = avformat_alloc_context();
     if (context == nullptr) {
@@ -134,8 +140,7 @@ static int AvTrace() {
 }
 static double AvTraceMillis() {
     using namespace std::chrono;
-    static const auto start = steady_clock::now();
-    return duration<double, std::milli>(steady_clock::now() - start).count();
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
 }
 
 static u64 TimestampToMillis(s64 timestamp, AVRational time_base) {
@@ -283,8 +288,10 @@ bool AvPlayerSource::Start() {
         const auto pitch = Common::AlignUp<u32>(m_video_codec_context->width, 64);
         const auto height = Common::AlignUp<u32>(m_video_codec_context->height, 16);
         const auto size = (pitch * height * 3) / 2;
+        m_video_buffer_size = size;
+        m_next_video_buffer = 0;
         for (u64 index = 0; index < m_max_num_video_framebuffers; ++index) {
-            m_video_buffers.Push(GuestBuffer(m_memory_replacement, 0x100, size, true));
+            m_video_buffers.emplace_back(m_memory_replacement, 0x100, size, true);
         }
     }
     if (m_audio_stream_index) {
@@ -343,9 +350,8 @@ bool AvPlayerSource::Stop() {
     m_demuxer_thread.Stop();
 
     m_current_audio_frame.reset();
-    m_current_video_frame.reset();
 
-    m_video_buffers.Clear();
+    m_video_buffers.clear();
     m_audio_buffers.Clear();
     m_audio_packets.Clear();
     m_video_packets.Clear();
@@ -395,7 +401,7 @@ bool AvPlayerSource::GetVideoData(AvPlayerFrameInfoEx& video_info) {
         return false;
     }
 
-    if (m_video_frames.Size() == 0) {
+    if (m_video_frames.Size() == 0 || m_video_buffers.empty()) {
         return false;
     }
 
@@ -450,21 +456,28 @@ bool AvPlayerSource::GetVideoData(AvPlayerFrameInfoEx& video_info) {
     }
     m_last_video_ts = new_frame.info.timestamp;
 
-    if (m_current_video_frame.has_value()) {
-        m_video_buffers.Push(std::move(m_current_video_frame->buffer));
-        m_current_video_frame.reset();
-        m_video_buffers_cv.Notify();
-    }
-
     auto frame = m_video_frames.Pop();
-    video_info = frame->info;
-    if (AvTrace()) {
-        std::printf("AvPlayer trace: %.1f ms video %llu (clock %llu, %zu decoded ahead)\n", AvTraceMillis(),
-                    static_cast<unsigned long long>(frame->info.timestamp),
-                    static_cast<unsigned long long>(current_time), m_video_frames.Size());
-    }
+    m_video_buffers_cv.Notify();
 
-    m_current_video_frame = std::move(frame);
+    // minuszero: the frame goes into the game's buffers in turn, now. The decoder wrote straight
+    // into them and took the previous frame's buffer back the moment the next frame was handed
+    // out, but the game still draws the previous frame for one more refresh (its render
+    // pipeline): it showed a frame two ahead there, the picture went back and forth every
+    // refresh. Now a buffer is written again only after all the others were (two frames later
+    // with the game's three); decoded frames wait in host memory.
+    auto& buffer = m_video_buffers[m_next_video_buffer++ % m_video_buffers.size()];
+    std::memcpy(buffer.GetBuffer(), frame->data.data(),
+                std::min<u64>(buffer.Size(), frame->data.size()));
+    Core::Memory::Instance()->InvalidateMemory(reinterpret_cast<VAddr>(buffer.GetBuffer()),
+                                               buffer.Size());
+    video_info = frame->info;
+    video_info.p_data = buffer.GetBuffer();
+    if (AvTrace()) {
+        std::printf("AvPlayer trace: %.1f ms video %llu (clock %llu, %zu decoded ahead) buffer %p\n",
+                    AvTraceMillis(), static_cast<unsigned long long>(frame->info.timestamp),
+                    static_cast<unsigned long long>(current_time), m_video_frames.Size(),
+                    static_cast<void*>(buffer.GetBuffer()));
+    }
     return true;
 }
 
@@ -763,11 +776,11 @@ static double FrameTimeMs(const AVFrame& frame, AVRational time_base) {
     return double(timestamp) * 1000.0 * time_base.num / time_base.den;
 }
 
-Frame AvPlayerSource::PrepareVideoFrame(GuestBuffer buffer, const AVFrame& frame) {
+VideoFrame AvPlayerSource::PrepareVideoFrame(const AVFrame& frame) {
     ASSERT(frame.format == AV_PIX_FMT_NV12);
 
-    auto p_buffer = buffer.GetBuffer();
-    Videodec::CopyNV12Data(p_buffer, buffer.Size(), frame);
+    std::vector<u8> data(m_video_buffer_size);
+    Videodec::CopyNV12Data(data.data(), data.size(), frame);
 
     const auto stream_index = m_streams[m_video_stream_index.value()].ffmpeg_index;
     const auto stream = m_avformat_context->streams[stream_index];
@@ -777,14 +790,16 @@ Frame AvPlayerSource::PrepareVideoFrame(GuestBuffer buffer, const AVFrame& frame
     const auto width = Common::AlignUp<u32>(frame.width, 16);
     const auto pitch = Common::AlignUp<u32>(frame.width, 64);
     const auto height = Common::AlignUp<u32>(frame.height, 16);
-    Core::Memory::Instance()->InvalidateMemory(reinterpret_cast<VAddr>(p_buffer),
-                                               (width * height * 3) / 2);
+    if (AvTrace()) {
+        std::printf("AvPlayer trace: %.1f ms decoded %llu\n", AvTraceMillis(),
+                    static_cast<unsigned long long>(timestamp));
+    }
 
-    return Frame{
-        .buffer = std::move(buffer),
+    return VideoFrame{
+        .data = std::move(data),
         .info =
             {
-                .p_data = p_buffer,
+                .p_data = nullptr, // the game's buffer, when it is handed out
                 .timestamp = timestamp,
                 .details =
                     {
@@ -831,8 +846,11 @@ void AvPlayerSource::VideoDecoderThread(std::stop_token stop) {
             return;
         }
         while (res >= 0) {
-            if (m_video_buffers.Size() == 0 &&
-                !m_video_buffers_cv.Wait(stop, [this] { return m_video_buffers.Size() != 0; })) {
+            // minuszero: decodes as many frames ahead as the game has buffers.
+            const auto room = [this] {
+                return m_video_frames.Size() < m_max_num_video_framebuffers;
+            };
+            if (!room() && !m_video_buffers_cv.Wait(stop, room)) {
                 break;
             }
             auto up_frame = AVFramePtr(av_frame_alloc(), &ReleaseAVFrame);
@@ -849,9 +867,7 @@ void AvPlayerSource::VideoDecoderThread(std::stop_token stop) {
                     return;
                 }
             } else {
-                auto buffer = m_video_buffers.Pop();
-                if (!buffer.has_value()) {
-                    // Video buffers queue was cleared. This means that player was stopped.
+                if (stop.stop_requested()) {
                     break;
                 }
                 if (up_frame->format != AV_PIX_FMT_NV12) {
@@ -860,9 +876,9 @@ void AvPlayerSource::VideoDecoderThread(std::stop_token stop) {
                         m_state.OnError();
                         return;
                     }
-                    m_video_frames.Push(PrepareVideoFrame(std::move(buffer.value()), *nv12_frame));
+                    m_video_frames.Push(PrepareVideoFrame(*nv12_frame));
                 } else {
-                    m_video_frames.Push(PrepareVideoFrame(std::move(buffer.value()), *up_frame));
+                    m_video_frames.Push(PrepareVideoFrame(*up_frame));
                 }
                 m_video_frames_cv.Notify();
             }
