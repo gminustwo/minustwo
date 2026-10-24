@@ -14,9 +14,11 @@ Starting
 1. Extract this folder anywhere, for example C:\Games\minuszero-windows (not inside the zip).
 2. Open "MinusZero.exe". If Windows shows "Windows protected your PC", click More info,
    then Run anyway: the program is not digitally signed.
-3. On Play, click Browse... and select the GODZILLA folder (the one with eboot.bin).
-4. Adjust Settings and Controls if you like, then click PLAY. The first start takes a little
-   longer while the game image is prepared.
+3. On the Play page, click "Choose the GODZILLA folder..." and select the folder with eboot.bin.
+   The ready check below the picture tells whether everything is in place.
+4. Adjust the quick settings, or the Graphics, Display & FPS, Game and Controls pages in the
+   sidebar, then click PLAY. The first start takes a little longer while the game image is
+   prepared.
 
 "Play MinusZero.exe" starts the game with the saved settings without opening the launcher
 (for a desktop shortcut, or Steam's "Add a Non-Steam Game").
