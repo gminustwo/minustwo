@@ -366,6 +366,10 @@ static int32_t render_char_core(uint64_t handle, uint32_t code, Surface *s, floa
         if (glyph) face=f->faces[i];
     }
     if (!glyph) { ++glyphs_missing; pthread_mutex_unlock(&lock); return ERR_NO_SUPPORT_GLYPH; }
+    /* y is the top of the line: the glyph sits on the baseline below it, at the font's baseline
+     * offset (sceFontGetHorizontalLayout), as the console's library places it. */
+    size_face(f,f->faces[0]);
+    y+=(float)f->faces[0]->size->metrics.ascender/64.0f;
     size_face(f,face);
     FT_Vector delta={(FT_Pos)lrintf((x-floorf(x))*64.0f),(FT_Pos)-lrintf((y-floorf(y))*64.0f)};
     FT_Set_Transform(face,NULL,&delta);

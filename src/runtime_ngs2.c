@@ -49,8 +49,8 @@ enum { KIND_SAMPLER, KIND_SUBMIXER, KIND_REVERB, KIND_EQ, KIND_MASTERING };
 
 /* Parameters common to every voice (OrbisNgs2VoiceParamHeader.id). */
 #define PARAM_MATRIX_LEVELS 1
-#define PARAM_PORT_MATRIX 2
-#define PARAM_PORT_VOLUME 3
+#define PARAM_PORT_VOLUME 2
+#define PARAM_PORT_MATRIX 3
 #define PARAM_PORT_DELAY 4
 #define PARAM_PATCH 5
 #define PARAM_EVENT 6
@@ -123,6 +123,7 @@ typedef struct Voice {
     float input[MAX_GRAIN*MAX_CHANNELS]; /* mixer voices: what the patches brought this grain */
     int depth;                     /* mixer voices: patches between it and a mastering voice */
     uint32_t output;               /* mastering voices: the render buffer they are mixed into */
+    float limiter;                 /* mastering voices: the limiter's gain, 1 when nothing is too loud */
     /* Sampler: the waveform and where playback is in it. */
     WaveFormat format;
     const unsigned char *data;
@@ -297,6 +298,11 @@ static ABI int32_t rack_create(Handle system, uint32_t id, const unsigned char *
     if (!out) return ERR_INVALID_OUT_ADDRESS;
     if (!buffer) return ERR_INVALID_BUFFER_INFO;
     const RackOptions o=rack_options(option);
+    if (tracing() && option) {
+        printf("Ngs2 trace: rack 0x%x option:",id);
+        for (int i=0;i<48;++i) printf(" %08x",read32(option,(size_t)i*4));
+        putchar('\n');
+    }
     Rack *r=calloc(1,sizeof(*r));
     Voice *voices=calloc(o.max_voices,sizeof(Voice));
     if (!r || !voices) { free(r); free(voices); return ERR_FAIL; }
@@ -365,6 +371,7 @@ static ABI int32_t rack_voice(Handle handle, uint32_t index, Handle *out) {
     int32_t result=!r ? ERR_INVALID_RACK_HANDLE : index>=r->max_voices ? ERR_INVALID_VOICE_INDEX : 0;
     if (!result) *out=r->voices[index].handle;
     pthread_mutex_unlock(&lock);
+    if (tracing()) printf("Ngs2 trace: rack %llx voice %u -> 0x%08x\n",(unsigned long long)handle,index,(unsigned)result);
     return result;
 }
 
@@ -392,7 +399,10 @@ static void block_start(Voice *v) {
     v->block_left=b->samples ? b->samples : UINT32_MAX;
     v->pcm_count=v->pcm_pos=0;
     if (v->format.type==WAVE_ATRAC9) {
-        if (!v->at9) v->at9=Atrac9GetHandle();
+        /* A fresh decoder: LibAtrac9's init keeps the superframe position and overlap of the
+         * previous stream, which fails or clicks on the next sound of a reused voice. */
+        if (v->at9) Atrac9ReleaseHandle(v->at9);
+        v->at9=Atrac9GetHandle();
         unsigned char config[4]; memcpy(config,&v->format.config,4);
         if (!v->at9 || Atrac9InitDecoder(v->at9,config) || Atrac9GetCodecInfo(v->at9,&v->at9_info) ||
             v->at9_info.frameSamples>256 || v->at9_info.channels>MAX_CHANNELS) {
@@ -430,7 +440,10 @@ static int refill(Voice *v) {
         if (v->format.type==WAVE_ATRAC9) {
             static int16_t pcm[256*MAX_CHANNELS]; /* under the lock: guest stacks can be 64 KiB */
             int used=0;
-            if (Atrac9Decode(v->at9,v->read,pcm,&used) || used<=0 || (uint32_t)used>v->read_left) {
+            const int error=Atrac9Decode(v->at9,v->read,pcm,&used);
+            if (error || used<=0 || (uint32_t)used>v->read_left) {
+                if (tracing()) printf("Ngs2 trace: voice %llx: ATRAC9 frame rejected (error %d, %d bytes used, %u left, bytes %02x %02x %02x %02x)\n",
+                                      (unsigned long long)v->handle,error,used,v->read_left,v->read[0],v->read[1],v->read[2],v->read[3]);
                 ++decode_errors; v->read_left=0; continue;
             }
             v->read+=used; v->read_left-=(uint32_t)used; v->decoded_bytes+=(uint64_t)used;
@@ -643,8 +656,19 @@ static ABI int32_t system_render(Handle handle, const RenderBuffer *buffers, uin
         for (Rack *r=s->racks;r;r=r->next) {
             if (r->kind!=KIND_MASTERING) continue;
             for (uint32_t i=0;i<r->max_voices;++i) {
-                const Voice *v=&r->voices[i];
+                Voice *v=&r->voices[i];
                 if (!mixer_active(v)) continue;
+                /* A peak limiter at full scale (the game turns the mastering limiter on): the
+                 * gain drops at once on a peak and recovers over about 40 ms. */
+                for (uint32_t f=0;f<frames;++f) {
+                    float peak=0.0f;
+                    for (int c=0;c<v->channels;++c) peak=fmaxf(peak,fabsf(v->input[f*(uint32_t)v->channels+(uint32_t)c]));
+                    if (v->limiter<=0.0f) v->limiter=1.0f;
+                    const float wanted=peak>1.0f ? 1.0f/peak : 1.0f;
+                    v->limiter=wanted<v->limiter ? wanted : v->limiter+(1.0f-v->limiter)*0.0005f;
+                    if (v->limiter<1.0f)
+                        for (int c=0;c<v->channels;++c) v->input[f*(uint32_t)v->channels+(uint32_t)c]*=v->limiter;
+                }
                 for (uint32_t b=v->output;b<count && b==v->output;++b) {
                     const int outs=(int)buffers[b].channels;
                     if (!buffers[b].buffer || outs<1 || outs>MAX_CHANNELS) continue;
@@ -662,6 +686,29 @@ static ABI int32_t system_render(Handle handle, const RenderBuffer *buffers, uin
             }
         }
         done+=frames;
+    }
+    if (tracing()) {
+        /* Every ~10 s: the loudest sample of each buffer and of each mastering voice's input since. */
+        static float buffer_peak[8], voice_peak[8];
+        for (uint32_t b=0;b<count && b<8;++b) {
+            const uint64_t samples=(uint64_t)total*buffers[b].channels;
+            for (uint64_t i=0;buffers[b].buffer && buffers[b].type==WAVE_PCM_F32L && i<samples;++i) {
+                const float x=fabsf(((const float *)buffers[b].buffer)[i]);
+                if (x>buffer_peak[b]) buffer_peak[b]=x;
+            }
+        }
+        for (Rack *r=s->racks;r;r=r->next) if (r->kind==KIND_MASTERING)
+            for (uint32_t i=0;i<r->max_voices && i<8;++i)
+                for (uint32_t k=0;k<total*(uint32_t)r->voices[i].channels;++k)
+                    if (fabsf(r->voices[i].input[k])>voice_peak[i]) voice_peak[i]=fabsf(r->voices[i].input[k]);
+        if (s->renders%1875==0) {
+            printf("Ngs2 trace: peaks: buffers");
+            for (uint32_t b=0;b<count && b<8;++b) printf(" %.3f",buffer_peak[b]);
+            printf("; mastering voices");
+            for (int i=0;i<8;++i) printf(" %.3f",voice_peak[i]);
+            putchar('\n');
+            memset(buffer_peak,0,sizeof(buffer_peak)); memset(voice_peak,0,sizeof(voice_peak));
+        }
     }
     pthread_mutex_unlock(&lock);
     return 0;
@@ -685,6 +732,15 @@ static void play(Voice *v) {
         if (!v->block_count || !format_supported(&v->format)) { v->flags=STATE_EMPTY; return; }
         block_start(v);
         ++voices_played;
+        if (tracing()) {
+            const Voice *d=v->ports[0].dest;
+            printf("Ngs2 trace: voice %llx plays %u blocks, first %u bytes at +%u (skip %u, %u samples), port 0 to %s %u (volume %.2f, matrix %d); data %p: %02x %02x %02x %02x, block: %02x %02x %02x %02x\n",
+                   (unsigned long long)v->handle,v->block_count,v->blocks[0].size,v->blocks[0].offset,v->blocks[0].skip,
+                   v->blocks[0].samples,d ? kind_name(d->rack->kind) : "nothing",d ? d->index : 0,v->ports[0].volume,
+                   v->ports[0].matrix,(const void *)v->data,v->data[0],v->data[1],v->data[2],v->data[3],
+                   v->data[v->blocks[0].offset],v->data[v->blocks[0].offset+1],v->data[v->blocks[0].offset+2],
+                   v->data[v->blocks[0].offset+3]);
+        }
     }
 }
 static int32_t voice_event(Voice *v, uint32_t event) {
