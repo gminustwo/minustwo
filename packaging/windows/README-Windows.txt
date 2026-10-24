@@ -24,6 +24,8 @@ Starting
 While playing
 - Insert on the keyboard, or R3 + L2 on a controller, opens the port's menu (display mode,
   VSync, frame rate limit, overlay).
+- Render resolution in that menu draws the game above 1080p, up to 4K and 8K (Apply and
+  restart).
 - Keyboard: WASD walk, Q / E turn, mouse or arrows move the camera, left click normal attack,
   right click strong attack, Space Cross, Left Shift Circle, Return Options.
 - The add-ons (pre-order unlocks, diorama figure sets) are unlocked; Settings turns that off.

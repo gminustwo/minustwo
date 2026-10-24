@@ -624,6 +624,23 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
         };
         cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_read});
+    } else if (auto& scene = rasterizer->GetSceneTargets();
+               scene.Locked() && scene.ProxyCurrent(texture_cache.GetImage(image_id))) {
+        // minuszero: render scale: the display buffer was drawn at the scene size; that image is
+        // the frame (resolving it to the guest's 1080p buffer would throw the detail away).
+        auto& image = texture_cache.GetImage(image_id);
+        const auto size = scene.ProxySize(image);
+        if (frame_dump) {
+            const auto target = scene.Read(image_id, view_info, vk::PipelineStageFlagBits2::eTransfer,
+                                           vk::AccessFlagBits2::eTransferRead);
+            runtime.FlushBarriers();
+            DumpRaw(instance, draw_scheduler, cmdbuf, target.image, vk::ImageLayout::eGeneral, size.width,
+                    size.height, "display", frame_dump_index);
+        }
+        const auto proxy = scene.SampleProxy(image, view_info);
+        runtime.FlushBarriers();
+        image_view = proxy->view;
+        image_size = vk::Extent2D{size.width, size.height};
     } else {
         auto& image = texture_cache.GetImage(image_id);
         if (frame_dump) {

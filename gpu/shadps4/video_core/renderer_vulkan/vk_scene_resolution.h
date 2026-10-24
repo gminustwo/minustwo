@@ -24,6 +24,9 @@ public:
     SceneTargets(const Instance&, Scheduler&, Runtime&, Lookup);
     ~SceneTargets();
     bool SetSize(SceneResolution::Size);
+    /// minuszero: a size the upscaler's live presets cannot change (render scale, MZ_SCENE_SIZE).
+    void Lock(SceneResolution::Size);
+    [[nodiscard]] bool Locked() const { return locked; }
     SceneResolution::Size Size() const { return size; }
     bool Reduced() const { return size != SceneResolution::Size{}; }
     /// A reduced proxy can stand in for the image: a 1920x1080 scene target or, scaled by
@@ -79,6 +82,7 @@ private:
         return uid << 4 | level;
     }
     Entry& Get(VideoCore::ImageId, u32 level = 0);
+    void Resize(SceneResolution::Size);
     vk::ImageView View(Entry&, const VideoCore::Image&, const VideoCore::ImageViewInfo&);
     void Copy(Entry&, VideoCore::Image&, bool to_native);
     // Depth/stencil formats without blit support (D32S8 on RADV) are resampled by a
@@ -100,6 +104,7 @@ private:
     std::unordered_map<u64, std::unique_ptr<Entry>> entries; ///< by Key(uid, level)
     std::unordered_set<u64> tracked; ///< uids with proxies
     bool copying = false;
+    bool locked = false;
     bool force_stencil_bits = false; ///< test the portable resampler on any driver
     u64 generation = 0;
     mutable std::unordered_map<vk::Format, vk::FormatFeatureFlags> format_features;

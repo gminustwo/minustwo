@@ -225,7 +225,8 @@ def restrict_to_available(names, available):
     counterpart in the second)."""
     kept = [n for n in names if n in available]
     for name in names:
-        if name in available:
+        # GODZILLA has no resolution patches: the renderer draws the render resolution itself.
+        if name in available or name.startswith(f'{RESOLUTION_PREFIX} - '):
             continue
         print(f'Patches: {name} is not available for this game build: skipped', flush=True)
         if name.startswith(f'{FPS_PREFIX} - '):

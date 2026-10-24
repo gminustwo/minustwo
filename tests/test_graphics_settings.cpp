@@ -29,6 +29,12 @@ static std::string Read(const char* path) {
 
 int main() {
     assert(G::ParseDisplayMode("borderless") == G::Borderless && G::ParseDisplayMode("bogus") == G::Windowed);
+    // The render scale of a render resolution: its height at 16:9; native (or 1080 lines) is none.
+    using Size = std::pair<int, int>;
+    assert(G::RenderScaleSize("native") == Size(0, 0) && G::RenderScaleSize("1440x1080") == Size(0, 0));
+    assert(G::RenderScaleSize("4K") == Size(3840, 2160) && G::RenderScaleSize("1440p") == Size(2560, 1440));
+    assert(G::RenderScaleSize("3440x1440") == Size(2560, 1440) && G::RenderScaleSize("720p") == Size(1280, 720));
+    assert(G::RenderScaleSize("8K") == Size(7680, 4320) && G::RenderScaleSize("1280x800") == Size(1422, 800));
     // Monitor preference (window.cpp): empty means the primary display, and that default is distinct
     // from an explicit index 0. The launcher's value is untrusted text, so anything else falls back.
     assert(G::ParseMonitor("") == G::PrimaryMonitor && G::PrimaryMonitor != 0);

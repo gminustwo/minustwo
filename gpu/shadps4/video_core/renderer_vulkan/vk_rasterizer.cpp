@@ -3,6 +3,8 @@
 
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
+#include "mz_graphics.h"
+#include "mz_settings.h"
 #include "mz_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
@@ -60,6 +62,31 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     camera_motion->SetObjectMotion(object_motion.get());
     upscaler = std::make_unique<TemporalUpscaler>(instance, scheduler, texture_cache, runtime,
                                                   *camera_motion, *scene_targets);
+    // minuszero: the render resolution (in-game menu; MZ_SCENE_SIZE=<width>x<height> overrides it)
+    // renders the game's 1920x1080 targets (and the 960x540 ones at half that) at this size for
+    // the whole frame, the interface included, and the presenter shows that image: 4K is
+    // 3840x2160 rendering of a game made for 1080p.
+    unsigned width = 0, height = 0;
+    if (const char* text = std::getenv("MZ_SCENE_SIZE"); text && text[0]) {
+        if (std::sscanf(text, "%ux%u", &width, &height) != 2 || width < 320 || height < 180 ||
+            width > 7680 || height > 4320) {
+            std::printf("Render scale: MZ_SCENE_SIZE=%s ignored (expected WxH)\n", text);
+            width = height = 0;
+        }
+    } else {
+        const std::vector<std::string> names = MzGraphics::ResolutionNames();
+        const int index =
+            std::clamp(MzSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
+        const auto [w, h] = MzGraphics::RenderScaleSize(names[index]);
+        width = unsigned(w);
+        height = unsigned(h);
+    }
+    if (width && height && (width != 1920 || height != 1080)) {
+        scene_targets->Lock({width & ~1u, height & ~1u});
+        render_scale = true;
+        std::printf("Render scale: the game's 1920x1080 frame is drawn at %ux%u\n", width & ~1u,
+                    height & ~1u);
+    }
     if (!EmulatorSettings.IsNullGPU()) {
         liverpool->BindRasterizer(this);
     }
@@ -1000,9 +1027,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         camera_motion->SetJitter(upscaler->Jitter());
         object_motion->OnFrameStart();
         NoteFrameStart();
-        static const char* scene_debug = std::getenv("MZ_SCENE_DEBUG");
-        scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
-        scene_targets->debug = scene_debug_frame;
+        PollSceneDebug();
     } else if (regs.color_buffers[0] &&
                FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address()) &&
                regs.color_buffers[0].Address() != last_display_buffer) {
@@ -1011,6 +1036,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         // ponytail: assumes flips rotate display buffers; a single-buffer game counts one frame.
         last_display_buffer = regs.color_buffers[0].Address();
         NoteFrameStart();
+        PollSceneDebug();
     }
     bind_prepared = used_prepared;
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
@@ -1521,6 +1547,12 @@ bool Rasterizer::BindHelperWanted() {
     return false;
 }
 
+void Rasterizer::PollSceneDebug() {
+    static const char* scene_debug = std::getenv("MZ_SCENE_DEBUG");
+    scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
+    scene_targets->debug = scene_debug_frame;
+}
+
 bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
     if (pipeline->IsCompute() || !bind_helper.Available() || FrameCapture::Active() ||
         MzToggle::Disabled(MzToggle::TextureBindHelper) ||
@@ -1617,6 +1649,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
+    host_fetch = false;
     // minuszero: G-buffer passes sample material textures for a scene rendered below the output
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
@@ -2367,6 +2400,12 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const bool proxy_candidate = sample_proxies && num_bindings == 1 &&
                                      !image_desc.needs_native && !image_desc.is_written &&
                                      mip_fallback_mode == Shader::MipStorageFallbackMode::None;
+        // minuszero: texel fetches may read a multisampled proxy (render scale; see host_fetch):
+        // the second pass checks that the image is multisampled.
+        const bool fetch_candidate = sample_proxies && render_scale && num_bindings == 1 &&
+                                     image_desc.needs_native && !image_desc.is_written &&
+                                     stage.sw_stage == Shader::SwStage::Fragment &&
+                                     mip_fallback_mode == Shader::MipStorageFallbackMode::None;
 
         auto& desc_entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
@@ -2392,7 +2431,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                 auto& [image_id, _] =
                     image_bindings.emplace_back(desc_entry.found_id, &desc_entry.found_desc);
                 image_binding_entries.push_back(&desc_entry);
-                binding_proxy_ok.push_back(proxy_candidate);
+                binding_proxy_ok.push_back(proxy_candidate || fetch_candidate);
                 texture_cache.MarkFound(image_id);
                 auto* image = &texture_cache.GetImage(image_id);
                 if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
@@ -2409,7 +2448,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             auto& desc = image_desc_storage.emplace_back(desc_entry.desc);
             auto& [image_id, _] = image_bindings.emplace_back(VideoCore::ImageId{}, &desc);
             image_binding_entries.push_back(nullptr);
-            binding_proxy_ok.push_back(proxy_candidate);
+            binding_proxy_ok.push_back(proxy_candidate || fetch_candidate);
 
             if (mip_fallback_mode == Shader::MipStorageFallbackMode::ConstantIndex) {
                 ASSERT(num_bindings == 1);
@@ -2477,10 +2516,12 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
             // minuszero: a proxied scene image sampled with normalized coordinates reads the proxy:
             // no resample to the native size (the native image is not touched).
+            const bool fetch = desc.needs_native;
             if (binding_proxy_ok[binding_index] && !is_storage && !binding.force_general &&
-                !binding.is_target &&
+                !binding.is_target && (!fetch || image.info.num_samples > 1) &&
                 !(upscaler->Enabled() && upscaler->RedirectsSampled(image_id))) {
                 if (const auto proxy = scene_targets->SampleProxy(image, desc.view_info)) {
+                    host_fetch |= fetch;
                     image.usage.texture = 1u;
                     image_infos.emplace_back(VK_NULL_HANDLE, proxy->view, proxy->layout);
                     if (set_ok && binding_index < resolved.size()) {
@@ -2691,6 +2732,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
         if (entry.proxy) {
             image_infos.emplace_back(VK_NULL_HANDLE, entry.view,
                                      scene_targets->PrepareSample(image, entry.range.base.level));
+            host_fetch |= image.info.num_samples > 1;
             ++proxy_samples;
             continue;
         }
@@ -2744,6 +2786,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
             attachment_feedback_loop = false;
             push_data.scene_size = begin_memo.scene_size;
             target_scale = begin_memo.target_scale;
+            ApplyHostFetch();
             return begin_memo.state;
         }
         ++begin_memo_misses;
@@ -2763,7 +2806,23 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
                           target_scale};
         }
     }
+    ApplyHostFetch();
     return state;
+}
+
+void Rasterizer::ApplyHostFetch() {
+    if (!host_fetch) {
+        return;
+    }
+    if (push_data.scene_size) {
+        push_data.scene_size = SceneResolution::Pack({1920, 1080}); // FragCoord unscaled
+        return;
+    }
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::printf("Render scale: a native-size pass reads a multisampled scene target\n");
+    }
 }
 
 RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
@@ -2780,9 +2839,13 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     const auto& key = pipeline->GetGraphicsKey();
     if (std::popcount(key.mrt_mask & 0x7f) >= 5 && db_desc.first &&
         scene_targets->EligibleScene(texture_cache.GetImage(db_desc.first))) scene_started = true;
-    // A proxy attachment cannot represent MSAA or a feedback loop that reads the
-    // same image through the guest's native descriptor during this draw.
-    bool reduced = scene_started && upscaler->RasterScaling() && key.num_samples == 1;
+    // minuszero: with a render scale the whole frame is the scene, from its first pass.
+    if (render_scale) scene_started = true;
+    // A proxy attachment cannot represent a feedback loop that reads the same image through
+    // the guest's native descriptor during this draw, nor MSAA but with a render scale
+    // (multisampled proxies, see SceneTargets::Eligible).
+    bool reduced = scene_started && upscaler->RasterScaling() &&
+                   (key.num_samples == 1 || render_scale);
     // MZ_SCENE_DEBUG=<file>: once the file exists, why the passes of one frame keep the
     // native size (see NoteFrameStart).
     const bool debug_pass = scene_debug_frame && scene_started;

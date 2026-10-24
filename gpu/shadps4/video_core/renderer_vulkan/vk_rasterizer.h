@@ -46,6 +46,10 @@ public:
         return buffer_cache;
     }
 
+    /// minuszero: the reduced or enlarged copies of the game's 1920x1080 targets (render scale).
+    [[nodiscard]] SceneTargets& GetSceneTargets() noexcept {
+        return *scene_targets;
+    }
     [[nodiscard]] TemporalUpscaler& GetUpscaler() noexcept {
         return *upscaler;
     }
@@ -286,6 +290,10 @@ private:
     /// Whether the helper may bind textures for this pipeline at all (fixed descriptor layout,
     /// no storage writes that invalidate cached images).
     bool HelperEligible(const Pipeline* pipeline) const;
+    /// MZ_SCENE_DEBUG=<file>: at a frame start, whether that file exists (it is removed).
+    void PollSceneDebug();
+    /// After BeginRendering: host_fetch draws see FragCoord in the proxy's pixels.
+    void ApplyHostFetch();
     /// Whether every texture of `stage` takes the memoized path without refreshing, creating or
     /// redirecting anything that records commands or touches the buffer cache.
     bool TexturesBindableOnHelper(const Shader::Info& stage, const PreparedStage* prepared);
@@ -331,6 +339,13 @@ private:
     std::unique_ptr<DrawPreparation> draw_prep;
     std::unique_ptr<CameraMotion> camera_motion; // minuszero: motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
+    /// minuszero: render scale (the render resolution, or MZ_SCENE_SIZE): every eligible pass of
+    /// every frame is drawn at the scene size.
+    bool render_scale = false;
+    /// minuszero: this draw reads a multisampled scene proxy (render scale). Such reads are
+    /// texel fetches at the pixel's own coordinate (an MSAA resolve), so the shader sees
+    /// FragCoord in the proxy's pixels, 1:1, instead of the guest's.
+    bool host_fetch = false;
     bool scene_started = false;
     std::unique_ptr<ObjectMotion> object_motion;
     bool motion_draw = false;

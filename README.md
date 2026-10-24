@@ -27,10 +27,18 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 
 ### What this port adds for GODZILLA
 
-- **libSceNgs2**, the PS4's software audio mixer, which the game uses for all its music and sound effects: sampler
-  voices decoding ATRAC9 (LibAtrac9) or PCM waveform blocks with loops and repeats, pitch, envelopes, port volumes,
-  matrices and patches between voices, the custom submixer bus, mastering voices into the game's audio outputs with a
-  peak limiter, and the RIFF waveform parser (`src/runtime_ngs2.c`).
+- **libSceNgs2**, the PS4's software audio mixer, which the game uses for all its music, voices and sound effects:
+  sampler voices decoding ATRAC9 (LibAtrac9) or PCM waveform blocks with loops and repeats, streams (the voice lines,
+  read from disk into a ring buffer the game refills while they play), pitch, envelopes, port volumes, matrices and
+  patches between voices, the custom submixer bus, mastering voices into the game's audio outputs with a peak
+  limiter, and the RIFF waveform parser (`src/runtime_ngs2.c`).
+- **Rendering above 1080p**: the in-game menu's *Render resolution* (1440p, 1800p, 4K, 8K, ...) draws the whole frame,
+  scene and interface, at that size on the GPU side: the game's 1080p targets get larger stand-ins, its 4x MSAA
+  interface pass included (`gpu/shadps4/video_core/renderer_vulkan/vk_scene_resolution.cpp`). A size of another shape
+  keeps the game's 16:9 picture at that height.
+- **Movies without stutter**: the PS4 movie player's clock followed the game's audio pulls, so frames were handed out
+  one, then three display refreshes apart (shadPS4 shows the same). It now runs on a steady clock locked to the
+  game's 60 Hz frame requests and waits for the sound only when the sound falls behind.
 - **libSceFont** on FreeType: the game renders its subtitles glyph by glyph from the FOT-NewCinemaB font it ships,
   and the PS4 system font set is stood in for by Windows' fonts (`src/runtime_font.c`).
 - Kernel event flags, the offline PSN, matchmaking, Rudp, friend list, error dialog, broadcasting, screenshot and
@@ -48,14 +56,18 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
 - The opening movie (H.264 with its audio), the title screen, the first-start dialogs and the save data creation.
 - Gameplay in the 1954 prologue: rendering at a steady 60 FPS (p99 frame time 17.6 ms), HUD, radar, tutorials,
   the operator's portrait and subtitles.
-- Music and sound effects through Ngs2, movie audio through AudioOut.
+- Music, voices and sound effects through Ngs2, movie audio through AudioOut.
+- 4K rendering (Render resolution 4K) at 60 FPS on an RTX 5090.
 - Controller (any SDL3 gamepad as the PS4 pad) and keyboard with mouse.
 
 ### Known limits
 
-- The game renders at 1920x1080. Rendering above it needs more than the game's own resolution switch: its scene
-  targets and interface are sized for 1080p in several places (see *Notes for developers*).
-- Ngs2 effects (reverb, filters, distortion, the mastering EQ) pass the sound unchanged; the reverb bus is silent.
+- Effects at a quarter of 1080p and below (the bloom chain) keep their size above 1080p; they are blurs, so it hardly
+  shows.
+- On a fixed-refresh display that is not a multiple of 60 Hz (144 Hz), 60 FPS cannot be shown evenly; G-Sync /
+  FreeSync or a 60 or 120 Hz desktop mode gives even motion.
+- Ngs2 effects (the custom submixer's effect modules, filters, distortion, the mastering EQ) pass the sound unchanged;
+  only the volumes, routing and a limiter are applied.
 - The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MZ_SYSTEM_FONT` to other font
   files (separated by `;`) if you prefer.
 - Online features (rankings, matchmaking) are offline: the game sees a console that is not signed in to PSN.
@@ -131,8 +143,11 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
 - `python tools/autoplay.py --game <folder> --seconds 200 --press 125:cross --hold 160-190:ly=0` plays the game
   unattended: scripted pad input, answered dialogs, a screen dump every few seconds (`out/autoplay/sheet.png`) and the
   loudness of every audio output.
-- `MZ_NGS2_TRACE=1` logs the game's racks, voices, parameters and mixer levels; `MZ_FONT_TRACE=1` its font calls;
-  `MZ_FRAME_STATS=1` frame rate and pacing; `MZ_CAPTURE_TRIGGER=<file>` records every pass of the next frame.
+- `MZ_NGS2_TRACE=1` logs the game's racks, voices, parameters and mixer levels; `MZ_AUDIO_TRACE=1` the sound files it
+  opens; `MZ_AVPLAYER_TRACE=1` (2: also every request) when the movie player hands out frames; `MZ_FONT_TRACE=1` its
+  font calls; `MZ_FRAME_STATS=1` frame rate and pacing; `MZ_CAPTURE_TRIGGER=<file>` records every pass of the next
+  frame; `MZ_SCENE_DEBUG=<file>` (created while the game runs) prints which passes of one frame are drawn above
+  1080p and why the others are not; `MZ_SCENE_SIZE=<width>x<height>` overrides the render resolution.
 - `out/minuszero.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports
@@ -141,9 +156,17 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
 ### Notes for developers
 
 The game chooses its display size from `sceVideoOutGetResolutionStatus` (a five-entry table from 1280x720 to
-1920x1080 at `0x4ee6f0`, clamped to 1080p at `0x175be1`); lifting that clamp and reporting a larger display
-(`MZ_INTERNAL_WIDTH`/`MZ_INTERNAL_HEIGHT`) gives larger display buffers, but the scene targets and the interface stay
-1920x1080, drawn in a corner. A resolution option needs those sizes found as well.
+1920x1080 at `0x4ee6f0`, clamped to 1080p at `0x175be1`); lifting that clamp gives larger display buffers, but the
+scene targets and the interface stay 1920x1080, drawn in a corner. So the render resolution works on the GPU side
+instead: every 1920x1080 (and 960x540) render target gets a larger stand-in image, shaders see the guest's pixel
+coordinates (`push_data.scene_size`), and the frame's last pass, which resolves the 4x MSAA interface target with
+texel fetches at its own pixel, reads that target's multisampled stand-in at the stand-in's own coordinates
+(`Rasterizer::host_fetch`).
+
+The game's sampler rack is created without options and the game uses as many voices as `sceNgs2RackGetInfo`
+reports; the runtime gives such a rack 256. Voice lines are streams: play and pause before the data, the first part
+of a 16 KiB ring buffer (blocks flag 1), then each refilled part with its own address (flag 3); ATRAC9 superframes
+that the ring's end splits are joined.
 
 ## Credits
 

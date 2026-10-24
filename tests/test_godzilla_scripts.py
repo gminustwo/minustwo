@@ -1,4 +1,6 @@
 """The Python side of the GODZILLA port: patch selection, the game's patch profile, the launcher."""
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -40,6 +42,12 @@ class PatchSelectionTest(unittest.TestCase):
         options = graphics_options.startup_options({'render_resolution': '1440p', 'engine_fps': '120'})
         self.assertEqual(graphics_options.patch_names([], options),
                          ['Resolution Patch - 1440p', 'Frame Rate Patch - 120 FPS'])
+
+    def test_resolution_patches_drop_silently(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(graphics_options.restrict_to_available(['Resolution Patch - 4K'], set()), [])
+        self.assertEqual(out.getvalue(), '')
 
     def test_patches_the_game_has_none_of_are_dropped(self):
         self.assertEqual(graphics_options.restrict_to_available(['Resolution Patch - 4K', 'Other'], {'Other'}),

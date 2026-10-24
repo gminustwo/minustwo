@@ -81,8 +81,13 @@ static u32 SizeDivisor(const VideoCore::ImageInfo& i, SceneResolution::Size scen
 bool SceneTargets::Eligible(const VideoCore::Image& image) const {
     const auto& i = image.info;
     const u32 div = SizeDivisor(i, size);
-    if (!div || i.size.depth != 1 || i.resources.layers != 1 || i.num_samples != 1 ||
-        i.props.is_block || !image.backing || image.backing->num_samples != 1) {
+    // minuszero: with a render scale, 1920x1080 multisampled color targets as well (Godzilla
+    // draws its HUD over the finished frame with 4x MSAA): their proxies have the same samples.
+    const bool multisampled = i.num_samples != 1 || (image.backing && image.backing->num_samples != 1);
+    const bool multisample_ok = locked && image.backing && image.backing->num_samples == i.num_samples &&
+                                div == 1 && !i.props.is_depth && i.resources.levels == 1;
+    if (!div || i.size.depth != 1 || i.resources.layers != 1 || (multisampled && !multisample_ok) ||
+        i.props.is_block || !image.backing) {
         return false;
     }
     if (i.resources.levels != 1) {
@@ -99,8 +104,18 @@ SceneResolution::Size SceneTargets::ProxySize(const VideoCore::Image& image, u32
     const u32 div = std::max(1u, SizeDivisor(image.info, size));
     return {std::max(1u, size.width / div >> level), std::max(1u, size.height / div >> level)};
 }
+void SceneTargets::Lock(SceneResolution::Size next) {
+    if (next != size) Resize(next);
+    locked = true;
+}
 bool SceneTargets::SetSize(SceneResolution::Size next) {
-    if (next == size) return false;
+    if (next == size || locked) return false;
+    Resize(next);
+    std::printf("Scene resolution: raster %ux%u, half-resolution targets %ux%u, UI 1920x1080 "
+                "(live)\n", size.width, size.height, size.width / 2, size.height / 2);
+    return true;
+}
+void SceneTargets::Resize(SceneResolution::Size next) {
     ResolveAll();
     scheduler.Finish();
     entries.clear(); // no command buffer can still reference these images/views
@@ -108,9 +123,6 @@ bool SceneTargets::SetSize(SceneResolution::Size next) {
     ++generation;
     recent = {};
     size = next;
-    std::printf("Scene resolution: raster %ux%u, half-resolution targets %ux%u, UI 1920x1080 "
-                "(live)\n", size.width, size.height, size.width / 2, size.height / 2);
-    return true;
 }
 void SceneTargets::ResolveAll() {
     for (auto& [key, entry] : entries) {
@@ -157,6 +169,34 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
         std::printf("Scene %s: %s %ux%u level %u\n", to_native ? "resolve" : "fill",
                     vk::to_string(original.info.pixel_format).c_str(), original.info.size.width,
                     original.info.size.height, e.level);
+    }
+    if (original.info.num_samples > 1) {
+        // minuszero: blits cannot read or write multisampled images. A fill starts the proxy
+        // cleared (the game's pass covers it before anything reads it); a resolve leaves the
+        // native image as it was: the game reads these through the proxy only (see
+        // Rasterizer::host_fetch).
+        if (to_native) {
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                std::printf("Scene resolution: a multisampled %ux%u target was read at the native "
+                            "size; it keeps an older image\n",
+                            original.info.size.width, original.info.size.height);
+            }
+            e.state.Resolved();
+        } else {
+            Transition(e, original.aspect_mask, vk::ImageLayout::eTransferDstOptimal,
+                       vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite);
+            const vk::Image image = e.image;
+            scheduler.Record([image](vk::CommandBuffer cmd) {
+                cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal,
+                                    vk::ClearColorValue{std::array{0.f, 0.f, 0.f, 0.f}},
+                                    vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+            });
+            e.state.CopiedToProxy();
+        }
+        copying = false;
+        return;
     }
     const vk::Image src = to_native ? vk::Image(e.image) : original.GetImage();
     const vk::Image dst = to_native ? original.GetImage() : vk::Image(e.image);

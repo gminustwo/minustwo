@@ -64,6 +64,15 @@ inline std::pair<int, int> ResolutionSize(std::string_view name) {
     }
     return ResolutionSizes[0].second;
 }
+/// The size the game's 1920x1080 frame is drawn at for a render resolution (the renderer's render
+/// scale; GODZILLA has no resolution patches): that height at 16:9, so a 21:9 or 4:3 choice keeps
+/// the picture's shape. {0, 0}: the game's own size.
+inline std::pair<int, int> RenderScaleSize(std::string_view name) {
+    const int height = std::clamp(ResolutionSize(name).second, 180, 4320) & ~1;
+    const int width = (height * 16 / 9 + 1) & ~1;
+    if (name == "native" || (width == 1920 && height == 1080)) return {0, 0};
+    return {width, height};
+}
 /// Engine frame rates: 60 is the game's own (59.94). The launch takes the 240 FPS patch and the
 /// rate is written live (MzSettings::SyncEngineFps); 100, 144 and 180 fit common high-refresh displays.
 inline constexpr std::array<int, 6> EngineFps = {60, 100, 120, 144, 180, 240};
