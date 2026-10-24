@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Prepares the GODZILLA image and starts minuszero (Windows and Linux; run.sh wraps it on Linux).
+"""Prepares the GODZILLA image and starts minustwo (Windows and Linux; run.sh wraps it on Linux).
 
 Environment variables (MZ_GAME_DIR, MZ_DATA_DIR, MZ_PATCHES, MZ_MODS_*,
-MZ_USER_DIR, ...). Extra arguments go to minuszero.
+MZ_USER_DIR, ...). Extra arguments go to minustwo.
 The in-game "Apply and restart" runs this script again through MZ_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
@@ -56,7 +56,7 @@ def no_console():
 
 
 def parse_cpu_features(output):
-    """Instruction sets `minuszero --cpu-features` reports missing ([] when complete)."""
+    """Instruction sets `minustwo --cpu-features` reports missing ([] when complete)."""
     for line in output.splitlines():
         if line.startswith('CPU: missing '):
             return [name.strip() for name in line[len('CPU: missing '):].split(',') if name.strip()]
@@ -126,7 +126,7 @@ def main():
     data = Path(env.get('MZ_DATA_DIR', PORT))
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
-    env.setdefault('MZ_CONFIG', str(data / 'minuszero.ini'))
+    env.setdefault('MZ_CONFIG', str(data / 'minustwo.ini'))
     # Values this script derived on the previous start ("Apply and restart" inherits them) are
     # derived again from the new options.
     for key in env.pop('MZ_DERIVED', '').split(','):
@@ -153,9 +153,9 @@ def main():
     if not env.get('MZ_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
         env['MZ_FSR411_DIR'] = str(data / 'fsr4_411')
 
-    probe = Path(env['MZ_PROBE']) if env.get('MZ_PROBE') else find_executable('minuszero' + EXE_SUFFIX)
+    probe = Path(env['MZ_PROBE']) if env.get('MZ_PROBE') else find_executable('minustwo' + EXE_SUFFIX)
     if not probe or not probe.is_file():
-        fail(f'minuszero{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
+        fail(f'minustwo{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
     if WINDOWS and not (probe.parent / 'SDL3.dll').is_file():
         clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
@@ -209,7 +209,7 @@ def main():
         # Linux also an application id the desktop entry matches, so the shell shows the same icon.
         icon_file = game / 'sce_sys' / 'icon0.png'
         if not WINDOWS:
-            env.setdefault('SDL_APP_ID', 'minuszero')
+            env.setdefault('SDL_APP_ID', 'minustwo')
         try:
             from PIL import Image
             with Image.open(icon_file) as icon:
@@ -218,7 +218,7 @@ def main():
         except (ImportError, OSError):
             pass
         # The temporal upscalers and motion vectors are not calibrated for this game: they stay
-        # off unless MZ_EXPERIMENTAL_UPSCALER=1 (then minuszero.ini decides).
+        # off unless MZ_EXPERIMENTAL_UPSCALER=1 (then minustwo.ini decides).
         if env.get('MZ_EXPERIMENTAL_UPSCALER') != '1':
             env.setdefault('MZ_UPSCALER', 'none')
         patch_xml = profile[1] if profile else None
@@ -229,7 +229,7 @@ def main():
             names = selected_patches(patch_xml, profile[2], env.get('MZ_PATCHES', ''), env.get('MZ_PATCHES_ONLY') == '1')
             # A mod's patches that are on by default (isEnabled) stay on when the launcher chose the list.
             names += [n for n in patches.default_enabled(mod_patch_files, profile[2]) if n not in names]
-            # minuszero.ini decides the resolution and frame rate patches (in-game menu, launcher).
+            # minustwo.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
             names = graphics_options.restrict_to_available(names, patches.available_patches(patch_xml, profile[2]))
             env['MZ_PATCHES'] = ';'.join(names)

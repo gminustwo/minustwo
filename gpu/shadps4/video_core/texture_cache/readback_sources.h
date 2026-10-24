@@ -10,7 +10,7 @@
 
 namespace VideoCore {
 
-// minuszero: who asked for a pending image readback to reach RAM. Only used by the
+// minustwo: who asked for a pending image readback to reach RAM. Only used by the
 // MZ_PERF_DIAG report, to find the consumer behind the remaining readback waits.
 enum class ReadbackSource : std::uint8_t {
     Unknown,

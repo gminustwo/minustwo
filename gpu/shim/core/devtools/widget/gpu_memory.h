@@ -1,4 +1,4 @@
-// minuszero: devtools GPU memory viewer is not part of the port.
+// minustwo: devtools GPU memory viewer is not part of the port.
 #pragma once
 #include <string>
 #include <vector>

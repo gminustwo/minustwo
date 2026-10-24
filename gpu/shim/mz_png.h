@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: PNG pictures for the overlay (save list icons), decoded by FFmpeg to RGBA8.
+// minustwo: PNG pictures for the overlay (save list icons), decoded by FFmpeg to RGBA8.
 
 #pragma once
 

@@ -24,7 +24,7 @@ namespace Vulkan {
 
 using Shader::Backend::SPIRV::AuxShaderType;
 
-// minuszero: where pipeline construction time goes (reported when the background warm-up ends).
+// minustwo: where pipeline construction time goes (reported when the background warm-up ends).
 std::atomic<u64> g_mz_pipeline_total_ns, g_mz_pipeline_driver_ns;
 std::atomic<u32> g_mz_pipelines_built;
 namespace {
@@ -140,7 +140,7 @@ GraphicsPipeline::GraphicsPipeline(
         sdata.multisampling = {
             .rasterizationSamples = LiverpoolToVK::NumSamples(
                 key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
-            // minuszero: MZ_LIGHTING_TEST=shading keeps sample shading off (vk_lighting_test.h).
+            // minustwo: MZ_LIGHTING_TEST=shading keeps sample shading off (vk_lighting_test.h).
             .sampleShadingEnable = !LightingTest::Current().shading &&
                                    (fs_info.addr_flags.persp_sample_ena ||
                                     fs_info.addr_flags.linear_sample_ena),
@@ -311,7 +311,7 @@ GraphicsPipeline::GraphicsPipeline(
     };
 
     std::array<vk::PipelineColorBlendAttachmentState, AmdGpu::NUM_COLOR_BUFFERS> attachments;
-    // minuszero: GNM scales MIN/MAX operands, Vulkan does not (vk_blend_rewrite.h). A self-scaled
+    // minustwo: GNM scales MIN/MAX operands, Vulkan does not (vk_blend_rewrite.h). A self-scaled
     // MIN/MAX is drawn twice: native, then this pipeline squares the destination.
     std::array<vk::PipelineColorBlendAttachmentState, AmdGpu::NUM_COLOR_BUFFERS> square_attachments;
     bool needs_square_pass = false;

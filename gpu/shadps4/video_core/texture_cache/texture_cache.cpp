@@ -105,7 +105,7 @@ void TextureCache::RetireReadbacks() {
 bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                                     ReadbackSource source) {
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
-    // minuszero: image uploads read, and frees drop, exactly the image's bytes. A copy of a
+    // minustwo: image uploads read, and frees drop, exactly the image's bytes. A copy of a
     // neighboring image that only shares a page is published later over other bytes. Only with
     // stale readbacks: otherwise pending pages are read-protected and the copy threads fault.
     const bool exact = ExactReadbackWaits() &&
@@ -113,7 +113,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
          source == ReadbackSource::ImageFree);
     {
         std::scoped_lock lock{readback_mutex};
-        // Stale mode, byte rule: MinusZero writes every frame to the page that holds a
+        // Stale mode, byte rule: MinusTwo writes every frame to the page that holds a
         // 1x1 exposure copy, but not to its bytes. That write need not wait for the GPU: the
         // copy only stops protecting its page and is still published when the GPU is done.
         if (stale_readbacks && source == ReadbackSource::CpuWrite) {
@@ -167,7 +167,7 @@ void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     }, exact);
 }
 
-// minuszero (MZ_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
+// minustwo (MZ_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
 void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& used,
                                    BindingType binding) {
     ++partial_views;
@@ -187,7 +187,7 @@ void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& us
     ++slot->count;
 }
 
-// minuszero (MZ_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
+// minustwo (MZ_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
 // (held by FindImage), so it runs before ProcessDownloadImages takes readback_mutex.
 void TextureCache::ReportImageCreates() {
     const auto now = std::chrono::steady_clock::now();
@@ -229,7 +229,7 @@ void TextureCache::ReportImageCreates() {
     partial_views = 0;
 }
 
-// minuszero: every copy is recorded first and the GPU is waited for once. A wait per image (as
+// minustwo: every copy is recorded first and the GPU is waited for once. A wait per image (as
 // before) left the GPU mostly idle in the game's gameplay, at about 2 FPS.
 void TextureCache::ProcessDownloadImages() {
     if (Vulkan::WaitDiagnostics::Enabled()) {
@@ -447,7 +447,7 @@ void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
     }
 }
 
-// minuszero: images sharing guest memory (aliases), ported from cuesta4/shadPS4 (eltutz) commit
+// minustwo: images sharing guest memory (aliases), ported from cuesta4/shadPS4 (eltutz) commit
 // 189ca3b6. A write to one is copied into the others before they are read, as on the PS4,
 // where they are the same memory.
 static bool Covers(const Extent3D& extent, const ImageInfo& info) {
@@ -637,7 +637,7 @@ void TextureCache::ApplyBackingWrites() {
         writes.swap(backing_writes);
         has_backing_writes.store(false, std::memory_order_release);
     }
-    // MinusZero streams textures with GPU copies through large storage images over the
+    // MinusTwo streams textures with GPU copies through large storage images over the
     // texture pool; their readbacks put the new texels in memory without a fault. Textures
     // there kept the old contents (yellow ground #138, missing textures #194) until a restart.
     for (const auto& [address, size] : writes) {
@@ -762,7 +762,7 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
     if (image_info.guest_address == cache_image.info.guest_address) {
         const u32 lhs_block_size = image_info.num_bits * image_info.guest_samples;
         const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.guest_samples;
-        // minuszero: the top rows of a cached image with the same layout. MinusZero reads its
+        // minustwo: the top rows of a cached image with the same layout. MinusTwo reads its
         // frame buffers as R8G8B8A8Uint with a height that changes every frame during Rage of
         // Sparta and weapon effects; as a "pool allocation" below, each read created and uploaded
         // a new ~8 MB image (FPS 120 -> 40).
@@ -1111,7 +1111,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         image_id = cache_id;
     }
 
-    // minuszero (MZ_PERF_DIAG): what was cached here, read before overlap resolution may free it.
+    // minustwo (MZ_PERF_DIAG): what was cached here, read before overlap resolution may free it.
     const bool diag = Vulkan::WaitDiagnostics::Enabled();
     CreateStat created{info.guest_address, info.size.width, info.size.height, 1, info.pixel_format,
                        desc.type, image_ids.empty() ? "nothing cached" : "overlap unresolved"};
@@ -1627,7 +1627,7 @@ void TextureCache::GarbageCollectImages() {
     MzStats::Timer gc_timer{MzStats::t_gc};
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
-        // minuszero: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
+        // minustwo: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
         // much more than images (buffers backing guest memory), and the startup budget left
         // ~1 GB after its 8 GB system reserve: usage stayed above the critical mark, so the
         // collector evicted images used two or three frames ago on every submission and wrote
@@ -1680,7 +1680,7 @@ void TextureCache::GarbageCollectImages() {
             return false;
         }
         if (download) {
-            // minuszero: synchronously, while the image still protects its pages. A deferred
+            // minustwo: synchronously, while the image still protects its pages. A deferred
             // write-back landed after FreeImage had unprotected them, over whatever the game
             // had meanwhile stored there (e.g. its heap after unloading an area).
             DownloadImageMemory(image_id, true);
@@ -1711,7 +1711,7 @@ void TextureCache::GarbageCollectImages() {
         configure(true);
         lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
-    // minuszero: evictions under memory pressure, at most every 5 s (MZ_FRAME_STATS or not).
+    // minustwo: evictions under memory pressure, at most every 5 s (MZ_FRAME_STATS or not).
     if (pressured || gc_downloads != 0) {
         const auto now = std::chrono::steady_clock::now();
         if (now - gc_report_time >= std::chrono::seconds(5)) {
@@ -1790,7 +1790,7 @@ void TextureCache::TouchImage(const Image& image) {
 
 void TextureCache::DeleteImage(ImageId image_id) {
     Image& image = slot_images[image_id];
-    // minuszero: only this image's bytes. FreeImage resolved its own copies; with ExactReadbackWaits,
+    // minustwo: only this image's bytes. FreeImage resolved its own copies; with ExactReadbackWaits,
     // copies of neighbors that only share a page are still pending and must reach RAM.
     CancelReadbacks(image.info.guest_address, image.info.guest_size, true);
     ASSERT_MSG(!image.IsTracked(), "Image was not untracked");

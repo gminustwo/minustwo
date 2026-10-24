@@ -1,4 +1,4 @@
-// minuszero: the parts of shadPS4's kernel.h used by vendored libraries.
+// minustwo: the parts of shadPS4's kernel.h used by vendored libraries.
 #pragma once
 #include "common/types.h"
 #include "core/libraries/kernel/orbis_error.h"

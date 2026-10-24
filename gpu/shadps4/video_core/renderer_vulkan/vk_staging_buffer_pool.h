@@ -82,7 +82,7 @@ private:
     Scheduler& scheduler;
 
     std::array<Ring, NUM_TYPES> rings;
-    u64 keep_blocks = 0; ///< minuszero: ring blocks never trimmed
+    u64 keep_blocks = 0; ///< minustwo: ring blocks never trimmed
     std::array<std::vector<LargeBuffer>, NUM_TYPES> large_caches;
     u64 frame = 0;
 };

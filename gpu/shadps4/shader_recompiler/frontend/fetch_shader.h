@@ -60,7 +60,7 @@ struct FetchShaderData {
     bool Deserialize(Serialization::Archive& buffer);
 };
 
-// minuszero: compiler workers read captured fetch data instead of mutable guest pointers.
+// minustwo: compiler workers read captured fetch data instead of mutable guest pointers.
 struct FetchShaderSnapshot {
     const Info* info{};
     std::optional<FetchShaderData> fetch;

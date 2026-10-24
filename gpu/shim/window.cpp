@@ -1,4 +1,4 @@
-// minuszero: SDL3 window for the Vulkan swapchain (X11 or Wayland).
+// minustwo: SDL3 window for the Vulkan swapchain (X11 or Wayland).
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -16,14 +16,14 @@
 
 namespace Frontend {
 
-// minuszero: set by the pause key (any thread), cleared by it or a click in the window.
+// minustwo: set by the pause key (any thread), cleared by it or a click in the window.
 static std::atomic<bool> mouse_paused{false};
 
 void ToggleMousePause() {
     mouse_paused.store(!mouse_paused.load(std::memory_order_relaxed), std::memory_order_relaxed);
 }
 
-// minuszero: the display the window opens on. MZ_MONITOR is an index into SDL_GetDisplays() (the same
+// minustwo: the display the window opens on. MZ_MONITOR is an index into SDL_GetDisplays() (the same
 // order a launcher's list would use); absent or empty means the primary display. An invalid,
 // negative or out-of-range value falls back to the primary with a diagnostic. SDL_WINDOWPOS_CENTERED
 // is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so the primary stays the safe default on every path.
@@ -64,7 +64,7 @@ static SDL_DisplayID MonitorDisplay() {
     return chosen;
 }
 
-// minuszero: a window opens at the render resolution chosen in the launcher (or the in-game menu), fitted
+// minustwo: a window opens at the render resolution chosen in the launcher (or the in-game menu), fitted
 // to the chosen display's usable area (with room for the title bar); one too large opens maximized,
 // restoring to that size shrunk to fit. The picture is scaled to the window either way. True when shrunk.
 static bool StartSize(s32& width, s32& height, SDL_DisplayID display) {
@@ -102,7 +102,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     ASSERT_MSG(window, "Failed to create window: {}", SDL_GetError());
-    // minuszero: the game's own icon (run.py converts sce_sys/icon0.png to BMP, SDL's built-in format).
+    // minustwo: the game's own icon (run.py converts sce_sys/icon0.png to BMP, SDL's built-in format).
     if (const char* icon_path = std::getenv("MZ_WINDOW_ICON")) {
         if (SDL_Surface* icon = SDL_LoadBMP(icon_path)) {
             SDL_SetWindowIcon(window, icon);
@@ -130,13 +130,13 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     } else {
         UNREACHABLE_MSG("Unsupported SDL video driver {}", driver ? driver : "(none)");
     }
-    // minuszero: MZ_FULLSCREEN=1 (older launchers) still asks for fullscreen.
+    // minustwo: MZ_FULLSCREEN=1 (older launchers) still asks for fullscreen.
     if (const char* fullscreen = std::getenv("MZ_FULLSCREEN"); fullscreen && fullscreen[0] == '1' &&
         MzSettings::Get().display_mode == MzGraphics::Windowed) {
         MzSettings::Get().display_mode = MzGraphics::Borderless;
     }
     ApplyDisplayMode(MzSettings::Get().display_mode);
-    // minuszero: the game has no mouse; the in-game menu draws its own cursor (MzOverlay::SetOpen).
+    // minustwo: the game has no mouse; the in-game menu draws its own cursor (MzOverlay::SetOpen).
     SDL_HideCursor();
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -323,7 +323,7 @@ bool WindowSDL::PollEvents() {
             }
         }
     }
-    // minuszero: while the game has the mouse it stays in the window (relative mode: hidden, no edges,
+    // minustwo: while the game has the mouse it stays in the window (relative mode: hidden, no edges,
     // so a click cannot land on another monitor); the menu, the save list, a text dialog,
     // another window or the game's pause menu (the pause key) get it back. Taken back, it starts
     // at the window's centre; let go by the pause key, the system cursor shows.

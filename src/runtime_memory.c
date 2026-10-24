@@ -266,7 +266,7 @@ static int pool(void) {
         fflush(stderr);
         exit(21);
     }
-    pool_fd=memfd_create("minuszero-guest-memory", MFD_CLOEXEC);
+    pool_fd=memfd_create("minustwo-guest-memory", MFD_CLOEXEC);
     if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) {
         fprintf(stderr,"Runtime: cannot create %" PRIu64 " MiB of guest memory (error %d); is /dev/shm or RAM large enough?\n",
                 (POOL_SIZE+FLEX_SPAN)>>20,errno);

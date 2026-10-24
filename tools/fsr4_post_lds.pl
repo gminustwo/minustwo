@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # fsr4_post_lds.pl < post.comp > post_lds.comp
-# minuszero: rewrites a decompiled FSR 4 v07 post pass (spirv-cross GLSL) for RDNA3.
+# minustwo: rewrites a decompiled FSR 4 v07 post pass (spirv-cross GLSL) for RDNA3.
 #
 # Each invocation computes a 2x2 block of output pixels and stores them into three images
 # (recurrent state, history, output). Stores of every other pixel from three images cost ~4x
@@ -27,15 +27,15 @@ my %slot = (rw_recurrent_0 => ['mz_rec', 'vec4'], rw_history_color => ['mz_hist'
             rw_mlsr_output_color => ['mz_out', 'vec4']);
 for my $image (sort keys %slot) {
     my ($array, $type) = @{$slot{$image}};
-    my $n = ($src =~ s/imageStore\($image, ivec2\((_\d+)\), /$array\[minuszeroLocal($1)\] = $type(/g);
+    my $n = ($src =~ s/imageStore\($image, ivec2\((_\d+)\), /$array\[minustwoLocal($1)\] = $type(/g);
     die "expected one store to $image, found $n\n" unless $n == 1;
 }
 my $decl = <<'GLSL';
-// minuszero: the workgroup's 16x16 output block, stored in contiguous rows after the loop.
+// minustwo: the workgroup's 16x16 output block, stored in contiguous rows after the loop.
 shared vec4 mz_rec[256];
 shared vec4 mz_hist[256];
 shared vec4 mz_out[256];
-uint minuszeroLocal(uvec2 p)
+uint minustwoLocal(uvec2 p)
 {
     uvec2 l = p - gl_WorkGroupID.xy * 16u;
     return l.y * 16u + l.x;
@@ -46,14 +46,14 @@ GLSL
 $src =~ s/^void main\(\)\n/$decl/m or die "no main\n";
 my $flush = <<'GLSL';
     barrier();
-    uvec2 minuszeroBase = gl_WorkGroupID.xy * 16u;
-    for (uint minuszeroK = 0u; minuszeroK < 4u; minuszeroK++)
+    uvec2 minustwoBase = gl_WorkGroupID.xy * 16u;
+    for (uint minustwoK = 0u; minustwoK < 4u; minustwoK++)
     {
-        uint minuszeroI = gl_LocalInvocationIndex + 64u * minuszeroK;
-        ivec2 minuszeroP = ivec2(minuszeroBase + uvec2(minuszeroI % 16u, minuszeroI / 16u));
-        imageStore(rw_recurrent_0, minuszeroP, mz_rec[minuszeroI]);
-        imageStore(rw_history_color, minuszeroP, mz_hist[minuszeroI]);
-        imageStore(rw_mlsr_output_color, minuszeroP, mz_out[minuszeroI]);
+        uint minustwoI = gl_LocalInvocationIndex + 64u * minustwoK;
+        ivec2 minustwoP = ivec2(minustwoBase + uvec2(minustwoI % 16u, minustwoI / 16u));
+        imageStore(rw_recurrent_0, minustwoP, mz_rec[minustwoI]);
+        imageStore(rw_history_color, minustwoP, mz_hist[minustwoI]);
+        imageStore(rw_mlsr_output_color, minustwoP, mz_out[minustwoI]);
     }
 }
 GLSL

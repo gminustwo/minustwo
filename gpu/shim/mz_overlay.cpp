@@ -97,7 +97,7 @@ std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 float base_scale = 1.0f;
 
-// GODZILLA's look, the launcher's (launcher/minuszero_launcher.py): near black, the atomic blue of
+// GODZILLA's look, the launcher's (launcher/minustwo_launcher.py): near black, the atomic blue of
 // its menus and HUD, the red of the ゴジラ in its logo.
 namespace Theme {
 constexpr ImVec4 Rgb(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
@@ -468,7 +468,7 @@ void ControlsTab() {
     }
     Separator("Keys");
     ImGui::PushTextWrapPos(0.0f);
-    DisabledText("The keyboard keys are set on the launcher's Controls page (MinusZero.exe). The mouse "
+    DisabledText("The keyboard keys are set on the launcher's Controls page (MinusTwo.exe). The mouse "
                  "always moves the camera too.");
     ImGui::PopTextWrapPos();
 }
@@ -553,10 +553,10 @@ void Menu() {
                                     std::min(720.0f * u, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
-    // minuszero: the game's own title (param.sfo), not a fixed one.
+    // minustwo: the game's own title (param.sfo), not a fixed one.
     static const std::string title = [] {
         const std::string_view name = Common::ElfInfo::Instance().Title();
-        return Upper(std::string(name.empty() ? "MinusZero" : name).c_str());
+        return Upper(std::string(name.empty() ? "MinusTwo" : name).c_str());
     }();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * u, 18.0f * u));
     ImGui::SetNextWindowBgAlpha(1.0f); // the game's text would show through (the blend is in linear light)
@@ -597,7 +597,7 @@ void Menu() {
     const float baseline = ImGui::GetItemRectMax().y - ImGui::GetTextLineHeight() - 5.0f * u;
     ImGui::SameLine(0.0f, 14.0f * u);
     ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, baseline));
-    DisabledText("Minus Zero · port menu");
+    DisabledText("Minus Two · port menu");
     const char* keys = PadText("Insert / R3+L2", "Insert / RS+LT", "Insert / RS+ZL");
     ImGui::SameLine();
     ImGui::SetCursorScreenPos(ImVec2(right - ImGui::CalcTextSize(keys).x, baseline));
@@ -652,7 +652,7 @@ void Menu() {
 
     ImGui::Separator();
     ImGui::PushTextWrapPos(0.0f);
-    DisabledText(footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in minuszero.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in minuszero.ini.", "L / R or Q / E: switch tabs. Settings are saved in minuszero.ini."));
+    DisabledText(footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in minustwo.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in minustwo.ini.", "L / R or Q / E: switch tabs. Settings are saved in minustwo.ini."));
     ImGui::PopTextWrapPos();
     if (const int changes = RestartChanges()) {
         ImGui::TextColored(Theme::Warn, Tr("%d change%s need%s a restart (unsaved progress is lost)."),
@@ -1450,7 +1450,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     io.IniFilename = nullptr; // window positions are not kept
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-    io.BackendPlatformName = "minuszero";
+    io.BackendPlatformName = "minustwo";
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();

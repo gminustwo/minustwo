@@ -37,8 +37,8 @@ struct Frame {
     u64 ready_tick;
     bool is_hdr{false};
     u8 id{};
-    vk::Format format{}; ///< minuszero: of `image` (screenshots)
-    u64 trace_seq{};     ///< minuszero: MZ_PRESENT_TRACE number of the game frame, 0 otherwise
+    vk::Format format{}; ///< minustwo: of `image` (screenshots)
+    u64 trace_seq{};     ///< minustwo: MZ_PRESENT_TRACE number of the game frame, 0 otherwise
 };
 
 enum SchedulerType {
@@ -100,7 +100,7 @@ public:
     Frame* PrepareBlankFrame(bool present_thread);
 
     void Present(Frame* frame, bool is_reusing_frame = false, bool is_game_frame = true);
-    /// minuszero: a black frame with the loading screen (MzOverlay::SetLoading) only.
+    /// minustwo: a black frame with the loading screen (MzOverlay::SetLoading) only.
     void PresentLoadingFrame();
     Frame* PrepareLastFrame();
 
@@ -124,7 +124,7 @@ private:
     HostPasses::PostProcessingPass pp_pass;
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;
-    std::deque<u64> recent_frame_ticks; ///< minuszero: MZ_FRAMES_AHEAD bound (PrepareFrame)
+    std::deque<u64> recent_frame_ticks; ///< minustwo: MZ_FRAMES_AHEAD bound (PrepareFrame)
     Scheduler present_scheduler;
     Scheduler flip_scheduler;
     Swapchain swapchain;

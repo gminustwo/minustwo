@@ -10,11 +10,11 @@ use warnings;
 # before main.
 sub signed_unpack {
     my ($src) = @_;
-    my $n = ($src =~ s/\bunpack8\(/minuszeroUnpackS8(/g);
+    my $n = ($src =~ s/\bunpack8\(/minustwoUnpackS8(/g);
     die "expected signed int8 unpacks\n" unless $n;
     my $helper = <<'GLSL';
-// minuszero: signed int8 unpack (spirv-cross emits the unsigned unpack8(uint)).
-i8vec4 minuszeroUnpackS8(uint v)
+// minustwo: signed int8 unpack (spirv-cross emits the unsigned unpack8(uint)).
+i8vec4 minustwoUnpackS8(uint v)
 {
     return unpack8(int(v));
 }

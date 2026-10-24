@@ -9,7 +9,7 @@
 
 int main() {
     using namespace MzSettings;
-    char path[] = "/tmp/minuszero-upscaler-test-XXXXXX";
+    char path[] = "/tmp/minustwo-upscaler-test-XXXXXX";
     const int fd = mkstemp(path);
     assert(fd >= 0);
     close(fd);

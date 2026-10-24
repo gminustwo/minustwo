@@ -14,7 +14,7 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
     using namespace Vulkan;
     const bool game_anisotropy = AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
                                  AmdGpu::IsAnisoFilter(sampler.xy_min_filter);
-    // minuszero: the menu's anisotropic filtering, on filtered and mipmapped textures (not on
+    // minustwo: the menu's anisotropic filtering, on filtered and mipmapped textures (not on
     // point-sampled lookups, unmipmapped render targets or depth compares).
     const int forced = MzSettings::Get().startup_anisotropy;
     const bool force_anisotropy = forced > 1 && !is_depth &&

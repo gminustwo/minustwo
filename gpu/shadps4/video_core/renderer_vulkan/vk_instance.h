@@ -42,7 +42,7 @@ public:
     }
 
     /// Returns the current physical device
-    /// minuszero: device features the temporal upscaler reports as enabled.
+    /// minustwo: device features the temporal upscaler reports as enabled.
     bool IsStorageImageWriteWithoutFormatEnabled() const {
         return features.shaderStorageImageWriteWithoutFormat;
     }
@@ -260,13 +260,13 @@ public:
         return vk13_features.subgroupSizeControl && vk13_props.maxSubgroupSize >= 64;
     }
 
-    /// minuszero: VK_KHR_pipeline_executable_properties is on (MZ_WAVE_STATS=1, vk_wave_stats.h).
+    /// minustwo: VK_KHR_pipeline_executable_properties is on (MZ_WAVE_STATS=1, vk_wave_stats.h).
     bool IsPipelineExecutableInfoEnabled() const {
         return pipeline_executable_properties &&
                pipeline_executable_features.pipelineExecutableInfo;
     }
 
-    /// minuszero: VK_AMD_shader_info is on (statistics and ISA per stage, MZ_WAVE_STATS=1).
+    /// minustwo: VK_AMD_shader_info is on (statistics and ISA per stage, MZ_WAVE_STATS=1).
     bool IsAmdShaderInfoEnabled() const {
         return amd_shader_info;
     }
@@ -299,7 +299,7 @@ public:
     }
 
     /// Returns true when the shaderSubgroupClock feature of
-    /// minuszero: the FSR 4 v07 INT8/DOT4 shaders can run (Float16, Int8, Int16, packed int8 dot
+    /// minustwo: the FSR 4 v07 INT8/DOT4 shaders can run (Float16, Int8, Int16, packed int8 dot
     /// products, linear compute derivatives, extended storage image formats).
     bool IsFsr4Int8Supported() const {
         return vk12_features.shaderFloat16 && vk12_features.shaderInt8 && features.shaderInt16 &&
@@ -308,7 +308,7 @@ public:
                features.shaderStorageImageExtendedFormats;
     }
 
-    /// minuszero: FSR 4.1.1 (INT8 model passes and VK_VALVE_shader_mixed_float_dot_product).
+    /// minustwo: FSR 4.1.1 (INT8 model passes and VK_VALVE_shader_mixed_float_dot_product).
     bool IsFsr411Supported() const {
         return IsFsr4Int8Supported() && mixed_float_dot_product;
     }
@@ -500,7 +500,7 @@ public:
     /// Returns the amount of memory used.
     [[nodiscard]] u64 GetDeviceMemoryUsage() const;
 
-    /// minuszero: the driver's current budget of the heaps GetDeviceMemoryUsage counts
+    /// minustwo: the driver's current budget of the heaps GetDeviceMemoryUsage counts
     /// (VK_EXT_memory_budget: what this process can use now, other processes included).
     [[nodiscard]] u64 GetDeviceMemoryBudgetNow() const;
 
@@ -590,10 +590,10 @@ private:
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
-    bool pipeline_executable_properties{}; // minuszero: MZ_WAVE_STATS=1 (vk_wave_stats.h)
-    bool amd_shader_info{};                // minuszero: with it, VK_AMD_shader_info when present
+    bool pipeline_executable_properties{}; // minustwo: MZ_WAVE_STATS=1 (vk_wave_stats.h)
+    bool amd_shader_info{};                // minustwo: with it, VK_AMD_shader_info when present
     bool compute_shader_derivatives{};
-    bool mixed_float_dot_product{}; // minuszero: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
+    bool mixed_float_dot_product{}; // minustwo: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
     bool supports_memory_budget{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};

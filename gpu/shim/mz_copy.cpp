@@ -189,7 +189,7 @@ private:
     }
 
     void Loop(unsigned index) {
-        Common::SetCurrentThreadName(("minuszero:Copy" + std::to_string(index)).c_str());
+        Common::SetCurrentThreadName(("minustwo:Copy" + std::to_string(index)).c_str());
         u64 seen = 0;
         std::unique_lock lk{mutex};
         while (true) {

@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: from cuesta4/shadPS4 (eltutz) commit eccbeae3.
+// minustwo: from cuesta4/shadPS4 (eltutz) commit eccbeae3.
 
 #pragma once
 

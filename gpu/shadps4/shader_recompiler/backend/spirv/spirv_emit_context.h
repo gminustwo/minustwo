@@ -252,7 +252,7 @@ public:
     Id vertex_index{};
     Id instance_id{};
     Id push_data_block{};
-    // minuszero: object motion vectors (runtime_info.h, MotionVectors).
+    // minustwo: object motion vectors (runtime_info.h, MotionVectors).
     Id motion_out_cur{};
     Id motion_out_prev{};
     Id motion_in_cur{};

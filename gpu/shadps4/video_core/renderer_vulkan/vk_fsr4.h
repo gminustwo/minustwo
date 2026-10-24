@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: FSR 4 (source-v07 INT8/DOT4 model, FSR-Vulkan provider) as an alternative to the
+// minustwo: FSR 4 (source-v07 INT8/DOT4 model, FSR-Vulkan provider) as an alternative to the
 // FSR 3.1 context of TemporalUpscaler. It consumes the same inputs: HDR scene color, depth,
 // motion vectors in render pixels (previous - current) and the jitter offset.
 //

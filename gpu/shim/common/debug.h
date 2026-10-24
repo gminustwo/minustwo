@@ -1,4 +1,4 @@
-// minuszero: shadPS4 debug/profiler helpers without Tracy.
+// minustwo: shadPS4 debug/profiler helpers without Tracy.
 #pragma once
 #include <tracy/Tracy.hpp>
 #define BREAKPOINT __builtin_trap

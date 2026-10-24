@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Minus Zero launcher: chooses the GODZILLA game folder, keeps the settings and starts the game.
+"""Minus Two launcher: chooses the GODZILLA game folder, keeps the settings and starts the game.
 
-    python launcher/minuszero_launcher.py            the window
-    python launcher/minuszero_launcher.py --play     the game with the saved settings, no window
+    python launcher/minustwo_launcher.py            the window
+    python launcher/minustwo_launcher.py --play     the game with the saved settings, no window
 
-Frozen into MinusZero.exe (packaging/windows/package.sh), the same program also runs run.py
+Frozen into MinusTwo.exe (packaging/windows/package.sh), the same program also runs run.py
 (--run) and the preparation scripts (--script <path> ...), so players need no Python.
 Launcher settings are kept in settings.json, the game's display and input settings in
-minuszero.ini (the in-game menu, Insert or R3+L2, changes the same file).
+minustwo.ini (the in-game menu, Insert or R3+L2, changes the same file).
 """
 import json
 import os
@@ -22,7 +22,7 @@ FROZEN = getattr(sys, 'frozen', False)
 PORT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('MZ_DATA_DIR', PORT))
 SETTINGS = DATA / 'settings.json'
-INI = DATA / 'minuszero.ini'
+INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
 TITLE_IDS = ('CUSA02046',)
 # The game's languages (game_en, game_fr, game_ns, game_bp) as PS4 system language ids.
@@ -175,11 +175,11 @@ def display_refresh():
 
 
 def graphics_card():
-    """The graphics card the game will use, from the port's Vulkan check (bin/minuszero-gpu-capabilities):
+    """The graphics card the game will use, from the port's Vulkan check (bin/minustwo-gpu-capabilities):
     its name, '' when the check found none, None when the check could not run."""
-    tool = PORT / 'bin' / 'minuszero-gpu-capabilities.exe'
+    tool = PORT / 'bin' / 'minustwo-gpu-capabilities.exe'
     if not tool.is_file():
-        tool = PORT / 'out' / 'minuszero-gpu-capabilities.exe'
+        tool = PORT / 'out' / 'minustwo-gpu-capabilities.exe'
     try:
         done = subprocess.run([str(tool)], capture_output=True, text=True, timeout=10,
                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
@@ -210,7 +210,7 @@ class Launcher:
         self.process = None
         self.root = tk.Tk()
         self.root.withdraw()
-        self.root.title('GODZILLA — Minus Zero')
+        self.root.title('GODZILLA — Minus Two')
         self.root.configure(bg=BG)
         families = set(tkfont.families(self.root))
         pick = lambda *names: next((n for n in names if n in families), 'Segoe UI')  # noqa: E731
@@ -226,7 +226,7 @@ class Launcher:
                            f'+{(self.root.winfo_screenheight() - height) // 2}')
         self.root.minsize(min(self.px(960), width), min(self.px(640), height))
         try:
-            self.root.iconphoto(True, tk.PhotoImage(file=str(PORT / 'launcher' / 'minuszero.png')))
+            self.root.iconphoto(True, tk.PhotoImage(file=str(PORT / 'launcher' / 'minustwo.png')))
         except tk.TclError:
             pass
         self.style()
@@ -335,7 +335,7 @@ class Launcher:
         brand.pack(anchor='w', padx=self.px(24), pady=(self.px(22), self.px(20)))
         tk.Label(brand, text='ゴジラ', bg=BG, fg=RED, font=(self.kana_face, 11, 'bold')).pack(anchor='w')
         tk.Label(brand, text='GODZILLA', bg=BG, fg=TEXT, font=(self.title_face, 31)).pack(anchor='w')
-        tk.Label(brand, text='Minus Zero · native PC port', bg=BG, fg=MUTED, font=self.font(9)).pack(anchor='w')
+        tk.Label(brand, text='Minus Two · native PC port', bg=BG, fg=MUTED, font=self.font(9)).pack(anchor='w')
         self.nav, self.current = {}, None
         for name, title in PAGES:
             row = tk.Frame(side, bg=BG, cursor='hand2')
@@ -1233,7 +1233,7 @@ class Launcher:
     def close(self):
         if self.process and self.process.poll() is None:
             from tkinter import messagebox
-            if not messagebox.askyesno('Minus Zero', 'The game is still running. Close the launcher anyway?'):
+            if not messagebox.askyesno('Minus Two', 'The game is still running. Close the launcher anyway?'):
                 return
         self.root.destroy()
 

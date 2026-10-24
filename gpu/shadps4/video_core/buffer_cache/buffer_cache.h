@@ -38,7 +38,7 @@ class PageManager;
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
-    // minuszero: arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
+    // minustwo: arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
     // Windows driver: 2 GiB); an arena spans up to two pages, so they shrink to half the limit.
     static constexpr u64 MAX_ARENA_PAGE_BITS = 32;
     static constexpr u64 MIN_ARENA_PAGE_BITS = 30;
@@ -46,7 +46,7 @@ class BufferCache {
     static constexpr u64 MIN_BLOCK_SIZE = 16_KB;
 
 public:
-    /// Read-only bindings up to this size are copied into a stream buffer (minuszero: public for
+    /// Read-only bindings up to this size are copied into a stream buffer (minustwo: public for
     /// the draw pipeline's constant ring).
     static constexpr u64 STREAM_THRESHOLD = 16_KB;
 
@@ -83,7 +83,7 @@ public:
     /// Invalidates any buffer in the logical page range.
     void InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks = false);
 
-    /// minuszero: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
+    /// minustwo: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
     void ExtendWriteFault(VAddr device_addr);
 
     /// Flushes any GPU modified buffer in the logical page range back to CPU memory.
@@ -135,7 +135,7 @@ private:
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
 
-    /// minuszero: batched small copies on the copy threads (MzCopy::QueueCopy).
+    /// minustwo: batched small copies on the copy threads (MzCopy::QueueCopy).
     static void RunGuestCopy(const MzCopy::Item& item);
     void SmallGuestCopy(const MzCopy::Item& item);
 
@@ -146,7 +146,7 @@ private:
 
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
-    // minuszero: texel buffer ranges known not to alias an image, per image registry generation.
+    // minustwo: texel buffer ranges known not to alias an image, per image registry generation.
     struct ImageMiss {
         VAddr address = 0;
         u32 size = 0;

@@ -238,7 +238,7 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    // minuszero: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
+    // minustwo: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
     // driver has it, else Immediate (tearing allowed), else Fifo.
     vsync = MzSettings::Get().vsync;
     const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };

@@ -115,7 +115,7 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
                          std::span<const vk::BufferCopy> copies) {
     scheduler.EndRendering();
 
-    // minuszero: many regions (HLE copy shaders) are tracked as one bounding range per buffer:
+    // minustwo: many regions (HLE copy shaders) are tracked as one bounding range per buffer:
     // conservative for barriers, and two tree lookups instead of two per region.
     const bool bounded = copies.size() > 4;
     u64 src_min = ~0ULL, src_max = 0, dst_min = ~0ULL, dst_max = 0;
@@ -532,7 +532,7 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
 }
 
 void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
-    // minuszero: with MZ_NO_MSAA a guest multisampled depth target is single-sampled on the host; a
+    // minustwo: with MZ_NO_MSAA a guest multisampled depth target is single-sampled on the host; a
     // colour image aliasing it still holds the samples as channels, so sample 0 is channel 0.
     const bool guest_ms_depth = dst->info.props.is_depth && dst->info.guest_samples > 1;
     if (src->info.num_samples == 1 && dst->info.num_samples == 1 && !guest_ms_depth) {
@@ -821,7 +821,7 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eTransferWrite |
         vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
 
-    // minuszero: reads are tracked at 4 KiB granularity. Constant data comes from ring allocations
+    // minustwo: reads are tracked at 4 KiB granularity. Constant data comes from ring allocations
     // at a new offset every draw; rounded, they land in ranges already present and the
     // insert returns early instead of growing the tree until the next barrier flush.
     // Wider read ranges only add barriers, never drop one.

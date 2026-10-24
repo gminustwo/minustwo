@@ -1,5 +1,5 @@
 #include "mz_write_log.h"
-// minuszero: glue between the C loader and the vendored shadPS4 video core.
+// minustwo: glue between the C loader and the vendored shadPS4 video core.
 #include "mz_overlay.h"
 #include "mz_png.h"
 #include "mz_settings.h"
@@ -122,7 +122,7 @@ static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
     }
 }
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
-    // minuszero: large uploads (streaming) are split across the copy threads.
+    // minustwo: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
     if (size < 4 * Chunk || !MzCopy::Enabled()) {
         return CopySparseSerial(source, dest, size);
@@ -207,7 +207,7 @@ extern "C" void __gcov_reset(void);
 // intervals.
 static void StartProfileWriter() {
     std::thread([] {
-        Common::SetCurrentThreadName("minuszero:pgo");
+        Common::SetCurrentThreadName("minustwo:pgo");
         for (;;) {
             std::this_thread::sleep_for(std::chrono::seconds(30));
             __gcov_dump();
@@ -231,10 +231,10 @@ extern "C" int mzgpu_init(const MzGpuConfig* config) {
 #endif
     Core::Emulator::FillElfInfo(*config);
     // The window carries the project name; the dump's own title stays in ElfInfo (above).
-    const std::string title = "MinusZero";
+    const std::string title = "MinusTwo";
     const s32 width = config->width, height = config->height;
     g_window_thread = std::thread([title, width, height] {
-        Common::SetCurrentThreadName("minuszero:window");
+        Common::SetCurrentThreadName("minustwo:window");
         auto* window = new Frontend::WindowSDL(width, height, title.c_str());
         {
             std::scoped_lock lock{g_window_mutex};
@@ -308,7 +308,7 @@ void KernelSignalRequest() {
 }
 
 static void KernelServiceThread(std::stop_token stoken) {
-    Common::SetCurrentThreadName("minuszero:kernel_service");
+    Common::SetCurrentThreadName("minustwo:kernel_service");
     while (!stoken.stop_requested()) {
         {
             std::unique_lock lock{m_asio_req};

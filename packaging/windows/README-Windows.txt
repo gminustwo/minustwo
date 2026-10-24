@@ -1,4 +1,4 @@
-Minus Zero - GODZILLA (PS4) for PC
+Minus Two - GODZILLA (PS4) for PC
 ==================================
 
 No game files are included. You need your own copy of GODZILLA (CUSA02046) as a folder
@@ -11,8 +11,8 @@ Requirements
   Nothing else: Python and the libraries are inside this folder.
 
 Starting
-1. Extract this folder anywhere, for example C:\Games\minuszero-windows (not inside the zip).
-2. Open "MinusZero.exe". If Windows shows "Windows protected your PC", click More info,
+1. Extract this folder anywhere, for example C:\Games\minustwo-windows (not inside the zip).
+2. Open "MinusTwo.exe". If Windows shows "Windows protected your PC", click More info,
    then Run anyway: the program is not digitally signed.
 3. On the Play page, click "Choose the GODZILLA folder..." and select the folder with eboot.bin.
    The ready check below the picture tells whether everything is in place.
@@ -20,7 +20,7 @@ Starting
    sidebar, then click PLAY. The first start takes a little longer while the game image is
    prepared.
 
-"Play MinusZero.exe" starts the game with the saved settings without opening the launcher
+"Play MinusTwo.exe" starts the game with the saved settings without opening the launcher
 (for a desktop shortcut, or Steam's "Add a Non-Steam Game").
 
 While playing
@@ -45,6 +45,6 @@ Mods and patches
 
 Files
 - Saves, the shader cache and last_run.log are in the "user" folder. Keep it when you update.
-- settings.json (launcher) and minuszero.ini (display and input) hold your settings.
+- settings.json (launcher) and minustwo.ini (display and input) hold your settings.
 
 If the game does not start, open Advanced > Show the last game log in the launcher.

@@ -11,9 +11,9 @@ if [[ ${1:-} == --software ]]; then
     if [[ -z ${VK_DRIVER_FILES:-} ]]; then echo 'Lavapipe not found; set VK_DRIVER_FILES.' >&2; exit 1; fi
     export VK_LOADER_LAYERS_DISABLE='~implicit~'
 fi
-# MZ_PREBUILT=1 (packaged builds, the AppImage): bin/minuszero and its GPU library are installed
+# MZ_PREBUILT=1 (packaged builds, the AppImage): bin/minustwo and its GPU library are installed
 # next to this script; nothing is built and no nix-shell is needed.
-# MZ_DATA_DIR: writable directory for the generated files (out/), saves (user/) and minuszero.ini;
+# MZ_DATA_DIR: writable directory for the generated files (out/), saves (user/) and minustwo.ini;
 # by default this directory. The preparation itself is in run.py.
 data=${MZ_DATA_DIR:-.}
 if [[ -z ${MZ_PREBUILT:-} && -z ${MZ_IN_NIX_SHELL:-} ]] && ! { command -v pkg-config >/dev/null && pkg-config --exists vulkan sdl3; } && command -v nix-shell >/dev/null; then

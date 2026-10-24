@@ -84,7 +84,7 @@ int main() {
     assert(depth.GetDepthSliceSize() == depth_slice);
     no_msaa.store(false);
 
-    // The default per Vulkan driver, shared by vk_instance.cpp and minuszero-gpu-capabilities --list:
+    // The default per Vulkan driver, shared by vk_instance.cpp and minustwo-gpu-capabilities --list:
     // off where the 2-sample depth fetch is wrong (#65 RX 6600, #28 Arc), on elsewhere.
     assert(mz_no_msaa_default(VK_DRIVER_ID_AMD_PROPRIETARY));
     assert(mz_no_msaa_default(VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS));

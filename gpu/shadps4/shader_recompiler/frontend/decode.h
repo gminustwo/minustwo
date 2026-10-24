@@ -48,7 +48,7 @@ public:
         return m_ptr == m_end;
     }
 
-    // minuszero: current read position (fetch shader parse cache)
+    // minustwo: current read position (fetch shader parse cache)
     const u32* position() const {
         return m_ptr;
     }

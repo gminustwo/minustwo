@@ -1,8 +1,8 @@
-// SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minuszero contributors
+// SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minustwo contributors
 // SPDX-License-Identifier: MIT
 //
-// C interface between minuszero and mz_dlss.dll. The port contains no NVIDIA code: it loads the
-// bridge at run time when it is present (next to minuszero.exe, with nvngx_dlss.dll) and keeps
+// C interface between minustwo and mz_dlss.dll. The port contains no NVIDIA code: it loads the
+// bridge at run time when it is present (next to minustwo.exe, with nvngx_dlss.dll) and keeps
 // its other upscalers when it is absent. Adapted from IFreemz/shadPS4-Bloodborne-DLSS-FSR.
 
 #pragma once

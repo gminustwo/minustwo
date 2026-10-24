@@ -67,10 +67,10 @@ struct Liverpool {
     Regs regs{};
     std::array<CbDbExtent, NUM_COLOR_BUFFERS> last_cb_extent{};
     CbDbExtent last_db_extent{};
-    /// minuszero: register blocks written since the last draw handed to the draw recording thread
+    /// minustwo: register blocks written since the last draw handed to the draw recording thread
     /// (Rasterizer::PostDraw sends them along).
     RegDirty pipe_dirty;
-    /// minuszero: fence writes handed to the draw recording thread and not yet done there: a
+    /// minustwo: fence writes handed to the draw recording thread and not yet done there: a
     /// WaitRegMem on one of them is met in stream order without waiting for that thread.
     struct PendingFence {
         VAddr address;
@@ -82,7 +82,7 @@ struct Liverpool {
     void NotePendingFences(const auto& event);
     bool PendingFenceValue(VAddr address, u32& value);
     void NotePendingWrite(const struct PM4CmdWriteData& write_data, u32 num_bytes);
-    /// minuszero: running checksum of graphics-register packets (see ApplyGraphicsRegisterPacket).
+    /// minustwo: running checksum of graphics-register packets (see ApplyGraphicsRegisterPacket).
     u64 gfx_reg_checksum{};
     /// Top-level graphics submissions, numbered for the draw preparation workers.
     static constexpr u64 NoSeq = ~0ull;
@@ -112,7 +112,7 @@ public:
         submit_cv.wait(lk, [this] { return num_submits == 0; });
     }
 
-    /// minuszero: also the draw recording thread and the fences it deferred are done (see
+    /// minustwo: also the draw recording thread and the fences it deferred are done (see
     /// work_retired). sceGnmSubmitDone does not block the guest when this is true.
     bool IsGpuIdle() const {
         static const bool use_retired = [] {
@@ -267,7 +267,7 @@ private:
     const bool guest_markers_enabled;
     std::jthread process_thread{};
     std::atomic<u32> num_submits{};
-    /// minuszero: false from a submission until its draws and deferred fences are done (stage A
+    /// minustwo: false from a submission until its draws and deferred fences are done (stage A
     /// decrements num_submits once it has decoded a submission, before that). Under
     /// submit_mutex with num_submits.
     std::atomic<bool> work_retired{true};

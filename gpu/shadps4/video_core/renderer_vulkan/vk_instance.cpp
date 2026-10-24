@@ -116,13 +116,13 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
     const std::size_t num_physical_devices = static_cast<u16>(physical_devices.size());
     ASSERT_MSG(num_physical_devices > 0, "No physical devices found");
     LOG_INFO(Render_Vulkan, "Found {} physical devices", num_physical_devices);
-    // minuszero: the device list in the game log tells a missing driver apart from a wrong choice.
+    // minustwo: the device list in the game log tells a missing driver apart from a wrong choice.
     for (std::size_t i = 0; i < num_physical_devices; ++i) {
         const auto props = physical_devices[i].getProperties();
         std::printf("GPU %zu: %s (%s)\n", i, props.deviceName.data(),
                     vk::to_string(props.deviceType).c_str());
     }
-    // minuszero: a saved choice can outlive its GPU (removed card, new driver order).
+    // minustwo: a saved choice can outlive its GPU (removed card, new driver order).
     if (physical_device_index >= static_cast<s32>(num_physical_devices)) {
         std::printf("GPU: selected GPU %d is not in the device list; choosing automatically\n",
                     physical_device_index);
@@ -365,7 +365,7 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- primitiveTopologyPatchListRestart: {}",
                  list_restart_features.primitiveTopologyPatchListRestart);
     }
-    // minuszero: MZ_AMD_PATHS_OFF=shaderext leaves the AMD shader extensions out (vk_amd_paths.h).
+    // minustwo: MZ_AMD_PATHS_OFF=shaderext leaves the AMD shader extensions out (vk_amd_paths.h).
     const auto amd_paths_off = AmdPathsOff::Current();
     amd_shader_explicit_vertex_parameter =
         !amd_paths_off.shaderext &&
@@ -385,7 +385,7 @@ bool Instance::CreateDevice() {
     amd_shader_trinary_minmax =
         !amd_paths_off.shaderext && add_extension(VK_AMD_SHADER_TRINARY_MINMAX_EXTENSION_NAME);
     nv_framebuffer_mixed_samples = add_extension(VK_NV_FRAMEBUFFER_MIXED_SAMPLES_EXTENSION_NAME);
-    // minuszero: MZ_AMD_PATHS_OFF=mixed forces equal colour and depth samples, as on Intel.
+    // minustwo: MZ_AMD_PATHS_OFF=mixed forces equal colour and depth samples, as on Intel.
     amd_mixed_attachment_samples =
         !amd_paths_off.mixed && add_extension(VK_AMD_MIXED_ATTACHMENT_SAMPLES_EXTENSION_NAME);
     shader_atomic_float = add_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
@@ -423,9 +423,9 @@ bool Instance::CreateDevice() {
     }
     image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
-    // minuszero: FSR 4 v07 INT8 (vk_temporal_upscaler): quad derivatives in compute shaders.
+    // minustwo: FSR 4 v07 INT8 (vk_temporal_upscaler): quad derivatives in compute shaders.
     compute_shader_derivatives = add_extension(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
-    // minuszero: FSR 4.1.1 passes (dot2 of halves accumulated in float, as vkd3d-proton translates them).
+    // minustwo: FSR 4.1.1 passes (dot2 of halves accumulated in float, as vkd3d-proton translates them).
     mixed_float_dot_product =
         feature_chain.get<vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE>()
             .shaderMixedFloatDotProductFloat16AccFloat32 &&
@@ -440,7 +440,7 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- shaderSubgroupClock: {}",
                  shader_clock_features.shaderSubgroupClock);
     }
-    // minuszero: MZ_WAVE_STATS=1 logs the subgroup width the driver compiled each pipeline stage
+    // minustwo: MZ_WAVE_STATS=1 logs the subgroup width the driver compiled each pipeline stage
     // at (vk_wave_stats.h). Off by default: the feature may change how the driver caches
     // pipelines.
     pipeline_executable_properties = [&] {
@@ -501,7 +501,7 @@ bool Instance::CreateDevice() {
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
-    // minuszero: DLSS (optional bridge DLL) needs its own device extensions on NVIDIA GPUs.
+    // minustwo: DLSS (optional bridge DLL) needs its own device extensions on NVIDIA GPUs.
     std::vector<const char*> dlss_extensions;
     if (Dlss* dlss = Dlss::Get()) {
         dlss->AppendDeviceExtensions(*instance, physical_device, dlss_extensions);
@@ -543,7 +543,7 @@ bool Instance::CreateDevice() {
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
-                // minuszero: required by the FSR 3 accumulate shaders (vk_temporal_upscaler).
+                // minustwo: required by the FSR 3 accumulate shaders (vk_temporal_upscaler).
                 .shaderStorageImageWriteWithoutFormat =
                     features.shaderStorageImageWriteWithoutFormat,
                 .shaderClipDistance = features.shaderClipDistance,
@@ -821,7 +821,7 @@ void Instance::CollectDeviceParameters() {
     driver_id = driver.driverID;
     vendor_name = driver.driverName.data();
 
-    // minuszero: see video_core/amdgpu/mz_msaa.h; the default per driver is mz_msaa_default.h.
+    // minustwo: see video_core/amdgpu/mz_msaa.h; the default per driver is mz_msaa_default.h.
     const char* no_msaa_env = std::getenv("MZ_NO_MSAA");
     const bool no_msaa = no_msaa_env && *no_msaa_env
                              ? *no_msaa_env == '1'

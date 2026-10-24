@@ -3,7 +3,7 @@
 
 #include "common/bit_field.h"
 #include "shader_recompiler/ir/opcodes.h"
-#include "common/types.h" // minuszero: include path
+#include "common/types.h" // minustwo: include path
 
 #pragma once
 

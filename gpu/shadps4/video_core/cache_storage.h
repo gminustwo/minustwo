@@ -32,7 +32,7 @@ public:
         return opened;
     }
     void FinishPreload();
-    /// minuszero: removes every cached blob (an incompatible cache is rebuilt, not ignored).
+    /// minustwo: removes every cached blob (an incompatible cache is rebuilt, not ignored).
     void Clear();
 
     bool Save(BlobType type, const std::string& name, std::vector<u8>&& data);
@@ -41,15 +41,15 @@ public:
     void Load(BlobType type, const std::string& name, std::vector<u8>& data);
     void Load(BlobType type, const std::string& name, std::vector<u32>& data);
 
-    /// minuszero: `stop` returning true ends the walk early (background warm-up at exit).
+    /// minustwo: `stop` returning true ends the walk early (background warm-up at exit).
     void ForEachBlob(BlobType type, const std::function<void(std::vector<u8>&& data)>& func,
                      const std::function<bool()>& stop = {});
-    /// minuszero: blobs are plain files written beside and renamed into place, so other threads
+    /// minustwo: blobs are plain files written beside and renamed into place, so other threads
     /// may read them while the IO thread saves (the zip archive cannot).
     [[nodiscard]] bool ConcurrentReads() const;
-    /// minuszero: number of blobs ForEachBlob visits (the loading screen's total).
+    /// minustwo: number of blobs ForEachBlob visits (the loading screen's total).
     size_t CountBlobs(BlobType type);
-    /// minuszero: names (without extension) of the blobs of `type`; empty for the zip archive.
+    /// minustwo: names (without extension) of the blobs of `type`; empty for the zip archive.
     std::vector<std::string> ListBlobs(BlobType type);
 
 private:

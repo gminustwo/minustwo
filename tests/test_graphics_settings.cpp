@@ -1,4 +1,4 @@
-// minuszero.ini graphics keys (mz_settings.cpp, mz_graphics.h).
+// minustwo.ini graphics keys (mz_settings.cpp, mz_graphics.h).
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>

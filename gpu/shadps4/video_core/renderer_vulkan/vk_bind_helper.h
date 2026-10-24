@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: a second thread for the GPU command thread's per-draw work (docs/parallel_gpu.md,
+// minustwo: a second thread for the GPU command thread's per-draw work (docs/parallel_gpu.md,
 // "Texture binding on a helper thread"). The GPU thread forks one task per draw and joins it
 // before anything that depends on the task's results; the helper spins for the next task
 // while draws flow and sleeps after a short idle period.
@@ -39,7 +39,7 @@ public:
     }
 
     [[nodiscard]] bool Available() const noexcept {
-        return running; // minuszero: not thread.joinable(), two system calls on Windows
+        return running; // minustwo: not thread.joinable(), two system calls on Windows
     }
 
     /// True on the helper thread (its callees must not join it).
@@ -85,7 +85,7 @@ public:
 
 private:
     void Run(std::stop_token stop) {
-        Common::SetCurrentThreadName("minuszero:TexBind");
+        Common::SetCurrentThreadName("minustwo:TexBind");
         on_helper = true;
         u64 seen = 0;
         while (!stop.stop_requested()) {

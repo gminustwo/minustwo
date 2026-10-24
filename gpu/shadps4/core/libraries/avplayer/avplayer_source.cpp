@@ -53,7 +53,7 @@ static bool IsStreamSupported(AVStream* stream) {
            codec_id == AV_CODEC_ID_AAC;
 }
 
-static int AvTrace(); // minuszero: MZ_AVPLAYER_TRACE (below)
+static int AvTrace(); // minustwo: MZ_AVPLAYER_TRACE (below)
 
 AvPlayerSource::AvPlayerSource(AvPlayerStateCallback& state) : m_state(state) {}
 
@@ -93,7 +93,7 @@ bool AvPlayerSource::Init(const AvPlayerInitData& init_data, std::string_view pa
             return false;
         }
     } else {
-        // minuszero: guest paths are translated by the port's file system (runtime_file.c).
+        // minustwo: guest paths are translated by the port's file system (runtime_file.c).
         char host[1024];
         if (runtime_file_translate(std::string(path).c_str(), host, sizeof(host)) != 0) {
             LOG_ERROR(Lib_AvPlayer, "Cannot translate guest path {}", path);
@@ -129,7 +129,7 @@ s32 AvPlayerSource::GetStreamCount() {
     return m_streams.size();
 }
 
-// minuszero: MZ_AVPLAYER_TRACE=1 logs every audio pull and video frame release with the wall time;
+// minustwo: MZ_AVPLAYER_TRACE=1 logs every audio pull and video frame release with the wall time;
 // 2 also every time the game asks for a video frame.
 static int AvTrace() {
     static const int level = [] {
@@ -405,7 +405,7 @@ bool AvPlayerSource::GetVideoData(AvPlayerFrameInfoEx& video_info) {
         return false;
     }
 
-    // minuszero: the game asks once per frame (60 Hz). Its asks come a little early or late, and
+    // minustwo: the game asks once per frame (60 Hz). Its asks come a little early or late, and
     // with a clock read at the moment of each ask, a frame due near an ask was handed out at that
     // ask or the next one by chance: frames held one vsync, then three (the movies stuttered).
     // The video clock steps by whole 60 Hz periods from ask to ask instead, and follows wall time
@@ -459,7 +459,7 @@ bool AvPlayerSource::GetVideoData(AvPlayerFrameInfoEx& video_info) {
     auto frame = m_video_frames.Pop();
     m_video_buffers_cv.Notify();
 
-    // minuszero: the frame goes into the game's buffers in turn, now. The decoder wrote straight
+    // minustwo: the frame goes into the game's buffers in turn, now. The decoder wrote straight
     // into them and took the previous frame's buffer back the moment the next frame was handed
     // out, but the game still draws the previous frame for one more refresh (its render
     // pipeline): it showed a frame two ahead there, the picture went back and forth every
@@ -497,7 +497,7 @@ bool AvPlayerSource::GetAudioData(AvPlayerFrameInfo& audio_info) {
     }
 
     auto frame = m_audio_frames.Pop();
-    // minuszero: the clock runs on wall time. Audio the game takes clearly behind it (the game
+    // minustwo: the clock runs on wall time. Audio the game takes clearly behind it (the game
     // stalled and the sound ran dry: a hitch, a load) sets it back, so the picture waits for the
     // sound. Normally the game takes audio ~15 ms ahead, and single takes move by a few ms: that
     // does not count. More than a second behind is a loop the video has not reached yet.
@@ -574,7 +574,7 @@ u64 AvPlayerSource::CurrentTime() {
         return 0;
     }
 
-    // minuszero: wall time since the start (or the last loop) without pauses, smooth and to the
+    // minustwo: wall time since the start (or the last loop) without pauses, smooth and to the
     // microsecond. It was the timestamp of the last audio frame the game took plus the time since,
     // in whole milliseconds: every take moved it by the game's own timing, up to 5 ms either way.
     // The game takes audio at the pace it plays it, so the two stay together.
@@ -760,7 +760,7 @@ static u64 FrameTimestampMillis(const AVFrame& frame, AVRational time_base) {
     return millis > 0 ? u64(millis) : 0;
 }
 
-// minuszero: the same time unrounded: 29.97 fps frames are 33.367 ms apart, and whole
+// minustwo: the same time unrounded: 29.97 fps frames are 33.367 ms apart, and whole
 // milliseconds put them up to half a millisecond off, enough to decide which ask shows a frame.
 static double FrameTimeMs(const AVFrame& frame, AVRational time_base) {
     auto timestamp = frame.best_effort_timestamp;
@@ -846,7 +846,7 @@ void AvPlayerSource::VideoDecoderThread(std::stop_token stop) {
             return;
         }
         while (res >= 0) {
-            // minuszero: decodes as many frames ahead as the game has buffers.
+            // minustwo: decodes as many frames ahead as the game has buffers.
             const auto room = [this] {
                 return m_video_frames.Size() < m_max_num_video_framebuffers;
             };

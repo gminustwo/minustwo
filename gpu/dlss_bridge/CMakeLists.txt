@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minuszero contributors
+# SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minustwo contributors
 # SPDX-License-Identifier: MIT
 #
 # mz_dlss.dll links the NVIDIA DLSS SDK (MSVC only) and is built separately from the port:

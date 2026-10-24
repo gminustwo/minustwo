@@ -96,7 +96,7 @@ public:
                      bool preloading);
     ~GraphicsPipeline();
 
-    // minuszero: switch from compiler-owned snapshots to live stage data on publication.
+    // minustwo: switch from compiler-owned snapshots to live stage data on publication.
     void PublishStages(std::span<const Shader::Info*, MaxShaderStages> infos) {
         std::ranges::copy(infos, stages.begin());
     }
@@ -109,7 +109,7 @@ public:
         return key;
     }
 
-    /// minuszero: second draw squaring a self-scaled MIN/MAX blend, or null (vk_blend_rewrite.h).
+    /// minustwo: second draw squaring a self-scaled MIN/MAX blend, or null (vk_blend_rewrite.h).
     vk::Pipeline SquarePassHandle() const noexcept {
         return *square_pipeline;
     }

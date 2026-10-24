@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: user settings changed at run time from the in-game menu (mz_overlay.h) and kept
-// in minuszero.ini (MZ_CONFIG overrides the path). Environment variables override the file at
+// minustwo: user settings changed at run time from the in-game menu (mz_overlay.h) and kept
+// in minustwo.ini (MZ_CONFIG overrides the path). Environment variables override the file at
 // start. Readers load the atomics every frame; writers are the menu and Load().
 
 #pragma once

@@ -1,4 +1,4 @@
-// minuszero: optimizations that can be switched off while the game runs (MZ_TOGGLE_FILE,
+// minustwo: optimizations that can be switched off while the game runs (MZ_TOGGLE_FILE,
 // see runtime_memory.c), to find which one changes rendering without restarting.
 #pragma once
 #include <atomic>
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #ifdef _WIN32
-// minuszero (Windows): no signals. The loader's exception handler resumes the faulting thread
+// minustwo (Windows): no signals. The loader's exception handler resumes the faulting thread
 // in mz_longjmp (src/compat_win.c: no unwinding through the faulting frames).
 typedef unsigned long long sigjmp_buf[32];
 extern "C" __attribute__((returns_twice)) int mz_setjmp(sigjmp_buf buffer);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: MZ_AMD_PATHS_OFF=mixed,shaderext (or `all`). Runs the shared core without the device
+// minustwo: MZ_AMD_PATHS_OFF=mixed,shaderext (or `all`). Runs the shared core without the device
 // extensions only AMD drivers expose, so a tester on an RDNA2 card (#65) can tell an AMD-only
 // code path of the port from the driver itself:
 //   mixed      VK_AMD_mixed_attachment_samples is not enabled: passes whose colour and depth

@@ -33,7 +33,7 @@ std::optional<std::vector<Binary>> Decode(std::span<const u8> bytes, const Key& 
 bool Save(const std::filesystem::path& file, std::span<const u8> bytes);
 std::optional<std::vector<Binary>> Load(const std::filesystem::path& file, const Key& global,
                                         const Key& pipeline, u64 graphics_hash);
-/// minuszero: version 2, the binary keys and content hashes only; the data is in SharedPath files
+/// minustwo: version 2, the binary keys and content hashes only; the data is in SharedPath files
 /// (StoreShared). The driver reuses a binary key for different data, so files are named by content.
 std::vector<u8> EncodeShared(const Key& global, const Key& pipeline, u64 graphics_hash,
                              const std::vector<Binary>& binaries);

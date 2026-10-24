@@ -1,4 +1,4 @@
-/* Minus Zero loader: maps the prepared GODZILLA image, binds its imports to the runtime and enters
+/* Minus Two loader: maps the prepared GODZILLA image, binds its imports to the runtime and enters
  * the original x86-64 code natively. Derived from SpartanPort's loader (GPL-2.0-or-later). */
 #define _GNU_SOURCE
 #include <stdint.h>

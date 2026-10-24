@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: the Vulkan drivers where the game's multisampled images are created single-sampled
+// minustwo: the Vulkan drivers where the game's multisampled images are created single-sampled
 // unless MZ_NO_MSAA says otherwise (mz_msaa.h). Plain C: vk_instance.cpp decides with it
 // and tools/gpu_capabilities.c prints it per GPU (`--list`) for the launcher to show.
 //

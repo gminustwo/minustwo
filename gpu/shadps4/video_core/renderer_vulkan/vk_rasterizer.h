@@ -46,7 +46,7 @@ public:
         return buffer_cache;
     }
 
-    /// minuszero: the reduced or enlarged copies of the game's 1920x1080 targets (render scale).
+    /// minustwo: the reduced or enlarged copies of the game's 1920x1080 targets (render scale).
     [[nodiscard]] SceneTargets& GetSceneTargets() noexcept {
         return *scene_targets;
     }
@@ -60,7 +60,7 @@ public:
 
     void Draw(bool is_indexed, u32 index_offset = 0, const PreparedDraw* prepared = nullptr);
 
-    /// minuszero: draw preparation workers (vk_draw_prep.h), fed and consumed by Liverpool.
+    /// minustwo: draw preparation workers (vk_draw_prep.h), fed and consumed by Liverpool.
     DrawPreparation& GetDrawPreparation() {
         return *draw_prep;
     }
@@ -96,7 +96,7 @@ public:
         scheduler.WaitHostCopies();
     }
 
-    /// minuszero: GPU command thread: waits until the draw recording thread has recorded every
+    /// minustwo: GPU command thread: waits until the draw recording thread has recorded every
     /// draw handed to it (vk_draw_pipe.h); no-op on other threads.
     /// `line`/`function`: the caller, for the statistics of where stage A waits.
     void DrainDrawPipe(u32 reason = DrawPipe::ReasonRasterizer, u32 line = __builtin_LINE(),
@@ -171,7 +171,7 @@ private:
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
     RenderState BeginRenderingFull(const GraphicsPipeline* pipeline);
-    /// minuszero: a draw continuing the open render pass with the same inputs gets the same render
+    /// minustwo: a draw continuing the open render pass with the same inputs gets the same render
     /// state (RenderStateMemo); nothing can have broken the pass in between (barriers, copies and
     /// dispatches end it).
     struct BeginSignature {
@@ -206,7 +206,7 @@ private:
     void UpdateDynamicState(const GraphicsPipeline* pipeline, bool is_indexed) const;
     void UpdateViewportScissorState() const;
     void UpdateDepthStencilState() const;
-    /// minuszero: the squaring pipeline of a scaled MIN/MAX blend when this draw can use it.
+    /// minustwo: the squaring pipeline of a scaled MIN/MAX blend when this draw can use it.
     vk::Pipeline SquarePass(const GraphicsPipeline& pipeline) const;
     void UpdatePrimitiveState(bool is_indexed) const;
     void UpdateRasterizationState() const;
@@ -260,7 +260,7 @@ private:
     bool BindResources(const Pipeline* pipeline);
     void BindSamplers(const Shader::Info& stage, const PreparedStage* prepared,
                       Shader::Backend::Bindings& binding, u32& write_index);
-    /// minuszero: a stage's resolved textures remembered by its prepared T# hashes
+    /// minustwo: a stage's resolved textures remembered by its prepared T# hashes
     /// (TextureSetMemo): a hit only redoes the per-draw effects (binding flags, transitions).
     struct TextureSetEntry {
         VideoCore::ImageId id{}; ///< after the depth redirect; null descriptor when invalid
@@ -309,7 +309,7 @@ private:
     void BindVertexBuffers(const GraphicsPipeline* pipeline,
                            const PreparedDraw* prepared = nullptr);
     void BindIndexBuffer(u32 index_offset = 0);
-    /// minuszero: BindVertexBuffers/BindIndexBuffer in two halves: obtaining the buffers
+    /// minustwo: BindVertexBuffers/BindIndexBuffer in two halves: obtaining the buffers
     /// (vertex_binds, index_bind) and recording the binds.
     void ResolveVertexBuffers(const GraphicsPipeline* pipeline, const PreparedDraw* prepared);
     void EmitVertexBuffers();
@@ -337,12 +337,12 @@ private:
     Common::SharedFirstMutex mapped_ranges_mutex;
     PipelineCache pipeline_cache;
     std::unique_ptr<DrawPreparation> draw_prep;
-    std::unique_ptr<CameraMotion> camera_motion; // minuszero: motion vectors (docs/upscaler.md)
+    std::unique_ptr<CameraMotion> camera_motion; // minustwo: motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
-    /// minuszero: render scale (the render resolution, or MZ_SCENE_SIZE): every eligible pass of
+    /// minustwo: render scale (the render resolution, or MZ_SCENE_SIZE): every eligible pass of
     /// every frame is drawn at the scene size.
     bool render_scale = false;
-    /// minuszero: this draw reads a multisampled scene proxy (render scale). Such reads are
+    /// minustwo: this draw reads a multisampled scene proxy (render scale). Such reads are
     /// texel fetches at the pixel's own coordinate (an MSAA resolve), so the shader sees
     /// FragCoord in the proxy's pixels, 1:1, instead of the guest's.
     bool host_fetch = false;
@@ -351,7 +351,7 @@ private:
     bool motion_draw = false;
     u64 motion_geometry{};    ///< vertex-stream identity of the current direct draw
     bool gbuffer_draw = false;
-    std::unique_ptr<TemporalUpscaler> upscaler; // minuszero: FSR (docs/upscaler.md)
+    std::unique_ptr<TemporalUpscaler> upscaler; // minustwo: FSR (docs/upscaler.md)
     std::array<float, 2> draw_jitter{};         ///< viewport offset of the current draw, pixels
     std::array<float, 2> target_scale{1.0f, 1.0f}; ///< pass drawn into the upscaler's output-size images
     const bool host_markers_enabled;
@@ -363,7 +363,7 @@ private:
     boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
     boost::container::static_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
-    /// minuszero diagnostics (MZ_DIAG_IMAGES=1, draw pipe off): while a frame capture records, the
+    /// minustwo diagnostics (MZ_DIAG_IMAGES=1, draw pipe off): while a frame capture records, the
     /// color targets of a pass are written to files when the next pass or dispatch begins.
     void DiagPassBoundary(bool force);
     std::array<VAddr, 8> diag_addresses{};
@@ -381,11 +381,11 @@ private:
     Pipeline::DescriptorWrites set_writes;
     Shader::PushData push_data;
 
-    // minuszero: bindings point at their description instead of copying it (a hot spot): into
+    // minustwo: bindings point at their description instead of copying it (a hot spot): into
     // image_desc_cache for memoized lookups (pinned for the current BindTextures call), else
     // into image_desc_storage.
     using ImageBindingInfo = std::pair<VideoCore::ImageId, const VideoCore::TextureCache::ImageDesc*>;
-    // minuszero: texture descriptions depend only on the T# and three resource flags; building
+    // minustwo: texture descriptions depend only on the T# and three resource flags; building
     // them (mip layout sizes) for every binding of every draw was a hot spot.
     struct ImageDescCacheEntry {
         std::array<u64, 4> sharp{};
@@ -408,7 +408,7 @@ private:
     boost::container::static_vector<VideoCore::TextureCache::ImageDesc, Shader::NUM_IMAGES * 2>
         image_desc_storage;
     u64 bind_epoch = 0;
-    // minuszero: render/depth target lookups memoized by their raw register bytes while image
+    // minustwo: render/depth target lookups memoized by their raw register bytes while image
     // registrations are unchanged (the descriptions depend only on those registers).
     struct TargetMemo {
         std::array<u8, 256> key{};
@@ -418,7 +418,7 @@ private:
         VideoCore::TextureCache::ImageDesc desc;
     };
     std::array<TargetMemo, 64> target_memo{};
-    // minuszero: consecutive draws mostly keep their targets; the slot's description (cb_descs,
+    // minustwo: consecutive draws mostly keep their targets; the slot's description (cb_descs,
     // db_desc) is then still the right one and is neither looked up nor copied.
     struct LastTarget {
         std::array<u8, 256> key{};
@@ -468,7 +468,7 @@ private:
         bool pending;
         bool resolved;
     } draw_inputs{};
-    // minuszero: textures of a draw bound on the helper thread while this thread binds buffers.
+    // minustwo: textures of a draw bound on the helper thread while this thread binds buffers.
     static bool BindHelperWanted();
     BindHelper bind_helper{BindHelperWanted()};
     struct TextureTask {
@@ -490,7 +490,7 @@ private:
     bool fault_process_pending{};
     bool attachment_feedback_loop{};
     bool needs_barrier{};
-    // minuszero: two-stage draw pipeline (stage B state; the thread is the last member so it
+    // minustwo: two-stage draw pipeline (stage B state; the thread is the last member so it
     // stops first).
     static inline thread_local const AmdGpu::Regs* stage_regs = nullptr;
     static inline thread_local const AmdGpu::ComputeProgram* stage_cs = nullptr;
@@ -514,7 +514,7 @@ private:
     VAddr pending_min = ~VAddr{0}, pending_max = 0; ///< bounds of pending_writes
     u32 pending_checks = 0;
     u64 proxy_samples = 0; ///< texture bindings that read a scene proxy (statistics)
-    float sampler_lod_bias = 0.0f; ///< minuszero: extra bias of this draw's samplers
+    float sampler_lod_bias = 0.0f; ///< minustwo: extra bias of this draw's samplers
     bool scene_debug_frame = false; ///< MZ_SCENE_DEBUG: this frame's passes are printed
     bool PendingWriteOverlaps(VAddr address, u64 size);
     /// Stage B: the ring bindings of the stages of the packet being recorded.

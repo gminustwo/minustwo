@@ -81,7 +81,7 @@ static u32 SizeDivisor(const VideoCore::ImageInfo& i, SceneResolution::Size scen
 bool SceneTargets::Eligible(const VideoCore::Image& image) const {
     const auto& i = image.info;
     const u32 div = SizeDivisor(i, size);
-    // minuszero: with a render scale, 1920x1080 multisampled color targets as well (Godzilla
+    // minustwo: with a render scale, 1920x1080 multisampled color targets as well (Godzilla
     // draws its HUD over the finished frame with 4x MSAA): their proxies have the same samples.
     const bool multisampled = i.num_samples != 1 || (image.backing && image.backing->num_samples != 1);
     const bool multisample_ok = locked && image.backing && image.backing->num_samples == i.num_samples &&
@@ -171,7 +171,7 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
                     original.info.size.height, e.level);
     }
     if (original.info.num_samples > 1) {
-        // minuszero: blits cannot read or write multisampled images. A fill starts the proxy
+        // minustwo: blits cannot read or write multisampled images. A fill starts the proxy
         // cleared (the game's pass covers it before anything reads it); a resolve leaves the
         // native image as it was: the game reads these through the proxy only (see
         // Rasterizer::host_fetch).

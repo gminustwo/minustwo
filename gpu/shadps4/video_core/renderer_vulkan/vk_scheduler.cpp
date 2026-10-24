@@ -29,7 +29,7 @@ std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
-    // minuszero: MZ_VK_RECORD_THREAD=0 records on the calling thread.
+    // minustwo: MZ_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("MZ_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
         record_chunk = AcquireChunk();
@@ -309,7 +309,7 @@ void Scheduler::SyncRecording() {
 }
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
-    Common::SetCurrentThreadName("minuszero:VkRecorder");
+    Common::SetCurrentThreadName("minustwo:VkRecorder");
     while (true) {
         // Spin briefly before sleeping: the next chunk usually follows within microseconds,
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
@@ -405,7 +405,7 @@ void Scheduler::PopPendingOperations() {
         return; // every draw comes here
     }
     std::unique_lock lk(pending_ops_mutex);
-    // minuszero: this runs on every draw and dispatch. Querying the timeline semaphore is an
+    // minustwo: this runs on every draw and dispatch. Querying the timeline semaphore is an
     // ioctl, so it is skipped when nothing waits and done once per 32 calls (~0.3 ms; reading
     // the clock per draw instead was itself a hot spot).
     if (pending_ops.empty()) {

@@ -102,7 +102,7 @@ std::optional<FetchShaderData> ParseFetchShader(const Shader::Info& info) {
 
     const auto* code = GetFetchShaderCode(info, info.fetch_shader_sgpr_base);
 
-    // minuszero: the pipeline cache parses the fetch shader on every draw. Results are cached
+    // minustwo: the pipeline cache parses the fetch shader on every draw. Results are cached
     // per thread by code address and revalidated against a copy of the code, which is
     // much cheaper than decoding it again.
     struct CachedParse {

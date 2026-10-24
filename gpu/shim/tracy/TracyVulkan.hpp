@@ -1,4 +1,4 @@
-// minuszero: profiler disabled.
+// minustwo: profiler disabled.
 #pragma once
 #include "Tracy.hpp"
 #define TracyVkCtx void*

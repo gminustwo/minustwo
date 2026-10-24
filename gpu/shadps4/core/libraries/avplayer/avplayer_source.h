@@ -116,7 +116,7 @@ struct Frame {
     AvPlayerFrameInfoEx info;
 };
 
-/// minuszero: a decoded video frame waiting in host memory (NV12 as the game gets it); it is
+/// minustwo: a decoded video frame waiting in host memory (NV12 as the game gets it); it is
 /// copied to one of the game's frame buffers when it is handed out.
 struct VideoFrame {
     std::vector<u8> data;
@@ -175,7 +175,7 @@ public:
     bool GetVideoData(AvPlayerFrameInfo& video_info);
     bool GetVideoData(AvPlayerFrameInfoEx& video_info);
     u64 CurrentTime();
-    /// minuszero: the playback clock in milliseconds at `at` (wall time since the start or the
+    /// minustwo: the playback clock in milliseconds at `at` (wall time since the start or the
     /// last loop, without pauses).
     double ClockMs(std::chrono::high_resolution_clock::time_point at) const;
     bool IsActive();
@@ -230,7 +230,7 @@ private:
     std::unique_ptr<IDataStreamer> m_up_data_streamer;
 
     AvPlayerQueue<GuestBuffer> m_audio_buffers;
-    // minuszero: the game's video frame buffers, handed out in turn: the buffer of a frame is
+    // minustwo: the game's video frame buffers, handed out in turn: the buffer of a frame is
     // written again only after the others were (see GetVideoData); the size of one.
     std::vector<GuestBuffer> m_video_buffers;
     size_t m_next_video_buffer = 0;
@@ -269,7 +269,7 @@ private:
     std::optional<std::chrono::high_resolution_clock::time_point> m_start_time{};
     std::chrono::high_resolution_clock::time_point m_pause_time{};
     std::chrono::high_resolution_clock::duration m_pause_duration{};
-    // minuszero: the clock's origin (stream time at m_start_time); how far it was set back for
+    // minustwo: the clock's origin (stream time at m_start_time); how far it was set back for
     // audio that fell behind, and that it was (both set by the audio side); the video clock the
     // game's asks read (stream ms) and the instant of the ask it last stepped at (filtered); the
     // last frame handed out.

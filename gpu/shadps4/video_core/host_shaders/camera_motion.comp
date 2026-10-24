@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: camera motion vectors from depth and the current/previous camera (the scene
-// constants, see docs/upscaler.md; layout still to be recalibrated for MinusZero). DEBUG_OVERLAY blends them as colors into the frame.
+// minustwo: camera motion vectors from depth and the current/previous camera (the scene
+// constants, see docs/upscaler.md; layout still to be recalibrated for MinusTwo). DEBUG_OVERLAY blends them as colors into the frame.
 #version 450
 #extension GL_EXT_samplerless_texture_functions : require
 

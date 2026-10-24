@@ -50,7 +50,7 @@ static void pump(void) { SDL_UpdateJoysticks(); SDL_UpdateGamepads(); }
 int main(void) {
     const char *tmp=getenv("TMPDIR") ? getenv("TMPDIR") : getenv("TEMP") ? getenv("TEMP") : "/tmp";
     char path[1024];
-    snprintf(path,sizeof(path),"%s/minuszero-pad-test-XXXXXX",tmp);
+    snprintf(path,sizeof(path),"%s/minustwo-pad-test-XXXXXX",tmp);
     int fd=mkstemp(path);
     assert(fd>=0);
     close(fd);
@@ -63,7 +63,7 @@ int main(void) {
 
     /* A click without a touch surface (Back, Tab, Backspace, the pad file) plays like a finger:
      * the touch comes first, the button CLICK_LEAD_US later, and the touch stays CLICK_TAIL_US
-     * after the release. MinusZero opens photo mode on the release of a left click with
+     * after the release. MinusTwo opens photo mode on the release of a left click with
      * the finger still down; a touch that appears and vanishes with the button is ignored. */
     inject(path,"cross l3 touchpad_left");
     PadData data=read_pad();
@@ -161,7 +161,7 @@ int main(void) {
     desc.nbuttons=SDL_GAMEPAD_BUTTON_COUNT;
     desc.button_mask=(1u<<SDL_GAMEPAD_BUTTON_COUNT)-1;
     desc.axis_mask=(1u<<SDL_GAMEPAD_AXIS_COUNT)-1;
-    desc.name="minuszero test controller";
+    desc.name="minustwo test controller";
     desc.vendor_id=0x1d50;
     desc.product_id=0x6189;
     desc.ntouchpads=1;

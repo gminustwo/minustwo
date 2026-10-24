@@ -88,7 +88,7 @@ public:
 
     void SetHDR(bool hdr);
 
-    /// minuszero: VSync from the in-game menu (MzSettings::vsync); recreates the swapchain when it
+    /// minustwo: VSync from the in-game menu (MzSettings::vsync); recreates the swapchain when it
     /// changed. Present thread only.
     void UpdateVsync();
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: object motion vectors for temporal upscaling (docs/motion_vectors.md).
+// minustwo: object motion vectors for temporal upscaling (docs/motion_vectors.md).
 //
 // G-buffer shaders preserve clip positions for the exact indexed range of each draw.
 // Matching includes vertex streams, index contents and base offsets. A missing match falls

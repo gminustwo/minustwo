@@ -1,4 +1,4 @@
-# minuszero GPU library: shadPS4 video core + shader recompiler + Gnm/VideoOut
+# minustwo GPU library: shadPS4 video core + shader recompiler + Gnm/VideoOut
 # drivers, adapted to the native_probe runtime through shims in shim/.
 cmake_minimum_required(VERSION 3.24)
 project(mzgpu LANGUAGES C CXX)
@@ -11,7 +11,7 @@ endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
 
-# minuszero: link-time optimization (MZ_LTO, default on) and profile-guided optimization
+# minustwo: link-time optimization (MZ_LTO, default on) and profile-guided optimization
 # (MZ_PGO: off, generate = instrumented build writing into MZ_PGO_DIR, use = build with that
 # profile). Covers mzgpu and the static libraries linked into it. No -march: the same build
 # runs on the Steam Deck.
@@ -43,7 +43,7 @@ endif()
 find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Boost REQUIRED)
-# minuszero (Windows): MSYS2 has no magic_enum/miniz packages; the submodules are used instead.
+# minustwo (Windows): MSYS2 has no magic_enum/miniz packages; the submodules are used instead.
 find_package(magic_enum QUIET)
 if (NOT magic_enum_FOUND)
     add_library(magic_enum INTERFACE)
@@ -63,7 +63,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XXHASH REQUIRED IMPORTED_TARGET libxxhash)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
-# minuszero: sceFont (src/runtime_font.c) renders the game's text with FreeType.
+# minustwo: sceFont (src/runtime_font.c) renders the game's text with FreeType.
 pkg_check_modules(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
 if (NOT WIN32)
     pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
@@ -85,7 +85,7 @@ find_program(GLSLANG_COMPILER NAMES glslang glslangValidator REQUIRED)
 set(SIRIT_USE_SYSTEM_SPIRV_HEADERS OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/sirit EXCLUDE_FROM_ALL)
 
-# minuszero: FSR 3.1 temporal upscaling / frame generation, native Vulkan (MIT, FireBurn/FSR-Vulkan).
+# minustwo: FSR 3.1 temporal upscaling / frame generation, native Vulkan (MIT, FireBurn/FSR-Vulkan).
 set(FFX_VK_PORTABLE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FFX_VK_PORTABLE_BUILD_PROBE OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/fsr-vulkan EXCLUDE_FROM_ALL)
@@ -145,7 +145,7 @@ set(COMMON
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
-# Windows: a DLL cannot leave the runtime_* symbols for minuszero.exe to resolve, so the
+# Windows: a DLL cannot leave the runtime_* symbols for minustwo.exe to resolve, so the
 # library is static there and linked into the executable.
 if (WIN32)
     set(MZGPU_KIND STATIC)
@@ -171,7 +171,7 @@ set_source_files_properties(shim/mz_overlay.cpp PROPERTIES
 target_include_directories(mzgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
 target_compile_definitions(mzgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(mzgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
-# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against minuszero.
+# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against minustwo.
 if (NOT WIN32)
     target_link_options(mzgpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
@@ -189,7 +189,7 @@ else()
     target_link_libraries(mzgpu PUBLIC PkgConfig::X11)
 endif()
 
-# minuszero (Windows): mzgpu is a static library there, so the loader and the HLE runtime are
+# minustwo (Windows): mzgpu is a static library there, so the loader and the HLE runtime are
 # linked here, where CMake knows its dependencies (build.sh builds them with ninja).
 if (WIN32)
     enable_language(RC)
@@ -198,21 +198,21 @@ if (WIN32)
     add_library(atrac9 STATIC ${MZ_ATRAC9})
     target_compile_options(atrac9 PRIVATE -w)
     set_target_properties(atrac9 PROPERTIES C_STANDARD 99 INTERPROCEDURAL_OPTIMIZATION OFF)
-    add_executable(minuszero ../src/probe.c ${MZ_RUNTIME} ../src/compat_win.c ../src/cpu_check.c ../src/vulkan_smoke.c
+    add_executable(minustwo ../src/probe.c ${MZ_RUNTIME} ../src/compat_win.c ../src/cpu_check.c ../src/vulkan_smoke.c
         ../src/isa_rewrite.c ../src/isa_emulate.c
-        ../packaging/windows/minuszero.rc)
-    set_target_properties(minuszero PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
-    target_compile_options(minuszero PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
-    target_include_directories(minuszero PRIVATE .. ../src)
-    target_link_libraries(minuszero PRIVATE mzgpu atrac9 PkgConfig::FREETYPE onecore bcrypt ws2_32 -pthread)
+        ../packaging/windows/minustwo.rc)
+    set_target_properties(minustwo PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
+    target_compile_options(minustwo PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
+    target_include_directories(minustwo PRIVATE .. ../src)
+    target_link_libraries(minustwo PRIVATE mzgpu atrac9 PkgConfig::FREETYPE onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
-    target_link_options(minuszero PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
-    # minuszero: runtime unit tests (ninja -C out/gpu mp3-test videodec-test services-test).
+    target_link_options(minustwo PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
+    # minustwo: runtime unit tests (ninja -C out/gpu mp3-test videodec-test services-test).
     add_executable(mp3-test EXCLUDE_FROM_ALL ../tests/test_mp3.c ../src/runtime_mp3.c ../src/compat_win.c)
     add_executable(videodec-test EXCLUDE_FROM_ALL ../tests/test_videodec.c ../src/compat_win.c)
     add_executable(services-test EXCLUDE_FROM_ALL ../tests/test_services.c ../src/compat_win.c)
-    # minuszero: the GODZILLA runtime parts (ninja -C out/gpu ngs2-test eventflag-test).
+    # minustwo: the GODZILLA runtime parts (ninja -C out/gpu ngs2-test eventflag-test).
     add_executable(ngs2-test EXCLUDE_FROM_ALL ../tests/test_ngs2.c ../src/compat_win.c)
     add_executable(eventflag-test EXCLUDE_FROM_ALL ../tests/test_eventflag.c ../src/compat_win.c)
     foreach(test mp3-test videodec-test services-test ngs2-test eventflag-test)
@@ -259,13 +259,13 @@ if (WIN32)
     target_compile_options(tsc-clock-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     target_include_directories(tsc-clock-test PRIVATE .. ../src)
     target_link_libraries(tsc-clock-test PRIVATE bcrypt -pthread)
-    add_executable(minuszero-gpu-capabilities ../tools/gpu_capabilities.c ../packaging/windows/minuszero-gpu-capabilities.rc)
-    target_include_directories(minuszero-gpu-capabilities PRIVATE shadps4)
-    target_link_libraries(minuszero-gpu-capabilities PRIVATE Vulkan::Vulkan)
-    # "Play MinusZero.exe": the game with the launcher's saved settings, no launcher window.
-    add_executable(minuszero-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
-    target_compile_options(minuszero-play PRIVATE -municode)
-    target_link_options(minuszero-play PRIVATE -municode)
+    add_executable(minustwo-gpu-capabilities ../tools/gpu_capabilities.c ../packaging/windows/minustwo-gpu-capabilities.rc)
+    target_include_directories(minustwo-gpu-capabilities PRIVATE shadps4)
+    target_link_libraries(minustwo-gpu-capabilities PRIVATE Vulkan::Vulkan)
+    # "Play MinusTwo.exe": the game with the launcher's saved settings, no launcher window.
+    add_executable(minustwo-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
+    target_compile_options(minustwo-play PRIVATE -municode)
+    target_link_options(minustwo-play PRIVATE -municode)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
@@ -387,7 +387,7 @@ target_compile_options(camera-motion-test PRIVATE -UNDEBUG -fPIC)
 target_link_libraries(camera-motion-test PRIVATE mzgpu)
 add_dependencies(camera-motion-test host_shaders)
 
-# minuszero: FSR 4 benchmark outside the game (tools/fsr4_bench.cpp): ninja -C out/gpu fsr4-bench.
+# minustwo: FSR 4 benchmark outside the game (tools/fsr4_bench.cpp): ninja -C out/gpu fsr4-bench.
 add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_support.cpp
     shim/mz_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)

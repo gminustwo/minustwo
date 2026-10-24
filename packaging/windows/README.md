@@ -1,4 +1,4 @@
-# minuszero on Windows
+# minustwo on Windows
 
 The port builds and runs natively on 64-bit Windows 10 (1903+) / 11 with the same sources as
 on Linux. Players: see `README-Windows.txt` (it ships in the package).
@@ -24,8 +24,8 @@ Then, in the repository, build with MSYS2 CLANG64:
 
 ```bash
 git submodule update --init --recursive
-bash build.sh                      # out/minuszero.exe, out/minuszero-gpu-capabilities.exe
-bash packaging/windows/package.sh  # dist/minuszero-windows/ and .zip: MinusZero.exe + DLLs
+bash build.sh                      # out/minustwo.exe, out/minustwo-gpu-capabilities.exe
+bash packaging/windows/package.sh  # dist/minustwo-windows/ and .zip: MinusTwo.exe + DLLs
 ```
 
 For a source launcher, install Windows Python 3.10+ from python.org with Tk support. In
@@ -37,19 +37,19 @@ python launcher/mz_launcher_win.py
 ```
 
 Choose the game folder in the launcher. For platform-specific tests, see
-[Tests in the root README](https://github.com/FelipePrado0/MinusZero#tests): Windows uses Ninja
+[Tests in the root README](https://github.com/FelipePrado0/MinusTwo#tests): Windows uses Ninja
 test targets; `bash build.sh --test` runs additional runtime tests only on Linux.
 
 `run.py` is the Windows `run.sh` (same variables; works from a plain Windows Python too).
 The package freezes the launcher with PyInstaller (a private venv in `out/pyenv`, from a
-python.org Python) into `MinusZero.exe`, which also runs `run.py` (`--run`), the preparation
+python.org Python) into `MinusTwo.exe`, which also runs `run.py` (`--run`), the preparation
 scripts (`--script`) and the game without the window (`--play`): players need no Python.
 The venv also receives `iced-x86`, which `scripts/isa_rewrite.py` uses for CPUs without MOVBE,
 BMI1 or LZCNT.
-`Play MinusZero.exe` (`packaging/windows/play.c`) is a small native program that runs
-`MinusZero.exe --play` from its folder and waits for it, for players who want to start the
+`Play MinusTwo.exe` (`packaging/windows/play.c`) is a small native program that runs
+`MinusTwo.exe --play` from its folder and waits for it, for players who want to start the
 game directly with the saved settings.
-`scripts/patches.py` identifies MinusZero by title ID or title and finds built-in patch
+`scripts/patches.py` identifies MinusTwo by title ID or title and finds built-in patch
 sites by signature, rather than requiring one `eboot.bin` hash. Each unmatched patch is skipped
 and reported; this is not a guarantee that every game build works. The startup black-screen
 fix is always requested, including with patch lists saved by older launchers. The resolution
@@ -61,14 +61,14 @@ and game settings path. RCAS sharpening remains available. The DLSS bridge and F
 remaining in the tree are experimental development code, not supported player setup steps.
 See [the historical research notes](../../docs/upscaler.md) for context.
 
-See the [feature availability table](https://github.com/FelipePrado0/MinusZero#feature-availability)
+See the [feature availability table](https://github.com/FelipePrado0/MinusTwo#feature-availability)
 for differences between published packages and current source builds, including Discord Rich Presence.
 
 The launcher texts are written in English with the Russian beside them; the other languages
 are in `launcher/mz_lang.py` (one list per language in the order of `KEYS`; a missing or
-empty text falls back to English). The icon (`launcher/minuszero.ico`/`.png`) is made from the
-SP monogram (`packaging/icon/monogram.png`) by `packaging/windows/make_icon.py` and built into `MinusZero.exe`, `minuszero.exe` (the game
-window) and `minuszero-gpu-capabilities.exe`.
+empty text falls back to English). The icon (`launcher/minustwo.ico`/`.png`) is made from the
+SP monogram (`packaging/icon/monogram.png`) by `packaging/windows/make_icon.py` and built into `MinusTwo.exe`, `minustwo.exe` (the game
+window) and `minustwo-gpu-capabilities.exe`.
 
 ## What is different from Linux
 
@@ -80,7 +80,7 @@ window) and `minuszero-gpu-capabilities.exe`.
 | SIGSEGV handler, `sigsetjmp` recovery | Vectored exception handler; `mz_setjmp`/`mz_longjmp` (`src/compat_win.c`) restore all Win64 callee-saved registers without SEH unwinding (guest frames have no unwind data; clang's `__builtin_longjmp` restores a wrong frame pointer on Win64). |
 | Guest thread stacks from `runtime_low_map` | Windows allocates them, fully committed (`pthread_attr_setstacksize`): guest code has no stack probes and would skip the guard page. The main thread stack is 16 MiB committed. |
 | glibc `nanosleep`, monotonic condition variables | High-resolution waitable timers (`compat_sleep_ns`; winpthreads' sleep rounds to 15.6 ms); semaphore deadlines use `CLOCK_REALTIME` (winpthreads rejects monotonic condition variables). |
-| `libmzgpu.so` | `libmzgpu.a`, linked into `minuszero.exe` by CMake (`gpu/CMakeLists.txt`), with a manifest for UTF-8 paths and long paths. |
+| `libmzgpu.so` | `libmzgpu.a`, linked into `minustwo.exe` by CMake (`gpu/CMakeLists.txt`), with a manifest for UTF-8 paths and long paths. |
 | `execlp bash run.sh` (in-game restart) | `run.py` puts its command line in `MZ_RESTART_COMMAND`; the new launch waits for the old process (`--after PID`). The launcher keeps the game in a job object. |
 | Mod overlay with symlinks | Symlinks when allowed (Developer Mode), else junctions for folders and hard links for files. On a network share (SMB), which refuses junctions too, folders are mirrored with hard links so the game still reads real files through the view. |
 

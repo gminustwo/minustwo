@@ -99,7 +99,7 @@ void VideoOutDriver::RunPresenter(std::function<void()> work, bool if_idle) {
 }
 
 void VideoOutDriver::SwapThread(std::stop_token token) {
-    Common::SetCurrentThreadName("minuszero:Present");
+    Common::SetCurrentThreadName("minustwo:Present");
     while (true) {
         std::function<void()> work;
         {
@@ -308,7 +308,7 @@ void VideoOutDriver::Flip(const Request& req) {
                     static_cast<unsigned long long>(req.frame ? req.frame->trace_seq : 0),
                     MzPresentTrace::NowMs());
     }
-    // Update HDR status before presenting, then present the frame (minuszero: on the swap thread).
+    // Update HDR status before presenting, then present the frame (minustwo: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
         presenter->SetHDR(hdr);
         presenter->Present(frame);
@@ -316,7 +316,7 @@ void VideoOutDriver::Flip(const Request& req) {
     Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left
                                                 : 0);
 
-    // minuszero: MZ_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
+    // minustwo: MZ_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
     static const bool frame_stats = EmulatorSettingsImpl::Flag("MZ_FRAME_STATS", false);
     if (frame_stats) {
         using Clock = std::chrono::steady_clock;
@@ -341,7 +341,7 @@ void VideoOutDriver::Flip(const Request& req) {
         static u64 last_proc_flt, last_copy_ns, last_copy_bytes, last_rf, last_trf, last_twf;
         const u64 rf = MzStats::read_faults.load(), trf = MzStats::t_read_faults.load(),
                   twf = MzStats::t_write_faults.load();
-        // minuszero: every frame over 40 ms (MZ_STALL_MS) after the first, at most 10 per 5 s window.
+        // minustwo: every frame over 40 ms (MZ_STALL_MS) after the first, at most 10 per 5 s window.
         static const double stall_ms = [] {
             const char* value = std::getenv("MZ_STALL_MS");
             return value ? std::atof(value) : 40.0;
@@ -392,7 +392,7 @@ void VideoOutDriver::Flip(const Request& req) {
                   vol = MzStats::gpu_vol_switches.load();
         u64 gpu_ns = 0;
 #ifdef _WIN32
-        // minuszero: Windows has no per-thread clock id; the thread's user + kernel time instead.
+        // minustwo: Windows has no per-thread clock id; the thread's user + kernel time instead.
         static HANDLE gpu_thread = nullptr;
         if (!gpu_thread) {
             if (const unsigned long id = MzStats::gpu_thread_id.load()) {
@@ -666,9 +666,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     Common::AccurateTimer timer{vblank_period};
 
-    // minuszero: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
+    // minustwo: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
-    // minuszero: the in-game menu changes the limit and the engine rate live (MzSettings::fps_limit,
+    // minustwo: the in-game menu changes the limit and the engine rate live (MzSettings::fps_limit,
     // engine_fps); the uncapped presets keep their fixed limit, still capped by the engine rate.
     // MZ_FPS_LIMIT (measurements) is used as given.
     const bool measured_limit = std::getenv("MZ_FPS_LIMIT") != nullptr;
@@ -698,10 +698,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         return {};
     };
 
-    // minuszero: with a frame limit (uncapped presets) a queued flip is presented as soon as it
+    // minustwo: with a frame limit (uncapped presets) a queued flip is presented as soon as it
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
     bool immediate_flips = frame_limit != 0;
-    // minuszero: on a display at a whole multiple of the vblank rate (120 Hz) the vblank ticks on
+    // minustwo: on a display at a whole multiple of the vblank rate (120 Hz) the vblank ticks on
     // its own vblanks (mz_vblank.h): on the timer alone the two clocks drift apart and a frame
     // lasts 1 or 3 refreshes now and then. Not with a frame limit (flips between ticks).
     MzVblank::Pacer pacer{vblank_hz};

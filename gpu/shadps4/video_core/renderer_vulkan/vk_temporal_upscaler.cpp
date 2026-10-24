@@ -50,7 +50,7 @@ FfxVkPortableImage Describe(vk::Image image, vk::Format format, u32 width, u32 h
     return out;
 }
 
-/// minuszero: MZ_DUMP_TRIGGER=<file> MZ_DUMP_DIR=<dir> (default out/dump): creating the file dumps
+/// minustwo: MZ_DUMP_TRIGGER=<file> MZ_DUMP_DIR=<dir> (default out/dump): creating the file dumps
 /// the upscaler's images of the next MZ_DUMP_FRAMES (8) frames as raw files
 /// <dir>/fNNN_<name>_<w>x<h>_<format>.raw, for checking temporal stability offline.
 /// Returns the frame number to dump, or -1.
@@ -266,7 +266,7 @@ bool TemporalUpscaler::RasterScaling() const {
 }
 
 bool TemporalUpscaler::OnFrameStart() {
-    // minuszero: MZ_PRESET_FILE=<file> holding a preset number, read about once a second: switches
+    // minustwo: MZ_PRESET_FILE=<file> holding a preset number, read about once a second: switches
     // the preset like the menu does (scripted tests of live preset changes).
     static const char* preset_file = std::getenv("MZ_PRESET_FILE");
     if (preset_file && ++preset_file_frames % 64 == 0) {
@@ -1614,7 +1614,7 @@ void TemporalUpscaler::RunScaled() {
     }
     last_frame = now;
 
-    // minuszero: FSR 4 writes its HDR-format output, copied into the output-size UI image.
+    // minustwo: FSR 4 writes its HDR-format output, copied into the output-size UI image.
     if (UseFsr4() || UseDlss() || MzSettings::Get().upscaler == MzSettings::UpscalerTaa) {
         barrier(vk::Image(output_image), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, all, vk::AccessFlagBits2::eNone,

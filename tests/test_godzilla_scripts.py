@@ -69,8 +69,8 @@ class LauncherTest(unittest.TestCase):
         self.data = tempfile.TemporaryDirectory()
         os.environ['MZ_DATA_DIR'] = self.data.name
         import importlib
-        import minuszero_launcher
-        self.launcher = importlib.reload(minuszero_launcher)
+        import minustwo_launcher
+        self.launcher = importlib.reload(minustwo_launcher)
 
     def tearDown(self):
         os.environ.pop('MZ_DATA_DIR', None)

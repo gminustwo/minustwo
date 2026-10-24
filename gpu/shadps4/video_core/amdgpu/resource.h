@@ -266,7 +266,7 @@ struct Image {
 
     ImageType GetType() const noexcept {
         if (NoMsaa() && IsGuestMsaa()) {
-            // minuszero: see mz_msaa.h; shaders then fetch it without a sample index.
+            // minustwo: see mz_msaa.h; shaders then fetch it without a sample index.
             return static_cast<ImageType>(type) == ImageType::Color2DMsaa ? ImageType::Color2D
                                                                           : ImageType::Color2DArray;
         }

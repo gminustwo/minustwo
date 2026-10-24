@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2026 IFreemz, minuszero contributors
+// SPDX-FileCopyrightText: Copyright 2026 IFreemz, minustwo contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>

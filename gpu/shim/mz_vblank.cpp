@@ -94,7 +94,7 @@ double ModeHz(const WCHAR* device) {
 
 // The display under the window (looked at again every 64 vblanks, with its mode's rate).
 void Follow(HWND window, OpenFn open, WaitFn wait, CloseFn close) {
-    Common::SetCurrentThreadName("minuszero:Vblank");
+    Common::SetCurrentThreadName("minustwo:Vblank");
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     HMONITOR monitor = nullptr;
     OpenAdapter adapter{};

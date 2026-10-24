@@ -179,7 +179,7 @@ struct DynamicState {
     /// flags that committing clears).
     void Commit(const Instance& instance, const vk::CommandBuffer& cmdbuf);
 
-    /// minuszero: passes each dirty state change to `emit` as a small command closure holding only
+    /// minustwo: passes each dirty state change to `emit` as a small command closure holding only
     /// its own values (recording a copy of the whole state per draw was a hot spot), and clears
     /// the flags it emitted. Flags whose test is disabled stay dirty, as in Commit.
     template <typename Emit>
@@ -346,7 +346,7 @@ struct DynamicState {
         }
     }
 
-    /// minuszero: true when Commit() would record anything. Flags that Commit() defers (their
+    /// minustwo: true when Commit() would record anything. Flags that Commit() defers (their
     /// test is disabled) do not count.
     [[nodiscard]] bool AnyDirty() const noexcept {
         auto pending = dirty_state;
@@ -371,7 +371,7 @@ struct DynamicState {
 
     /// Invalidates all dynamic state to be flushed into the next command buffer.
     void Invalidate() {
-        // minuszero: named flags only; padding bits set by a memset made AnyDirty() always true.
+        // minustwo: named flags only; padding bits set by a memset made AnyDirty() always true.
         dirty_state.viewports = true;
         dirty_state.scissors = true;
         dirty_state.depth_test_enabled = true;
@@ -577,7 +577,7 @@ struct DynamicState {
 
 using SubmitFunc = Common::UniqueFunction<void, SubmitInfo&>;
 
-/// minuszero: a block of deferred Vulkan commands. Commands are closures placed in
+/// minustwo: a block of deferred Vulkan commands. Commands are closures placed in
 /// fixed storage (no allocation per command) and run in order on the recording thread.
 class RecordChunk {
 public:
@@ -683,7 +683,7 @@ public:
     /// Sends the current execution context to the GPU and waits for it to complete.
     void Finish(std::source_location caller = std::source_location::current());
 
-    /// minuszero: waits for the work submitted so far but leaves the command buffer being
+    /// minustwo: waits for the work submitted so far but leaves the command buffer being
     /// recorded open, so a CommandBuffer() the caller holds stays valid (Finish() submits it:
     /// recording into a submitted buffer crashes AMD's driver).
     void WaitSubmitted(std::source_location caller = std::source_location::current());
@@ -701,7 +701,7 @@ public:
     /// Ends current rendering scope.
     void EndRendering();
 
-    /// minuszero: MZ_FULL_BARRIERS=1 records a full memory barrier around every render pass and
+    /// minustwo: MZ_FULL_BARRIERS=1 records a full memory barrier around every render pass and
     /// every compute dispatch, to tell a missing barrier from everything else.
     static bool FullBarriers();
     static void RecordFullBarrier(vk::CommandBuffer cmdbuf);
@@ -801,7 +801,7 @@ public:
     /// Waits until every recorded command is in the command buffer.
     void SyncRecording();
 
-    /// minuszero: guest memory copies on the recording thread (small ones, RecordHostCopy) or the
+    /// minustwo: guest memory copies on the recording thread (small ones, RecordHostCopy) or the
     /// copy threads (MzCopy::Async) must be done before the guest learns the GPU is past them
     /// (it may then rewrite the memory, e.g. UI vertices: flickering) and before the
     /// submission that reads them. Waits for all.
@@ -818,12 +818,12 @@ public:
         });
     }
 
-    /// minuszero: runs `signal` once the guest memory copies issued so far are done, without
+    /// minustwo: runs `signal` once the guest memory copies issued so far are done, without
     /// waiting here: the recording thread reaches it after the copies queued before it and hands
     /// it to the copy threads' completion (MzCopy::AfterCopies).
     void SignalAfterHostCopies(std::function<void()> signal);
 
-    /// minuszero: before a guest-visible write that is not deferred (WriteData, end-of-shader
+    /// minustwo: before a guest-visible write that is not deferred (WriteData, end-of-shader
     /// fences, flip): waits until every signal handed to SignalAfterHostCopies ran, so that
     /// the write cannot overtake an earlier fence. Otherwise the guest, seeing the later value,
     /// may free memory the earlier fence then writes into (corrupted heap, guest fault).
@@ -906,15 +906,15 @@ private:
     };
     std::queue<PendingOp> pending_ops;
     std::recursive_mutex pending_ops_mutex;
-    u32 pending_polls = 0; // minuszero
-    std::atomic<u32> num_pending_ops{0}; ///< minuszero: pending_ops.size(), checked without the lock
+    u32 pending_polls = 0; // minustwo
+    std::atomic<u32> num_pending_ops{0}; ///< minustwo: pending_ops.size(), checked without the lock
     std::queue<PendingOp> priority_pending_ops;
     std::mutex priority_pending_ops_mutex;
     std::condition_variable_any priority_pending_ops_cv;
     std::jthread priority_pending_ops_thread;
     RenderState render_state;
     bool is_rendering = false;
-    // minuszero: threaded recording
+    // minustwo: threaded recording
     std::unique_ptr<RecordChunk> record_chunk;
     std::vector<std::unique_ptr<RecordChunk>> full_chunks;
     std::mutex recorder_mutex;
@@ -931,7 +931,7 @@ private:
     std::atomic<u64> deferred_signals_issued{0}; ///< by the thread recording (A or B)
     std::shared_ptr<std::atomic<u64>> deferred_signals_done =
         std::make_shared<std::atomic<u64>>(0);
-    // minuszero: whether recorder_thread runs, read on every Record(). std::jthread::joinable()
+    // minustwo: whether recorder_thread runs, read on every Record(). std::jthread::joinable()
     // compares thread ids, which on Windows (libc++ over winpthreads) costs two system calls.
     bool recording_threaded{false};
     std::jthread recorder_thread;

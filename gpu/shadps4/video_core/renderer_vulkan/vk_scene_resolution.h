@@ -24,7 +24,7 @@ public:
     SceneTargets(const Instance&, Scheduler&, Runtime&, Lookup);
     ~SceneTargets();
     bool SetSize(SceneResolution::Size);
-    /// minuszero: a size the upscaler's live presets cannot change (render scale, MZ_SCENE_SIZE).
+    /// minustwo: a size the upscaler's live presets cannot change (render scale, MZ_SCENE_SIZE).
     void Lock(SceneResolution::Size);
     [[nodiscard]] bool Locked() const { return locked; }
     SceneResolution::Size Size() const { return size; }

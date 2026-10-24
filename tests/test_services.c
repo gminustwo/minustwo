@@ -241,7 +241,7 @@ int main(void) {
 
     /* The saved difficulty and elapsed time appear in list rows and confirmation. */
     save_param_available=1;
-    strcpy((char *)save_param,"MinusZero");
+    strcpy((char *)save_param,"MinusTwo");
     strcpy((char *)save_param+128,"Reino de Hades");
     strcpy((char *)save_param+256,"Dificuldade: Emzo (F\xe1" "cil)\nTempo de jogo: 25:47:01");
     int64_t timestamp=1720000000; memcpy(save_param+1288,&timestamp,8);
@@ -250,7 +250,7 @@ int main(void) {
     assert(strstr(shown_items[1],"F\xc3\xa1" "cil") && strstr(shown_items[1],"25:47:01"));
     choice_next=1; assert(save_status()==DIALOG_RUNNING);
     assert(strstr(shown_title,"25:47:01") && strstr(shown_title,"Reino de Hades"));
-    assert(!strstr(shown_title,"MinusZero") && !strstr(shown_title,"SAVE0001"));
+    assert(!strstr(shown_title,"MinusTwo") && !strstr(shown_title,"SAVE0001"));
     choice_next=0; assert(save_status()==DIALOG_FINISHED);
 
     /* Valid UTF-8 stays intact; absent and unterminated metadata are bounded. */

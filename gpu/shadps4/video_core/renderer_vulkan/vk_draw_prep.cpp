@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: speculative draw preparation on worker threads (see vk_draw_prep.h).
+// minustwo: speculative draw preparation on worker threads (see vk_draw_prep.h).
 
 #include <algorithm>
 #include <chrono>
@@ -325,7 +325,7 @@ void DrawPreparation::Collect() {
 }
 
 void DrawPreparation::ScannerLoop(std::stop_token stop) {
-    Common::SetCurrentThreadName("minuszero:DrawScan");
+    Common::SetCurrentThreadName("minustwo:DrawScan");
     MzThreads::MakeBackground();
     std::unique_ptr<AmdGpu::Regs> regs;
     u64 checksum = 0;
@@ -379,7 +379,7 @@ void DrawPreparation::ScannerLoop(std::stop_token stop) {
 }
 
 void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
-    Common::SetCurrentThreadName(("minuszero:DrawPrep" + std::to_string(index)).c_str());
+    Common::SetCurrentThreadName(("minustwo:DrawPrep" + std::to_string(index)).c_str());
     MzThreads::MakeBackground();
     auto regs = std::make_unique<AmdGpu::Regs>();
     constexpr u64 NoPosition = ~0ull;

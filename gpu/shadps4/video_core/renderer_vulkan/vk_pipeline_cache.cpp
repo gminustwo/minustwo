@@ -375,7 +375,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
-        // minuszero: older NVIDIA (Pascal) has no barycentrics; MZ_INTERP_INT_FIX=0/1 overrides.
+        // minustwo: older NVIDIA (Pascal) has no barycentrics; MZ_INTERP_INT_FIX=0/1 overrides.
         .needs_integer_interpolation_fix = [&] {
             if (const char* env = std::getenv("MZ_INTERP_INT_FIX")) {
                 return env[0] == '1';
@@ -396,7 +396,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
-    // minuszero: the compiler threads always exist; the in-game menu switches async compilation live
+    // minustwo: the compiler threads always exist; the in-game menu switches async compilation live
     // (MzSettings::async_shaders, MZ_ASYNC_SHADERS at start).
     {
         const auto count = std::clamp(MzThreads::Available() / 2, 1u, 6u);
@@ -407,14 +407,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
             worker_pipeline_caches.push_back(std::move(worker_cache));
         }
         capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 8, [](unsigned index) {
-            Common::SetCurrentThreadName(("minuszero:ShaderCapture" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("minustwo:ShaderCapture" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         });
         compiler = std::make_unique<AsyncCompiler>(count, 64, [](unsigned index) {
-            Common::SetCurrentThreadName(("minuszero:ShaderCompile" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("minustwo:ShaderCompile" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         });
-        LOG_INFO(Render_Vulkan, "minuszero: async graphics compilation ready ({} capture, {} compile workers)",
+        LOG_INFO(Render_Vulkan, "minustwo: async graphics compilation ready ({} capture, {} compile workers)",
                  capture_count, count);
     }
 }
@@ -426,7 +426,7 @@ PipelineCache::~PipelineCache() {
     FinishCompilations();
 }
 
-// minuszero: shader/pipeline compile time on the GPU thread, reported by MZ_FRAME_STATS.
+// minustwo: shader/pipeline compile time on the GPU thread, reported by MZ_FRAME_STATS.
 std::atomic<u64> g_mz_compile_ns;
 std::atomic<u32> g_mz_compiles;
 std::atomic<u64> g_mz_capture_ns, g_mz_async_ns, g_mz_compile_wait_ns;
@@ -496,7 +496,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         if (reused) {
             ++g_mz_pool_reuses;
         }
-        // minuszero: the GPU thread waits until all guest reads and specialization are captured.
+        // minustwo: the GPU thread waits until all guest reads and specialization are captured.
         build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
                                                    build->runtime, profile));
         build->spec = Shader::StageSpecialization(build->info, build->runtime, profile, binding);
@@ -516,7 +516,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
             specialization->info = &program.info;
             program.failed_permutations.push_back(std::move(*specialization));
         }
-        LOG_ERROR(Render_Vulkan, "minuszero: shader {:#x}/{} capture failed: {}", params.hash,
+        LOG_ERROR(Render_Vulkan, "minustwo: shader {:#x}/{} capture failed: {}", params.hash,
                   permutation, capture_job.Error());
         return false;
     }
@@ -544,7 +544,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     return queued;
 }
 
-// minuszero: the corner note on shader translations (MzOverlay), when anything changed. Runs at
+// minustwo: the corner note on shader translations (MzOverlay), when anything changed. Runs at
 // the start of each lookup, so a compile started by the previous draw shows from the next one.
 void PipelineCache::ReportCompiles() {
     const u32 pending = u32(pending_programs.size());
@@ -578,7 +578,7 @@ void PipelineCache::PublishShaders(bool wait) {
                     program->failed_permutations.push_back(std::move(build->spec));
                 }
                 program->pending.reset();
-                LOG_ERROR(Render_Vulkan, "minuszero: shader {:#x}/{} compilation failed: {}", hash,
+                LOG_ERROR(Render_Vulkan, "minustwo: shader {:#x}/{} compilation failed: {}", hash,
                           build->permutation, build->job.Error());
                 retire();
             } else {
@@ -619,7 +619,7 @@ void PipelineCache::PublishGraphics(bool wait) {
         auto result = build->job.Poll();
         if (!result) {
             if (build->job.Failed() && !build->failure_logged) {
-                LOG_ERROR(Render_Vulkan, "minuszero: pipeline {:#x} compilation failed: {}",
+                LOG_ERROR(Render_Vulkan, "minustwo: pipeline {:#x} compilation failed: {}",
                           std::hash<GraphicsPipelineKey>{}(it.key()), build->job.Error());
                 build->failure_logged = true;
             }
@@ -650,7 +650,7 @@ void PipelineCache::FinishCompilations() {
         }
         const auto result = instance.GetDevice().mergePipelineCaches(*pipeline_cache, sources);
         if (result != vk::Result::eSuccess) {
-            LOG_ERROR(Render_Vulkan, "minuszero: compiler cache merge failed: {}", vk::to_string(result));
+            LOG_ERROR(Render_Vulkan, "minustwo: compiler cache merge failed: {}", vk::to_string(result));
         }
     }
 }
@@ -846,7 +846,7 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
     const auto& regs = (*sel.regs);
     auto& key = sel.graphics_key;
 
-    // minuszero: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
+    // minustwo: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
     // smaller one would crop a full-screen pass (eltutz, vk_depth_stencil_state.h).
     const bool db_enabled = GetEffectiveDepthStencilState(regs).needs_attachment;
 
@@ -1202,7 +1202,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                                 Shader::Backend::Bindings& binding) {
     auto runtime_info = BuildRuntimeInfo(sel, hw_stage, sw_stage);
     if (sel.worker) {
-        // minuszero: draw-preparation worker: look up only, with the worker's own Info copy.
+        // minustwo: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
         std::shared_lock lk{programs_mutex};
         const auto found_program = program_cache.find(params.hash);
@@ -1312,7 +1312,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
     vk::ShaderModule module{};
 
-    // minuszero: consecutive draws of a program almost always use the same permutation.
+    // minustwo: consecutive draws of a program almost always use the same permutation.
     auto it = program->last_used < program->modules.size() &&
                       program->modules[program->last_used].spec == spec
                   ? program->modules.begin() + program->last_used

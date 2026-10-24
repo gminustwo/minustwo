@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minuszero contributors
+// SPDX-FileCopyrightText: Copyright 2026 IFreemz (shadps4_dlss bridge), minustwo contributors
 // SPDX-License-Identifier: MIT
 //
 // mz_dlss.dll: the only part of the project that uses the NVIDIA DLSS (NGX) SDK. Built with
@@ -19,7 +19,7 @@
 namespace {
 
 constexpr char ProjectId[] = "42359704-c9f3-4806-9fb5-d469000fdb8a";
-constexpr char EngineVersion[] = "minuszero-windows";
+constexpr char EngineVersion[] = "minustwo-windows";
 
 struct State {
     MzDlssLogFn log{};

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draws the port's own icon (no game artwork): three dorsal plates glowing atomic blue over a dark
-disc. Writes launcher/minuszero.png (256 px) and launcher/minuszero.ico (16 to 256 px).
+disc. Writes launcher/minustwo.png (256 px) and launcher/minustwo.ico (16 to 256 px).
 
     python packaging/windows/make_icon.py
 """
@@ -51,11 +51,11 @@ def draw():
 def main():
     OUT.mkdir(exist_ok=True)
     image = draw()
-    image.resize((256, 256), Image.LANCZOS).save(OUT / 'minuszero.png')
-    image.resize((256, 256), Image.LANCZOS).save(OUT / 'minuszero.ico',
+    image.resize((256, 256), Image.LANCZOS).save(OUT / 'minustwo.png')
+    image.resize((256, 256), Image.LANCZOS).save(OUT / 'minustwo.ico',
                                                  sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
                                                         (128, 128), (256, 256)])
-    print(f'Wrote {OUT / "minuszero.png"} and {OUT / "minuszero.ico"}')
+    print(f'Wrote {OUT / "minustwo.png"} and {OUT / "minustwo.ico"}')
 
 
 if __name__ == '__main__':

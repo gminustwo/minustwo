@@ -25,7 +25,7 @@ public:
         entries.push_back({address, size, tick, std::move(payload)});
         bytes += size;
     }
-    /// `exact`: only copies sharing bytes with the range, not just a page (minuszero: for consumers
+    /// `exact`: only copies sharing bytes with the range, not just a page (minustwo: for consumers
     /// that read or drop exactly those bytes, e.g. an image upload).
     std::uint64_t RequiredTick(std::uint64_t address, std::uint64_t size, bool exact = false) const {
         std::uint64_t tick = 0;
@@ -43,7 +43,7 @@ public:
             }
         }
     }
-    /// minuszero: a CPU access to [address, address + size) that shares pages with small copies but
+    /// minustwo: a CPU access to [address, address + size) that shares pages with small copies but
     /// not their bytes stops waiting for them: each such copy is unwatched (`release` drops its
     /// page protection) and still published when the GPU is done. Returns the copies released.
     template <typename Release>

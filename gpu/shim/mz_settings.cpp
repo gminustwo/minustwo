@@ -22,7 +22,7 @@ constexpr const char* GlyphStyles[] = {"off", "xbox", "nintendo", "keyboard", "a
 
 const char* Path() {
     const char* env = std::getenv("MZ_CONFIG");
-    return env && env[0] ? env : "minuszero.ini";
+    return env && env[0] ? env : "minustwo.ini";
 }
 
 float Clamp(float v, float lo, float hi) {
@@ -319,7 +319,7 @@ void Save() {
         return;
     }
     std::fprintf(file,
-                 "# minuszero settings (in-game menu: Insert / R3+L2)\n"
+                 "# minustwo settings (in-game menu: Insert / R3+L2)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
                  "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",

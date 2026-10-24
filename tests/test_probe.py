@@ -8,8 +8,8 @@ import sys
 import tempfile
 import unittest
 
-EXE = ROOT / 'out/minuszero'
-HOST_EXE = ROOT / ('out/minuszero' + ('.exe' if sys.platform == 'win32' else ''))
+EXE = ROOT / 'out/minustwo'
+HOST_EXE = ROOT / ('out/minustwo' + ('.exe' if sys.platform == 'win32' else ''))
 
 
 def package(code, relocs=(), names=(), capabilities=None):

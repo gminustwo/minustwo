@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# minuszero: rewrites the FSR 4.1.1 postpass (spirv-dis text of dxil-spirv output) so that its image
+# minustwo: rewrites the FSR 4.1.1 postpass (spirv-dis text of dxil-spirv output) so that its image
 # stores go through workgroup memory, like tools/fsr4_post_lds.pl does for FSR 4 v07.
 #
 #   postpass_lds.py < postpass.spvasm > postpass_lds.spvasm   (then spirv-as --target-env spv1.3)

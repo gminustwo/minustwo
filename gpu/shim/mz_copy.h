@@ -1,4 +1,4 @@
-// minuszero: parallel copies of guest memory. Streaming a new area uploads 50-400 MB of textures
+// minustwo: parallel copies of guest memory. Streaming a new area uploads 50-400 MB of textures
 // and buffers per frame; copied on one thread that is tens of milliseconds (stutter).
 #pragma once
 #include <cstddef>

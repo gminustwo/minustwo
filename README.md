@@ -1,6 +1,6 @@
-# Minus Zero
+# Minus Two
 
-**Minus Zero** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
+**Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
 for Windows 10 and 11. It is a personal project, for playing a copy of the game you own.
 
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
@@ -23,7 +23,7 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 | Runtime | `src/runtime_*.c` | The PS4 system functions: kernel, memory, threads, files, audio (AudioOut and the Ngs2 mixer), fonts, pad, saves, dialogs, services |
 | GPU | `gpu/shadps4/` | The shadPS4 video core: PS4 GPU commands and shaders to Vulkan, with SpartanPort's background shader cache |
 | In-game menu | `gpu/shim/` | Dear ImGui menu (Insert, or R3 + L2) with display, performance and overlay settings |
-| Launcher | `launcher/minuszero_launcher.py` | Game folder, settings, controls and the Play button |
+| Launcher | `launcher/minustwo_launcher.py` | Game folder, settings, controls and the Play button |
 
 ### What this port adds for GODZILLA
 
@@ -81,18 +81,18 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
 
 ## Playing
 
-1. Build the port (below) or use a packaged copy, and open **`MinusZero.exe`** (or run
-   `python launcher/minuszero_launcher.py`).
+1. Build the port (below) or use a packaged copy, and open **`MinusTwo.exe`** (or run
+   `python launcher/minustwo_launcher.py`).
 2. On **Play**, click **Browse…** and choose your GODZILLA folder (the one with `eboot.bin`). The launcher checks it
    and shows the game's own cover picture from your dump.
 3. Adjust **Settings** and **Controls** if you like, then **PLAY**. The first start prepares the game image; shaders
    are compiled the first time they are needed and cached in `user/`.
 
-`Play MinusZero.exe` (or `MinusZero.exe --play`) starts the game with the saved settings without the launcher window,
+`Play MinusTwo.exe` (or `MinusTwo.exe --play`) starts the game with the saved settings without the launcher window,
 for a desktop shortcut or Steam's *Add a Non-Steam Game*.
 
 Saves, the shader cache and `user/last_run.log` are in the `user` folder next to the port; settings are in
-`settings.json` (launcher) and `minuszero.ini` (display and input, also changed by the in-game menu).
+`settings.json` (launcher) and `minustwo.ini` (display and input, also changed by the in-game menu).
 
 ### Controls
 
@@ -124,8 +124,8 @@ pacman -S --needed git patch \
   mingw-w64-clang-x86_64-{sdl3,fmt,boost,robin-map,xxhash,ffmpeg,zydis,freetype} \
   mingw-w64-clang-x86_64-{spirv-tools,spirv-headers,spirv-cross}
 git submodule update --init --recursive
-bash build.sh                       # out/minuszero.exe
-bash packaging/windows/package.sh   # dist/minuszero-windows/ and its zip (needs a python.org Python)
+bash build.sh                       # out/minustwo.exe
+bash packaging/windows/package.sh   # dist/minustwo-windows/ and its zip (needs a python.org Python)
 ```
 
 Without the launcher, from a plain Windows Python:
@@ -158,7 +158,7 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
   display vblank; `python tools/present_report.py <run.log> <file> <movie.mp4>` matches those frames to the movie's
   own and tells how long each movie frame stayed on screen (with `MZ_AVPLAYER_TRACE=1`, only while the movie plays).
   `MZ_VBLANK_LOCK=0` keeps the emulated vblank on its timer instead of the display's vblanks.
-- `out/minuszero.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
+- `out/minustwo.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports
   of another build in `src/import_names.inc`.

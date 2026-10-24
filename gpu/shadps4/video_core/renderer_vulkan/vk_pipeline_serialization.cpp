@@ -41,15 +41,15 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // minuszero: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 7u; // minuszero: ImageResource::needs_native
-static constexpr u32 PipelineKeyVersion = 5u; // minuszero: Info layout (ImageResource::needs_native)
+static constexpr u32 ShaderBinaryVersion = 7u; // minustwo: interpolated integer fix (Pascal)
+static constexpr u32 ShaderMetaVersion = 7u; // minustwo: ImageResource::needs_native
+static constexpr u32 PipelineKeyVersion = 5u; // minustwo: Info layout (ImageResource::needs_native)
 } // namespace Serialization
 
 namespace Vulkan {
 
 namespace {
-// minuszero: the test knobs that change recompiled SPIR-V (MZ_LIGHTING_TEST=dref,
+// minustwo: the test knobs that change recompiled SPIR-V (MZ_LIGHTING_TEST=dref,
 // MZ_AMD_PATHS_OFF=shaderext) get their own shader binary cache version.
 u32 CurrentShaderBinaryVersion() {
     return LightingTest::ShaderBinaryVersion(
@@ -64,7 +64,7 @@ bool ValidKey(const Key& key) {
     return !key.empty() && key.size() <= VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR;
 }
 namespace {
-// Version 1 holds the driver binaries; version 2 (minuszero) their keys and content hashes, each
+// Version 1 holds the driver binaries; version 2 (minustwo) their keys and content hashes, each
 // binary being stored once in shared/ (StoreShared): one ~2 MB binary was in thousands of files.
 std::vector<u8> EncodeVersion(const Key& global, const Key& pipeline, u64 graphics_hash,
                               const std::vector<Binary>& binaries, u32 version) {
@@ -268,7 +268,7 @@ std::optional<std::vector<Binary>> Load(const std::filesystem::path& file, const
     }
     return binaries;
 }
-// minuszero: each binary is written once to shared/ (kept when it already reads back the same),
+// minustwo: each binary is written once to shared/ (kept when it already reads back the same),
 // then the pipeline file with the keys only.
 bool StoreShared(const std::filesystem::path& file, const Key& global, const Key& pipeline,
                  u64 graphics_hash, const std::vector<Binary>& binaries) {
@@ -596,7 +596,7 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
     return result;
 }
 
-// minuszero: MZ_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
+// minustwo: MZ_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
 // order on the calling thread (program_cache and its permutation checks are not thread-safe);
 // only the pipeline objects, the slow part, are built here. The runtime compiler builds
 // pipelines on worker threads the same way (vk_pipeline_cache.cpp).
@@ -605,7 +605,7 @@ struct PipelineCache::WarmupPool {
         for (u32 i = 0; i < count; ++i) {
             threads.emplace_back([this, low_priority] {
                 if (low_priority) {
-                    Common::SetCurrentThreadName("MinusZero:ShaderWarmup");
+                    Common::SetCurrentThreadName("MinusTwo:ShaderWarmup");
                     Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
                 }
                 Run();
@@ -678,9 +678,9 @@ private:
             try {
                 ok = job();
             } catch (const std::exception& e) {
-                LOG_ERROR(Render_Vulkan, "minuszero: warm-up pipeline failed: {}", e.what());
+                LOG_ERROR(Render_Vulkan, "minustwo: warm-up pipeline failed: {}", e.what());
             } catch (...) {
-                LOG_ERROR(Render_Vulkan, "minuszero: warm-up pipeline failed");
+                LOG_ERROR(Render_Vulkan, "minustwo: warm-up pipeline failed");
             }
             (ok ? built : failed).fetch_add(1, std::memory_order_relaxed);
             lock.lock();
@@ -1039,7 +1039,7 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(&cached_profile, profile_data.data(), sizeof(cached_profile));
     }
     if (profile_data.size() != sizeof(Shader::Profile) || cached_profile != profile) {
-        // minuszero: upstream closed the cache for the session here, so it was never rewritten
+        // minustwo: upstream closed the cache for the session here, so it was never rewritten
         // and every later session compiled every shader again (stutters on each new area).
         // Start a fresh cache for this build and GPU instead.
         LOG_WARNING(Render, "Pipeline cache isn't compatible with current system: rebuilding it");
@@ -1206,7 +1206,7 @@ void PipelineCache::IndexDiskShaders() {
     }
 }
 
-// minuszero: the saved files of one program, read off the GPU thread (DiskPrefetch) or on it.
+// minustwo: the saved files of one program, read off the GPU thread (DiskPrefetch) or on it.
 struct DiskBlob {
     u32 idx;
     std::vector<u8> meta;
@@ -1228,7 +1228,7 @@ static std::vector<DiskBlob> ReadDiskProgram(u64 hash, const std::vector<u32>& i
     return blobs;
 }
 
-// minuszero: one low-priority thread reads every saved program into memory at startup (a few MB),
+// minustwo: one low-priority thread reads every saved program into memory at startup (a few MB),
 // so the GPU thread only deserializes and creates the modules. A program the GPU thread needs
 // first is claimed and read there instead.
 struct PipelineCache::DiskPrefetch {
@@ -1247,7 +1247,7 @@ void PipelineCache::StartDiskPrefetch() {
     disk_prefetch = new DiskPrefetch;
     disk_prefetch->thread = std::jthread{[prefetch = disk_prefetch, work = std::move(work)](
                                              std::stop_token stop) {
-        Common::SetCurrentThreadName("minuszero:ShaderPrefetch");
+        Common::SetCurrentThreadName("minustwo:ShaderPrefetch");
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         const auto started = std::chrono::steady_clock::now();
         const u32 total = u32(work.size());
@@ -1284,7 +1284,7 @@ void PipelineCache::StartDiskPrefetch() {
     }};
 }
 
-// minuszero (MzToggle::SharedBinaries): files written before shared storage (or with the bit off)
+// minustwo (MzToggle::SharedBinaries): files written before shared storage (or with the bit off)
 // are rewritten once, on a lowest-priority thread, so the folder shrinks without a cache loss.
 struct PipelineCache::BinaryConversion {
     std::jthread thread;
@@ -1300,7 +1300,7 @@ void PipelineCache::StartBinaryConversion() {
                            Common::ElfInfo::Instance().GameSerial() / "pipeline-binaries";
     binary_conversion = new BinaryConversion;
     binary_conversion->thread = std::jthread{[directory](std::stop_token stop) {
-        Common::SetCurrentThreadName("minuszero:BinaryConvert");
+        Common::SetCurrentThreadName("minustwo:BinaryConvert");
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         const auto started = std::chrono::steady_clock::now();
         const auto [files, freed] = PipelineBinaryCache::ConvertToShared(
@@ -1325,7 +1325,7 @@ void PipelineCache::StopDiskPrefetch() {
     disk_prefetch = nullptr;
 }
 
-// minuszero: GPU thread, once per program: every saved permutation at its saved index, so names and
+// minustwo: GPU thread, once per program: every saved permutation at its saved index, so names and
 // pipeline keys stay those of the store. Rejected metas (other versions, motion vertex
 // shaders) leave their slot empty for the next compile (NewPermutationIndex).
 bool PipelineCache::LoadDiskProgram(u64 hash) {
@@ -1443,7 +1443,7 @@ void PipelineCache::ReportDiskShaders() {
                 static_cast<unsigned long long>(s.keys_skipped));
 }
 
-// minuszero: one cached shader stage read by the background warm-up, shared by every cached
+// minustwo: one cached shader stage read by the background warm-up, shared by every cached
 // pipeline that uses it. A pool thread fills it; the GPU thread merges it into program_cache
 // once (MergeWarmStage).
 struct PipelineCache::WarmStage {
@@ -1466,7 +1466,7 @@ struct PipelineCache::WarmStage {
     }
 };
 
-// minuszero: StartBackgroundWarmUp. The pool reads the store and builds the pipelines at low
+// minustwo: StartBackgroundWarmUp. The pool reads the store and builds the pipelines at low
 // priority; the GPU thread merges the stages and publishes the pipelines a few at a time.
 struct PipelineCache::BackgroundWarmup {
     struct Entry {

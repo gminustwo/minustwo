@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds dist/minuszero-windows/ (and dist/minuszero-windows.zip): MinusZero.exe (the launcher, frozen
-# with PyInstaller so players need no Python), minuszero.exe with the MSYS2 CLANG64 DLLs it needs,
+# Builds dist/minustwo-windows/ (and dist/minustwo-windows.zip): MinusTwo.exe (the launcher, frozen
+# with PyInstaller so players need no Python), minustwo.exe with the MSYS2 CLANG64 DLLs it needs,
 # the preparation scripts and run.py. Run from an MSYS2 CLANG64 shell after `bash build.sh`.
 # Freezing uses a Windows Python 3.10+ (python.org; WINPYTHON overrides) and a private venv in
 # out/pyenv with PyInstaller and Pillow (the game icon and the Steam pictures need it). The
@@ -9,7 +9,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
 source ./msys2-env.sh
-[[ -f out/minuszero.exe && -f out/minuszero-gpu-capabilities.exe && -f out/minuszero-play.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
+[[ -f out/minustwo.exe && -f out/minustwo-gpu-capabilities.exe && -f out/minustwo-play.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
 
 # A Windows Python (not MSYS2's) for PyInstaller.
 python=${WINPYTHON:-}
@@ -27,31 +27,31 @@ fi
 # MSYS2 shells may lack LOCALAPPDATA: pip would put its cache in the working directory.
 export PIP_CACHE_DIR=${PIP_CACHE_DIR:-$PWD/out/pip-cache}
 out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyinstaller pillow iced-x86==1.21.0
-# The scripts run inside MinusZero.exe (--script): the standard modules they import come along.
+# The scripts run inside MinusTwo.exe (--script): the standard modules they import come along.
 hidden=()
 for module in argparse base64 collections hashlib json re shutil socket struct tempfile threading uuid \
               xml.etree.ElementTree urllib.request ctypes.wintypes iced_x86; do
     hidden+=(--hidden-import "$module")
 done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed --copy-metadata pillow \
-    --name "MinusZero" --icon "$(cygpath -w "$PWD/launcher/minuszero.ico")" --distpath out/pyi-dist \
+    --name "MinusTwo" --icon "$(cygpath -w "$PWD/launcher/minustwo.ico")" --distpath out/pyi-dist \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" "${hidden[@]}" \
-    "$(cygpath -w "$PWD/launcher/minuszero_launcher.py")"
+    "$(cygpath -w "$PWD/launcher/minustwo_launcher.py")"
 
-# The package is assembled in a fresh staging folder and zipped from there; dist/minuszero-windows
+# The package is assembled in a fresh staging folder and zipped from there; dist/minustwo-windows
 # (a playable copy that may hold saves and settings) is only refreshed afterwards.
-dest=out/stage/minuszero-windows
+dest=out/stage/minustwo-windows
 rm -rf -- out/stage
 mkdir -p "$dest/bin" "$dest/launcher"
-cp -r "out/pyi-dist/MinusZero/." "$dest/"
-llvm-strip -o "$dest/Play MinusZero.exe" out/minuszero-play.exe
-cp launcher/minuszero.ico launcher/minuszero.png "$dest/launcher/"
+cp -r "out/pyi-dist/MinusTwo/." "$dest/"
+llvm-strip -o "$dest/Play MinusTwo.exe" out/minustwo-play.exe
+cp launcher/minustwo.ico launcher/minustwo.png "$dest/launcher/"
 # The executables without debug information (out/ keeps the symbols for crash reports).
-for exe in minuszero.exe minuszero-gpu-capabilities.exe; do
+for exe in minustwo.exe minustwo-gpu-capabilities.exe; do
     llvm-strip --strip-debug -o "$dest/bin/$exe" "out/$exe"
 done
 # Every DLL the executables load from the CLANG64 tree (SDL3, FFmpeg, Vulkan loader, ...).
-ldd "$dest/bin/minuszero.exe" "$dest/bin/minuszero-gpu-capabilities.exe" |
+ldd "$dest/bin/minustwo.exe" "$dest/bin/minustwo-gpu-capabilities.exe" |
     awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
         cp -u "$dll" "$dest/bin/"
     done
@@ -61,7 +61,7 @@ find "$dest" -name __pycache__ -prune -exec rm -r {} +
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.
 forbidden=$(find "$dest" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
-    -o -iname user -o -iname cache -o -iname '*.log' -o -iname minuszero.ini -o -iname settings.json \
+    -o -iname user -o -iname cache -o -iname '*.log' -o -iname minustwo.ini -o -iname settings.json \
     -o -iname game_icon.ico \
     -o -iname mods.json -o -iname patches.json -o -iname fsr4_shaders -o -iname 'nvngx_dlss*.dll' \
     -o -iname '*.spv' -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' -o -iname '*.pac' \
@@ -72,21 +72,21 @@ if [[ -n $forbidden ]]; then
     exit 1
 fi
 mkdir -p dist
-rm -f dist/minuszero-windows.zip
+rm -f dist/minustwo-windows.zip
 (cd out/stage && powershell -NoProfile -Command \
-    "Compress-Archive -Path minuszero-windows -DestinationPath ../../dist/minuszero-windows.zip")
+    "Compress-Archive -Path minustwo-windows -DestinationPath ../../dist/minustwo-windows.zip")
 
-# Refresh dist/minuszero-windows, keeping what players create there (saves, settings, mods), and
+# Refresh dist/minustwo-windows, keeping what players create there (saves, settings, mods), and
 # only while nothing runs from it: deleting a running launcher's files breaks it.
-play=dist/minuszero-windows
+play=dist/minustwo-windows
 running=$(powershell -NoProfile -Command \
     "@(Get-Process | Where-Object { \$_.Path -like '$(cygpath -w "$PWD/$play")\\*' }).Count" | tr -d '\r')
 if [[ ${running:-0} != 0 ]]; then
-    echo "dist/minuszero-windows is in use ($running processes): not refreshed; the zip is ready." >&2
+    echo "dist/minustwo-windows is in use ($running processes): not refreshed; the zip is ready." >&2
 else
     mkdir -p "$play"
-    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name minuszero.ini \
+    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name minustwo.ini \
         ! -name mods.json ! -name patches.json ! -name settings.json ! -name game_icon.ico ! -name gamecontrollerdb.txt -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
-du -sh "$dest" dist/minuszero-windows.zip
+du -sh "$dest" dist/minustwo-windows.zip

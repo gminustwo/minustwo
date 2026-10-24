@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: MZ_PRESENT_TRACE=<file> — what each presented frame shows and when it reached the
+// minustwo: MZ_PRESENT_TRACE=<file> — what each presented frame shows and when it reached the
 // screen (movie pacing). The presenter samples every game frame it makes at Cols x Rows points
 // into <file>; the flip of each frame on its vblank tick, its present and every display vblank
 // (Windows, mz_vblank.h) go to the log as "PresentTrace:" lines in steady-clock milliseconds.

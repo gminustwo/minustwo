@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: two-stage draw pipeline (docs/parallel_gpu.md, "Two-stage draw pipeline").
+// minustwo: two-stage draw pipeline (docs/parallel_gpu.md, "Two-stage draw pipeline").
 //
 // The GPU command thread (stage A) decodes PM4, keeps the register file and selects pipelines;
 // for a direct draw it writes a packet (the register blocks changed since the previous packet,
@@ -157,7 +157,7 @@ private:
     }
 
     void Run(std::stop_token stop) {
-        Common::SetCurrentThreadName("minuszero:DrawRec");
+        Common::SetCurrentThreadName("minustwo:DrawRec");
         on_stage_b = true;
         stage_b_tid.store(static_cast<u32>(gettid()), std::memory_order_release);
         u64 at = 0;

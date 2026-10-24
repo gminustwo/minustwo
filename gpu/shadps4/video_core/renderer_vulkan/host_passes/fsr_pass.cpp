@@ -133,7 +133,7 @@ void FsrPass::Create(vk::Device device, VmaAllocator allocator, u32 num_images) 
 vk::ImageView FsrPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
                               vk::Extent2D input_size, vk::Extent2D output_size, Settings settings,
                               bool hdr) {
-    // minuszero: FSR 1 upscales when the window is larger; RCAS alone also runs at the same size.
+    // minustwo: FSR 1 upscales when the window is larger; RCAS alone also runs at the same size.
     if (!MzGraphics::FsrPassRuns(settings.enable, settings.use_rcas, int(input_size.width),
                                    int(input_size.height), int(output_size.width),
                                    int(output_size.height))) {

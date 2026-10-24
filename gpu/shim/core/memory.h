@@ -1,4 +1,4 @@
-// minuszero: the MemoryManager surface used by the video core and GnmDriver.
+// minustwo: the MemoryManager surface used by the video core and GnmDriver.
 // Guest memory lives at identical host addresses; the C runtime owns the VMAs.
 #pragma once
 #include "common/types.h"

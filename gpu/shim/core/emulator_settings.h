@@ -1,4 +1,4 @@
-// minuszero: shadPS4 settings used by the video core, read once from MZ_* environment
+// minustwo: shadPS4 settings used by the video core, read once from MZ_* environment
 // variables (defaults match shadPS4 except the pipeline cache, which is on).
 #pragma once
 #include <algorithm>
@@ -25,10 +25,10 @@ public:
     u32 GetInternalScreenWidth() { static const auto value = u32(Number("MZ_INTERNAL_WIDTH", 1920)); return value; }
     u32 GetInternalScreenHeight() { static const auto value = u32(Number("MZ_INTERNAL_HEIGHT", 1080)); return value; }
     std::string GetPresentMode() { const char* v = std::getenv("MZ_PRESENT_MODE"); return v ? v : "Mailbox"; }
-    // minuszero: Relaxed by default: without readbacks FaceGen reads stale GPU-written vertices
+    // minustwo: Relaxed by default: without readbacks FaceGen reads stale GPU-written vertices
     // (vertex explosions); in the test scene it costs no measurable frame rate.
     u32 GetReadbacksMode() { static const auto value = u32(Number("MZ_READBACKS", GpuReadbacksMode::Relaxed)); return value; }
-    // minuszero: MZ_VBLANK_HZ=0 (uncapped presets): vblank runs at 480 Hz so a finished frame is
+    // minustwo: MZ_VBLANK_HZ=0 (uncapped presets): vblank runs at 480 Hz so a finished frame is
     // shown within ~2 ms instead of waiting for the next display-rate vblank (below the display
     // rate frames alternated 10/20 ms at 100 Hz: judder), and GetFrameLimit() caps the rate at
     // the display refresh, at most 120 (above ~120 FPS movement timing breaks: running slows).

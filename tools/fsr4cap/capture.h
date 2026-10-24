@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: D3D12 call recorder for fsr4cap.exe (capture.c, rootsig.c).
+// minustwo: D3D12 call recorder for fsr4cap.exe (capture.c, rootsig.c).
 #pragma once
 #include <stdio.h>
 #include <d3d12.h>

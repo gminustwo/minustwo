@@ -4,7 +4,7 @@ Date: Thu, 1 Oct 2026 05:31:00 +0300
 Subject: [PATCH] FSR 4 v07 provider: MZ_FSR4_PROFILE pass timings,
  MZ_FSR4_STATS driver statistics
 
-minuszero: GPU timestamps around each dispatch, read when the frame retires and
+minustwo: GPU timestamps around each dispatch, read when the frame retires and
 printed every 300 frames; pipelines created with CAPTURE_STATISTICS print
 the driver's register/instruction statistics (the device must enable
 pipelineExecutableInfo).
@@ -31,7 +31,7 @@ index c30f7cf..eb42c16 100644
      VkBool32  dotProductSupported;
      VkBool32  computeDerivativesSupported;
 +
-+    /* minuszero: MZ_FSR4_PROFILE=1 — GPU time per pass (timestamps around each
++    /* minustwo: MZ_FSR4_PROFILE=1 — GPU time per pass (timestamps around each
 +     * dispatch, read back when the frame retires, printed every 300 frames). */
 +    VkQueryPool profPool;
 +    float       profPeriodNs;
@@ -47,7 +47,7 @@ index c30f7cf..eb42c16 100644
  
  // ── pipeline creation ─────────────────────────────────────────────────────────
  
-+/* minuszero: MZ_FSR4_STATS=1 (the device must enable pipelineExecutableInfo) prints the
++/* minustwo: MZ_FSR4_STATS=1 (the device must enable pipelineExecutableInfo) prints the
 + * driver's statistics of each pass: registers, spills, instruction counts. */
 +static void printPipelineStats(FfxFsr4VkContext* c, uint32_t passIdx, VkPipeline pipeline)
 +{

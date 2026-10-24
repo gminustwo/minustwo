@@ -80,7 +80,7 @@ static uint16_t touch_axis(float v, int max) {
 
 /* A click without a touch surface (Back/View, Tab, Backspace, the pad file) is played like a
  * finger: the touch is reported CLICK_LEAD_US before the button, the button stays at least
- * CLICK_HOLD_US, and the touch lingers CLICK_TAIL_US after the release. MinusZero opens
+ * CLICK_HOLD_US, and the touch lingers CLICK_TAIL_US after the release. MinusTwo opens
  * photo mode on the release of a left click with the finger still down, and ignores a touch
  * that comes and goes with the button. The side is chosen when the click starts and kept: the
  * right source with L1 held is a left click (photo mode on pads without a touchpad). */

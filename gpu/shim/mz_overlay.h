@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: in-game settings menu (Dear ImGui), drawn by the presenter into the swapchain image
+// minustwo: in-game settings menu (Dear ImGui), drawn by the presenter into the swapchain image
 // after the game frame, at display resolution. Insert (keyboard) or R3+L2 (gamepad) opens it;
 // while it is open the game gets no pad/keyboard input. Settings live in mz_settings.h.
 

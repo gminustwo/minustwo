@@ -1,4 +1,4 @@
-// minuszero: see log.h.
+// minustwo: see log.h.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

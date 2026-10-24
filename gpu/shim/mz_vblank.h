@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// minuszero: the vblanks of the display the game window is on (Windows: D3DKMT), and the emulated
+// minustwo: the vblanks of the display the game window is on (Windows: D3DKMT), and the emulated
 // vblank locked to them. On a timer the two clocks drift apart: even on a 120 Hz display a 60 FPS
 // frame then lasts 1 or 3 refreshes now and then. Locked, every frame lasts the same.
 #pragma once

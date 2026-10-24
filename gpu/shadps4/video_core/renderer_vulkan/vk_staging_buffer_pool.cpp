@@ -21,7 +21,7 @@ using VideoCore::MemoryType;
 
 namespace {
 
-// minuszero: staging memory is populated (allocated and cleared) by the kernel on first CPU access,
+// minustwo: staging memory is populated (allocated and cleared) by the kernel on first CPU access,
 // ~2 ms per 16 MiB block. Streaming bursts a few seconds apart re-created the blocks trimmed
 // in between and copies into them ran at 0.3 GB/s (stutter). Blocks now live 30 s idle, the
 // upload ring keeps MZ_STAGING_KEEP_MB (512) and is populated at startup.
