@@ -26,6 +26,9 @@ While playing
   VSync, frame rate limit, overlay).
 - Render resolution in that menu draws the game above 1080p, up to 4K and 8K (Apply and
   restart).
+- Match refresh rate (on by default): in Borderless and Fullscreen, a display whose refresh
+  rate is not a multiple of 60 (144 Hz) runs at 120 Hz while the game runs, so every frame
+  lasts the same; the game's frame clock then follows the display's own.
 - Keyboard: WASD walk, Q / E turn, mouse or arrows move the camera, left click normal attack,
   right click strong attack, Space Cross, Left Shift Circle, Return Options.
 - The add-ons (pre-order unlocks, diorama figure sets) are unlocked; Settings turns that off.

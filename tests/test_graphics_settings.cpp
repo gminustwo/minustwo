@@ -29,6 +29,17 @@ static std::string Read(const char* path) {
 
 int main() {
     assert(G::ParseDisplayMode("borderless") == G::Borderless && G::ParseDisplayMode("bogus") == G::Windowed);
+    // Match refresh rate (window.cpp, mz_vblank.h): display rates 60 FPS divides evenly.
+    assert(G::RefreshDivisor(120.0, 60) == 2 && G::RefreshDivisor(119.88, 60) == 2 && G::RefreshDivisor(59.94, 60) == 1);
+    assert(G::RefreshDivisor(240.0, 60) == 4 && G::RefreshDivisor(60.0, 60) == 1);
+    assert(G::RefreshDivisor(144.0, 60) == 0 && G::RefreshDivisor(143.99, 60) == 0 && G::RefreshDivisor(100.0, 60) == 0);
+    assert(G::RefreshDivisor(165.0, 60) == 0 && G::RefreshDivisor(30.0, 60) == 0 && G::RefreshDivisor(120.0, 480) == 0);
+    // The user's LG TV at 4K: 144 Hz switches to exactly 120 (not 119.88, not 60); 120 and 60 stay.
+    const std::vector<float> lg = {24.0f, 23.976f, 25.0f, 30.0f, 29.97f, 60.0f, 59.94f, 50.0f, 120.0f, 119.88f, 100.0f, 144.0f};
+    assert(G::RefreshFor60(lg, 144.0f) == 8 && G::RefreshFor60(lg, 120.0f) == -1 && G::RefreshFor60(lg, 60.0f) == -1);
+    assert(G::RefreshFor60({119.88f, 60.0f, 144.0f}, 144.0f) == 0);  // 119.88 before 60
+    assert(G::RefreshFor60({100.0f, 75.0f}, 100.0f) == -1);           // none: stays
+    assert(G::RefreshFor60({60.0f, 165.0f}, 165.0f) == 0);
     // The render scale of a render resolution: its height at 16:9; native (or 1080 lines) is none.
     using Size = std::pair<int, int>;
     assert(G::RenderScaleSize("native") == Size(0, 0) && G::RenderScaleSize("1440x1080") == Size(0, 0));
@@ -88,13 +99,14 @@ int main() {
         std::ofstream out(path);
         out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\n"
                "render_resolution=1440p\nengine_fps=240\ndeferred_readback=0\nstale_readback=1\n"
-               "fsr1=1\nrcas=0\nrcas_strength=40\nframes_queued=2\n";
+               "fsr1=1\nrcas=0\nrcas_strength=40\nframes_queued=2\nmatch_refresh=0\n";
     }
     SetEnvironment("MZ_CONFIG", path);
     SetEnvironment("MZ_ASYNC_SHADERS", "");
     auto& v = MzSettings::Get();
     MzSettings::Load();
     assert(v.display_mode == G::Borderless && !v.vsync && v.fps_limit == 240 && !v.async_shaders);
+    assert(!v.match_refresh);
     assert(v.render_resolution == 4 && v.engine_fps == 240 && !v.deferred_readback && v.stale_readback);
     // FSR 1 left the menus in 2.2.0: a saved fsr1=1 (or MZ_FSR1) no longer turns it on.
     assert(!v.fsr1 && !v.rcas && v.rcas_strength == 40 && v.frames_queued == 2);
@@ -121,7 +133,7 @@ int main() {
     for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "fps_limit=60\n", "async_shaders=0\n",
                              "render_resolution=1440p\n", "engine_fps=240\n", "deferred_readback=0\n",
                              "stale_readback=1\n", "fsr1=0\n", "rcas=0\n", "rcas_strength=40\n",
-                             "frames_queued=2\n"}) {
+                             "frames_queued=2\n", "match_refresh=0\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
 

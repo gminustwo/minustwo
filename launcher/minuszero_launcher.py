@@ -231,25 +231,29 @@ class Launcher:
         self.labelled(page, 'Display mode', 1, box)
         self.vsync_var = tk.BooleanVar(value=ini.get('vsync', '1') != '0')
         self.labelled(page, 'VSync', 2, ttk.Checkbutton(page, variable=self.vsync_var))
+        # Borderless and fullscreen: a 144 Hz display runs at 120 Hz while the game runs (60 FPS evenly).
+        self.match_refresh_var = tk.BooleanVar(value=ini.get('match_refresh', '1') != '0')
+        self.labelled(page, 'Match refresh rate (144 to 120 Hz)', 3,
+                      ttk.Checkbutton(page, variable=self.match_refresh_var))
         self.fps_var, box = self.choice(page, FPS_LIMITS, ini.get('fps_limit', '60') if ini.get('fps_limit') in ('0', '30', '60') else '60')
-        self.labelled(page, 'Frame rate limit', 3, box)
+        self.labelled(page, 'Frame rate limit', 4, box)
         self.show_fps_var = tk.BooleanVar(value=ini.get('show_fps', '0') == '1')
-        self.labelled(page, 'Show the frame rate', 4, ttk.Checkbutton(page, variable=self.show_fps_var))
+        self.labelled(page, 'Show the frame rate', 5, ttk.Checkbutton(page, variable=self.show_fps_var))
         self.sensitivity_var = tk.IntVar(value=int(ini.get('mouse_aim_sensitivity', '100') or 100))
         scale = tk.Scale(page, from_=10, to=200, orient='horizontal', variable=self.sensitivity_var, length=240,
                          bg=self.BG, fg=self.TEXT, troughcolor=self.PANEL, highlightthickness=0, activebackground=self.ACCENT)
-        self.labelled(page, 'Mouse camera speed (%)', 5, scale)
+        self.labelled(page, 'Mouse camera speed (%)', 6, scale)
         self.vibration_var = tk.IntVar(value=int(ini.get('vibration', '100') or 100))
         scale = tk.Scale(page, from_=0, to=100, orient='horizontal', variable=self.vibration_var, length=240,
                          bg=self.BG, fg=self.TEXT, troughcolor=self.PANEL, highlightthickness=0, activebackground=self.ACCENT)
-        self.labelled(page, 'Controller vibration (%)', 6, scale)
+        self.labelled(page, 'Controller vibration (%)', 7, scale)
         self.addons_var = tk.BooleanVar(value=bool(self.values['unlock_addons']))
-        self.labelled(page, 'Unlock the add-ons', 7, ttk.Checkbutton(page, variable=self.addons_var))
+        self.labelled(page, 'Unlock the add-ons', 8, ttk.Checkbutton(page, variable=self.addons_var))
         ttk.Label(page, text='The pre-order and diorama add-ons are unlocks of content already in the game.',
-                  style='Muted.TLabel').grid(row=8, column=0, columnspan=2, sticky='w')
+                  style='Muted.TLabel').grid(row=9, column=0, columnspan=2, sticky='w')
         ttk.Label(page, text='The in-game menu (Insert, or R3 + L2 on a controller) has more options.',
-                  style='Muted.TLabel').grid(row=9, column=0, columnspan=2, sticky='w', pady=(16, 0))
-        ttk.Button(page, text='Save', command=self.save).grid(row=10, column=1, sticky='e', pady=16)
+                  style='Muted.TLabel').grid(row=10, column=0, columnspan=2, sticky='w', pady=(16, 0))
+        ttk.Button(page, text='Save', command=self.save).grid(row=11, column=1, sticky='e', pady=16)
 
     def build_controls(self):
         tk, ttk = self.tk, self.ttk
@@ -295,6 +299,7 @@ class Launcher:
         self.collect()
         save_settings(self.values)
         write_ini({'display_mode': dict(DISPLAY_MODES)[self.mode_var.get()], 'vsync': int(self.vsync_var.get()),
+                   'match_refresh': int(self.match_refresh_var.get()),
                    'fps_limit': dict(FPS_LIMITS)[self.fps_var.get()], 'show_fps': int(self.show_fps_var.get()),
                    'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get()})
         self.run_label.configure(text='Settings saved.')

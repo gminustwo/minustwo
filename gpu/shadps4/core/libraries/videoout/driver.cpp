@@ -19,6 +19,7 @@
 #include "mz_settings.h"
 #include "mz_graphics.h"
 #include "mz_present_trace.h"
+#include "mz_vblank.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -80,9 +81,6 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
         swap_thread = std::jthread([&](std::stop_token token) { SwapThread(token); });
     }
     present_thread = std::jthread([&](std::stop_token token) { PresentThread(token); });
-    if (MzPresentTrace::Enabled()) {
-        MzPresentTrace::StartVblankLog();
-    }
 }
 
 void VideoOutDriver::RunPresenter(std::function<void()> work, bool if_idle) {
@@ -703,6 +701,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // minuszero: with a frame limit (uncapped presets) a queued flip is presented as soon as it
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
     bool immediate_flips = frame_limit != 0;
+    // minuszero: on a display at a whole multiple of the vblank rate (120 Hz) the vblank ticks on
+    // its own vblanks (mz_vblank.h): on the timer alone the two clocks drift apart and a frame
+    // lasts 1 or 3 refreshes now and then. Not with a frame limit (flips between ticks).
+    MzVblank::Pacer pacer{vblank_hz};
 
     while (!token.stop_requested()) {
         MzSettings::SyncEngineFps();
@@ -712,6 +714,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             immediate_flips = limit != 0;
             next_flip = std::chrono::steady_clock::now();
             std::printf("VideoOut: frame limit %u FPS\n", limit);
+        }
+        if (!immediate_flips && pacer.Wait()) {
+            timer = Common::AccurateTimer{vblank_period}; // this tick starts now
         }
         timer.Start();
         const auto tick_deadline = std::chrono::steady_clock::now() + vblank_period;

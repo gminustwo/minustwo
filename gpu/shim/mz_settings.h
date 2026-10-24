@@ -48,6 +48,9 @@ struct Values {
     // Graphics (mz_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};
+    /// Borderless and fullscreen on a display whose refresh rate is not a multiple of 60 (144 Hz):
+    /// run it at one that is (120 Hz) while the game runs (window.cpp).
+    std::atomic<bool> match_refresh{true};
     std::atomic<int> monitor{-1};
     std::atomic<bool> hdr{false};
     int startup_monitor = -1;

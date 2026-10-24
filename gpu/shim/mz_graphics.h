@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -87,6 +88,31 @@ constexpr int IndexOf(const std::array<T, N>& values, const T& value, int fallba
 
 inline int ParseDisplayMode(std::string_view text) {
     return IndexOf(DisplayModeKeys, text, Windowed);
+}
+
+/// How many `rate` Hz periods one refresh of a display at `hz` is a whole fraction of: 2 for 120 Hz
+/// and a 60 Hz rate, 1 for 59.94 Hz; 0 when it is none (144 Hz), so frames could not last the same.
+inline int RefreshDivisor(double hz, int rate) {
+    if (rate <= 0 || hz < rate * 0.9) return 0;
+    const double n = double(long(hz / rate + 0.5));
+    return n >= 1 && (hz / n - rate) * (hz / n - rate) <= 0.2 * 0.2 ? int(n) : 0;
+}
+/// "Match refresh rate" (window.cpp): of a display's refresh rates at the desktop size, the one to
+/// switch to when the desktop rate is not a whole multiple of 60 (144 Hz): the highest that is
+/// (120 Hz), not above the desktop rate, exactly 120 before 119.88. -1 when there is no need or none.
+inline int RefreshFor60(const std::vector<float>& rates, float desktop) {
+    if (RefreshDivisor(desktop, 60)) return -1;
+    int best = -1;
+    for (int i = 0; i < int(rates.size()); ++i) {
+        const int n = RefreshDivisor(rates[i], 60);
+        if (!n || rates[i] > desktop + 0.5f) continue;
+        const auto off = [&](int k) { return std::abs(rates[k] - 60.0f * float(RefreshDivisor(rates[k], 60))); };
+        if (best < 0 || n > RefreshDivisor(rates[best], 60) ||
+            (n == RefreshDivisor(rates[best], 60) && off(i) < off(best))) {
+            best = i;
+        }
+    }
+    return best;
 }
 /// The primary display, the default when the launcher saved no monitor choice. -1 keeps it distinct
 /// from an explicit index 0, which names the first display SDL3 lists even when it is not the primary.

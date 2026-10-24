@@ -10,6 +10,7 @@
 #include "mz_overlay.h"
 #include "mz_graphics.h"
 #include "mz_settings.h"
+#include "mz_vblank.h"
 
 namespace Frontend {
 
@@ -113,6 +114,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     if (driver && !std::strcmp(driver, "windows")) {
         window_info.type = WindowSystemType::Windows;
         window_info.render_surface = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+        MzVblank::Start(window_info.render_surface);
     } else
 #endif
     if (driver && !std::strcmp(driver, "x11")) {
@@ -141,22 +143,56 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     LOG_INFO(Frontend, "Window {}x{} on {}", w, h, driver);
 }
 
+// "Match refresh rate": the display's mode at the desktop size with a refresh rate that is a whole
+// multiple of 60 (MzGraphics::RefreshFor60), when the desktop's is not (144 Hz). 60 FPS frames then
+// last the same number of refreshes, locked to them (mz_vblank.h); at 144 Hz they last 2 or 3.
+static const SDL_DisplayMode* RefreshFor60(SDL_DisplayID display, const SDL_DisplayMode* desktop) {
+    if (!desktop) return nullptr;
+    int count = 0;
+    SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display, &count);
+    std::vector<const SDL_DisplayMode*> candidates;
+    std::vector<float> rates;
+    for (int i = 0; modes && i < count; ++i) {
+        if (modes[i]->w == desktop->w && modes[i]->h == desktop->h && modes[i]->format == desktop->format &&
+            modes[i]->pixel_density == desktop->pixel_density) {
+            candidates.push_back(modes[i]);
+            rates.push_back(modes[i]->refresh_rate);
+        }
+    }
+    SDL_free(modes);
+    const int best = MzGraphics::RefreshFor60(rates, desktop->refresh_rate);
+    return best >= 0 ? candidates[best] : nullptr;
+}
+
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
-// mode. Window thread only (SDL). The swapchain follows the size events.
+// mode; borderless and fullscreen at a refresh rate for 60 FPS instead when the desktop's is not
+// one (MzSettings::match_refresh): SDL switches the mode back when the game ends. Borderless then
+// stays up when it loses focus, as without the switch. Window thread only (SDL). The swapchain
+// follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
+    match_refresh = MzSettings::Get().match_refresh;
     if (mode == MzGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
+        std::printf("Window: %s\n", MzGraphics::DisplayModeNames[mode]);
     } else {
-        const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window));
-        const bool exclusive = mode == MzGraphics::Fullscreen && desktop;
-        if (!SDL_SetWindowFullscreenMode(window, exclusive ? desktop : nullptr)) {
+        const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+        const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
+        const SDL_DisplayMode* refresh = match_refresh ? RefreshFor60(display, desktop) : nullptr;
+        const SDL_DisplayMode* exclusive = refresh ? refresh : mode == MzGraphics::Fullscreen ? desktop : nullptr;
+        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, mode == MzGraphics::Borderless ? "0" : "auto");
+        if (!SDL_SetWindowFullscreenMode(window, exclusive)) {
             LOG_WARNING(Frontend, "Fullscreen mode: {}", SDL_GetError());
         }
         SDL_SetWindowFullscreen(window, true);
+        if (refresh) {
+            std::printf("Window: %s at %.2f Hz (the desktop's %.2f Hz is not a multiple of 60)\n",
+                        MzGraphics::DisplayModeNames[mode], refresh->refresh_rate, desktop->refresh_rate);
+        } else {
+            std::printf("Window: %s\n", MzGraphics::DisplayModeNames[mode]);
+        }
     }
     SDL_SyncWindow(window);
-    std::printf("Window: %s\n", MzGraphics::DisplayModeNames[mode]);
 }
 
 WindowSDL::~WindowSDL() {
@@ -197,7 +233,8 @@ bool WindowSDL::PollEvents() {
     if (!text_active) {
         MzOverlay::UpdateTextInput(window);
     }
-    if (const int mode = MzSettings::Get().display_mode; mode != display_mode) {
+    if (const int mode = MzSettings::Get().display_mode;
+        mode != display_mode || MzSettings::Get().match_refresh != match_refresh) {
         ApplyDisplayMode(mode);
     }
     SDL_Event event;

@@ -97,6 +97,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.display_mode = MzGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
         v.vsync = i != 0;
+    } else if (key == "match_refresh") {
+        v.match_refresh = i != 0;
     } else if (key == "fps_limit") {
         v.fps_limit = MzGraphics::ParseFpsLimit(i);
     } else if (key == "async_shaders") {
@@ -355,6 +357,7 @@ void Save() {
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
+    std::fprintf(file, "match_refresh=%d\n", int(v.match_refresh.load()));
     std::fprintf(file, "monitor=%s\nhdr=%d\n", v.monitor < 0 ? "" : std::to_string(v.monitor.load()).c_str(),
                  int(v.hdr.load()));
     std::fprintf(file, "glyph_style=%s\n", GlyphStyles[std::clamp(v.glyph_style.load(), 0, 4)]);

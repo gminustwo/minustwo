@@ -38,7 +38,13 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   keeps the game's 16:9 picture at that height.
 - **Movies without stutter**: the PS4 movie player's clock followed the game's audio pulls, so frames were handed out
   one, then three display refreshes apart (shadPS4 shows the same). It now runs on a steady clock locked to the
-  game's 60 Hz frame requests and waits for the sound only when the sound falls behind.
+  game's 60 Hz frame requests and waits for the sound only when the sound falls behind. Each decoded frame is
+  copied into the game's frame buffers in turn when it is handed out: the game still draws the previous one for a
+  refresh, and the decoder used to overwrite it with a later frame (the picture went back and forth).
+- **Even frame pacing**: *Match refresh rate* (on by default) runs a display whose refresh rate is not a multiple of
+  60 (144 Hz) at 120 Hz in Borderless and Fullscreen, and the emulated 60 Hz vblank ticks on every 2nd vblank of the
+  display itself (`gpu/shim/mz_vblank.cpp`, D3DKMT), so every frame lasts exactly two refreshes. With VRR, or a
+  display whose vblanks do not come steadily, it stays on its timer.
 - **libSceFont** on FreeType: the game renders its subtitles glyph by glyph from the FOT-NewCinemaB font it ships,
   and the PS4 system font set is stood in for by Windows' fonts (`src/runtime_font.c`).
 - Kernel event flags, the offline PSN, matchmaking, Rudp, friend list, error dialog, broadcasting, screenshot and
@@ -151,6 +157,7 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
 - `MZ_PRESENT_TRACE=<file>` samples every frame the game shows into `<file>` and logs its flip, its present and every
   display vblank; `python tools/present_report.py <run.log> <file> <movie.mp4>` matches those frames to the movie's
   own and tells how long each movie frame stayed on screen (with `MZ_AVPLAYER_TRACE=1`, only while the movie plays).
+  `MZ_VBLANK_LOCK=0` keeps the emulated vblank on its timer instead of the display's vblanks.
 - `out/minuszero.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports

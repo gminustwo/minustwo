@@ -307,6 +307,9 @@ void ImageTab() {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
+        CheckRow("Match refresh rate", s.match_refresh,
+                 "Borderless and fullscreen: a display whose refresh rate is not a multiple of 60 (144 Hz) "
+                 "runs at one that is (120 Hz) while the game runs, so every frame lasts the same.");
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
