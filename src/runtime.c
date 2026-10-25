@@ -193,7 +193,15 @@ static const char *canonical_name(const char *name, char out[128]) {
     snprintf(out,128,"%.*s#libkernel",(int)(posix-name),name);
     return out;
 }
+static uintptr_t resolve_import(const char *name, int is_data);
+/* An import's runtime function, through the call tracer when MT_IMPORT_TRACE names it. */
 uintptr_t runtime_resolve(const char *name, int is_data) {
+    uintptr_t function=resolve_import(name,is_data);
+    if (is_data || !function) return function;
+    char canonical[128];
+    return runtime_trace_wrap(runtime_symbol(canonical_name(name,canonical)),function);
+}
+static uintptr_t resolve_import(const char *name, int is_data) {
     if (!(capabilities & 1)) return 0;
     char canonical[128];
     name=canonical_name(name,canonical);
@@ -242,6 +250,8 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (memory) return memory;
     uintptr_t kernel = runtime_kernel_resolve(name);
     if (kernel) return kernel;
+    uintptr_t np = runtime_np_resolve(name); /* MT_ONLINE: before the offline answers */
+    if (np) return np;
     uintptr_t services = runtime_services_resolve(name);
     if (services) return services;
     uintptr_t ajm = runtime_ajm_resolve(name);
