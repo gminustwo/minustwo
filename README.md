@@ -1,7 +1,9 @@
 # Minus Two
 
 **Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
-for Windows 10 and 11. It is a personal project, for playing a copy of the game you own.
+for Windows 10 and 11, Linux and the Steam Deck. It is a personal project, for playing a copy of the game you own.
+
+Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 
 Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
 
@@ -157,10 +159,10 @@ The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
 (`launcher/minustwo_launcher.py`, `owner/name`; the repository must be public, empty turns the check off) and
 offers it when its tag is a higher version than `VERSION` in the same file. To publish a version:
 
-1. Raise `VERSION` (for example to `0.2.0`) and commit.
+1. Raise `VERSION` (for example to `1.1.0`) and commit.
 2. Windows: `bash build.sh` and `bash packaging/windows/package.sh`: `dist/minustwo-windows.zip` and
    `dist/minustwo-windows.zip.sha256`. Linux: the AppImage and its `.sha256` (above).
-3. On GitHub, create a release tagged `v0.2.0` and attach the four files. The launcher refuses a download
+3. On GitHub, create a release tagged `v1.1.0` and attach the four files. The launcher refuses a download
    without the `.sha256` beside it, or one that does not match it.
 
 On Windows, "Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself

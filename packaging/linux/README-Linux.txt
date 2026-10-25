@@ -11,6 +11,9 @@ Requirements
   recent NVIDIA driver).
 
 Steam Deck
+Confirmed: GODZILLA runs well on the Steam Deck at 30 FPS, rendering at 1080p. For steady
+pacing, set the frame rate limit to 30 on the launcher's Display & FPS page.
+
 1. Switch to Desktop Mode (Steam button > Power > Switch to Desktop).
 2. Copy your GODZILLA folder to the Deck or a microSD card, for example ~/Games/CUSA02046.
 3. Download minustwo-x86_64.AppImage, for example to ~/Games. In the file manager, right
