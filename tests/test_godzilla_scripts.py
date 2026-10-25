@@ -147,8 +147,17 @@ class UpdateTest(unittest.TestCase):
         release = {'tag_name': 'v0.2.0', 'html_url': 'https://github.com/o/r/releases/tag/v0.2.0', 'assets': [
             {'name': 'minustwo-windows.zip.sha256', 'browser_download_url': 'https://x/zip.sha256'},
             {'name': 'minustwo-windows.zip', 'browser_download_url': 'https://x/zip'}]}
-        self.assertEqual(self.launcher.release_info(release, 'o/r'),
+        # The Windows package on every system (the default suffix is this system's).
+        self.assertEqual(self.launcher.release_info(release, 'o/r', '-windows.zip'),
                          ('0.2.0', 'https://x/zip', 'https://x/zip.sha256', 'https://github.com/o/r/releases/tag/v0.2.0'))
+        # A release for all three systems: each takes its own package, never another system's zip.
+        release['assets'] = [{'name': name, 'browser_download_url': f'https://x/{name}'} for name in (
+            'minustwo-macos.zip', 'minustwo-macos.zip.sha256', 'minustwo-windows.zip', 'minustwo-windows.zip.sha256',
+            'minustwo-x86_64.AppImage', 'minustwo-x86_64.AppImage.sha256')]
+        for suffix, package in (('-windows.zip', 'minustwo-windows.zip'), ('-macos.zip', 'minustwo-macos.zip'),
+                                ('.appimage', 'minustwo-x86_64.AppImage')):
+            self.assertEqual(self.launcher.release_info(release, 'o/r', suffix)[1:3],
+                             (f'https://x/{package}', f'https://x/{package}.sha256'))
         self.assertEqual(self.launcher.release_info({'tag_name': 'v0.3'}, 'o/r'),
                          ('0.3', None, None, 'https://github.com/o/r/releases/latest'))
 

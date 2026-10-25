@@ -31,6 +31,43 @@ MINGW*|MSYS*)
     echo "Built $PWD/out/minustwo.exe"
     exit 0
     ;;
+Darwin)
+    # macOS: x86-64 (the game's code runs under Rosetta 2 on Apple silicon), with the libraries
+    # packaging/macos/deps.sh builds into out/macos-deps; the GPU library is static as on Windows.
+    # Rosetta 2 runs AVX from macOS 15; the Vulkan driver (KosmicKrisp) needs macOS 26.
+    for tool in clang cmake ninja pkg-config nasm glslangValidator; do
+        command -v "$tool" >/dev/null || { echo "Need $tool: xcode-select --install; brew install cmake ninja pkgconf nasm glslang llvm spirv-tools spirv-llvm-translator" >&2; exit 1; }
+    done
+    bash packaging/macos/deps.sh
+    deps=$PWD/out/macos-deps
+    export PKG_CONFIG_LIBDIR=$deps/lib/pkgconfig
+    unset PKG_CONFIG_PATH
+    if [[ ! -f gpu/third_party/fsr-vulkan/CMakeLists.txt || ! -f gpu/third_party/imgui/imgui.h ||
+          ! -f gpu/third_party/xbyak/xbyak/xbyak.h ]]; then
+        git submodule update --init --recursive
+    fi
+    for patch in gpu/patches/fsr-vulkan/*.patch; do
+        if ! git -C gpu/third_party/fsr-vulkan apply --reverse --check "$PWD/$patch" 2>/dev/null; then
+            git -C gpu/third_party/fsr-vulkan apply "$PWD/$patch"
+        fi
+    done
+    cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_PGO=off -DMT_LTO="${MT_LTO:-OFF}" \
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_PREFIX_PATH="$deps" -DCMAKE_FIND_FRAMEWORK=LAST \
+        -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" -DMT_MACOS_DEPS="$deps" \
+        -DPKG_CONFIG_EXECUTABLE="$(command -v pkg-config)" -DGLSLANG_COMPILER="$(command -v glslangValidator)" >/dev/null
+    echo "GPU library and loader: LTO ${MT_LTO:-OFF}"
+    if ! ninja -C out/gpu minustwo minustwo-gpu-capabilities > out/gpu-build.log 2>&1; then
+        grep -v '^\[' out/gpu-build.log | tail -40 >&2
+        echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
+    fi
+    cp out/gpu/minustwo out/gpu/minustwo-gpu-capabilities out/
+    # The Vulkan loader finds KosmicKrisp through the manifest beside the executable (vk_platform.cpp).
+    sed 's#"library_path"[^,]*#"library_path": "macos-deps/lib/libvulkan_kosmickrisp.dylib"#' \
+        "$deps/share/vulkan/icd.d/kosmickrisp_mesa_icd.json" > out/kosmickrisp_mesa_icd.json
+    echo "Built $PWD/out/minustwo"
+    exit 0
+    ;;
 esac
 # MT_DEPS: a folder with what the distribution lacks (packaging/linux/ci-deps.sh): SDL3, Vulkan 1.4
 # headers, VMA. Its headers come before the system's.
@@ -104,7 +141,7 @@ fi
 "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/cpu_check.c src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/minustwo
 echo "Built $PWD/out/minustwo"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
-"$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tools/gpu_capabilities.c "${libraries[@]}" -o out/minustwo-gpu-capabilities
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 -Isrc tools/gpu_capabilities.c "${libraries[@]}" -o out/minustwo-gpu-capabilities
 if [[ ${1:-} == --test ]]; then
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_pad.c "${libraries[@]}" -o out/pad-test
     out/pad-test

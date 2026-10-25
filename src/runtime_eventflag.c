@@ -45,7 +45,7 @@ static Flag *find(uint64_t id) {
 static void host_check(int e) {
     if (e) { fprintf(stderr,"STOP: event flag host error %d\n",e); exit(21); }
 }
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 #define WAIT_CLOCK CLOCK_REALTIME
 #else
 #define WAIT_CLOCK CLOCK_MONOTONIC

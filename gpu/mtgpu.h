@@ -18,6 +18,11 @@ typedef struct {
 void mtgpu_register_kernel(void);
 /* Creates window, Vulkan device, presenter and GPU command processor. */
 int mtgpu_init(const MtGpuConfig *config);
+/* macOS: windows and their events belong to the main thread there, so mtgpu_init creates the
+ * window on the calling (main) thread, and that thread runs its event loop here once the game has
+ * started on another; ends the process when the window closes. Elsewhere a thread of the GPU
+ * library runs the loop and this is not used. */
+void mtgpu_window_loop(void);
 /* Function for an imported NID ("NID#lib#mod"), or 0 when the GPU library does not provide it. */
 uintptr_t mtgpu_resolve(const char *scoped_nid);
 /* Called first by the loader's SIGSEGV handler: 1 when a GPU page-tracking fault was handled. */

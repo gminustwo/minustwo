@@ -73,6 +73,11 @@ struct PageManager::Impl {
         if (is_gpu_thread) {
             MtStats::gpu_signal_faults.fetch_add(1, std::memory_order_relaxed);
         }
+        // minustwo: a jump into data is the guest's own fault, not page tracking: handled as a
+        // read, the instruction would fault again forever (a hang instead of a fault report).
+        if (Common::IsExecuteError(context)) {
+            return false;
+        }
         if (Common::IsWriteError(context)) {
             MtStats::Timer timer{MtStats::t_write_faults};
             return rasterizer->OnWriteFault(addr, is_gpu_thread);

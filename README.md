@@ -1,7 +1,8 @@
 # Minus Two
 
 **Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
-for Windows 10 and 11, Linux and the Steam Deck. It is a personal project, for playing a copy of the game you own.
+for Windows 10 and 11, Linux and the Steam Deck, and macOS on Apple silicon (experimental:
+[packaging/macos/README.md](packaging/macos/README.md)). It is a personal project, for playing a copy of the game you own.
 
 Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 
@@ -153,6 +154,11 @@ bash packaging/linux/build.sh       # dist/minustwo-x86_64.AppImage and its .sha
 `./run.sh` starts a Linux build without the AppImage; `./run.sh --software` uses Mesa's software Vulkan
 (lavapipe), slow but enough to see the game boot on a machine without a usable GPU.
 
+macOS (Apple silicon, macOS 26 or newer, Rosetta 2): `brew install cmake ninja pkgconf nasm glslang llvm
+spirv-tools spirv-llvm-translator`, then `bash build.sh`; the first build also builds the x86-64 libraries and the
+KosmicKrisp Vulkan driver into `out/macos-deps`. Details and the current status are in
+[packaging/macos/README.md](packaging/macos/README.md).
+
 ### Releases and updates
 
 The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
@@ -160,15 +166,22 @@ The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
 offers it when its tag is a higher version than `VERSION` in the same file. To publish a version:
 
 1. Raise `VERSION` (for example to `1.1.0`) and commit.
-2. Windows: `bash build.sh` and `bash packaging/windows/package.sh`: `dist/minustwo-windows.zip` and
-   `dist/minustwo-windows.zip.sha256`. Linux: the AppImage and its `.sha256` (above).
-3. On GitHub, create a release tagged `v1.1.0` and attach the four files. The launcher refuses a download
-   without the `.sha256` beside it, or one that does not match it.
+2. Build each package on its own system, since none cross-builds:
+   - Windows: `bash build.sh` and `bash packaging/windows/package.sh` give `dist/minustwo-windows.zip` and
+     `dist/minustwo-windows.zip.sha256`.
+   - Linux: the AppImage and its `.sha256` (above).
+   - macOS: `bash build.sh` and `bash packaging/macos/package.sh` give `dist/minustwo-macos.zip` and
+     `dist/minustwo-macos.zip.sha256`.
+3. On GitHub, create a release tagged `v1.1.0` and attach the six files. Each launcher takes its own system's
+   package by name (`PACKAGE_SUFFIX`). It refuses a download without the `.sha256` beside it, or one that does
+   not match it.
 
 On Windows, "Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself
 over the installation once the launcher has closed, never the player's files (`USER_FILES`: `user`, settings,
 mods), then opens it. In the AppImage, it downloads the new AppImage beside the running one, checks it and
-renames it over it (the player's files are in `~/.local/share/minustwo`), then starts it.
+renames it over it (the player's files are in `~/.local/share/minustwo`), then starts it. On macOS, "Update" opens
+the release page; the new apps replace the old ones by hand (the player's files are in
+`~/Library/Application Support/MinusTwo`).
 
 ## Tests
 

@@ -4,7 +4,9 @@
  * keeps FS. Priorities/affinity are recorded, not enforced by a PS4 scheduler.
  * Windows: GS is the TEB and cannot be moved. The guest TCB lives in a TLS slot of the TEB
  * instead, and the loader rewrites the load to `mov rax, gs:[0x1480+8*slot]` (TlsSlots),
- * the same 9-byte instruction with another displacement. */
+ * the same 9-byte instruction with another displacement.
+ * macOS: GS points at the thread's pthread TSD slots and cannot be moved either. As on Windows,
+ * the guest TCB lives in a slot (a pthread key) and the load becomes `mov rax, gs:[8*key]`. */
 #define _GNU_SOURCE
 #include "runtime.h"
 #include <stdio.h>
@@ -19,6 +21,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
+#elif defined(__APPLE__)
+#include <sys/mman.h>
+#include <pthread/qos.h>
 #else
 #include <dirent.h>
 #include <sys/resource.h>
@@ -87,6 +92,43 @@ static void set_gs(void *base) {
     if (!TlsSetValue(tls_slot,base)) { fprintf(stderr,"STOP: TlsSetValue failed (%lu)\n",GetLastError()); exit(21); }
 }
 #define tls_block_alloc(size) _aligned_malloc(size,64)
+#elif defined(__APPLE__)
+/* pthread_setspecific(key) stores to tsd[key], and GS is &tsd[0] on x86-64 macOS (and under
+ * Rosetta 2): `mov rax, gs:[8*key]` reads the slot. */
+static pthread_key_t tcb_key;
+static pthread_once_t tcb_key_once=PTHREAD_ONCE_INIT;
+static void create_tcb_key(void) {
+    if (pthread_key_create(&tcb_key,NULL) || tcb_key>=4096/8) { fputs("STOP: no pthread key for the guest TCB\n",stderr); exit(21); }
+}
+uint32_t runtime_thread_tcb_offset(void) {
+    pthread_once(&tcb_key_once,create_tcb_key);
+    return 8*(uint32_t)tcb_key;
+}
+static void set_gs(void *base) {
+    runtime_thread_tcb_offset();
+    if (pthread_setspecific(tcb_key,base)) { fputs("STOP: pthread_setspecific failed for the guest TCB\n",stderr); exit(21); }
+}
+/* Thread records and TLS blocks (never freed) stay below 1 TiB as on Linux and Windows, where the
+ * heap is low: the guest may pack their addresses. macOS' heap is far above, so they come from
+ * low memory (runtime_low_map) here, zeroed. */
+static void *low_calloc(size_t size) {
+    static pthread_mutex_t low_lock=PTHREAD_MUTEX_INITIALIZER;
+    static unsigned char *chunk;
+    static size_t left;
+    size=(size+63)&~(size_t)63;
+    pthread_mutex_lock(&low_lock);
+    if (size>left) {
+        size_t bytes=size>(1u<<20) ? size : (1u<<20);
+        chunk=runtime_low_map(bytes,PROT_READ|PROT_WRITE);
+        left=chunk ? bytes : 0;
+    }
+    void *p=NULL;
+    if (size<=left) { p=chunk; chunk+=size; left-=size; }
+    pthread_mutex_unlock(&low_lock);
+    return p;
+}
+#define tls_block_alloc(size) low_calloc(size)
+#define thread_record_alloc() low_calloc(sizeof(GuestThread))
 #else
 static void set_gs(void *base) {
     if (syscall(SYS_arch_prctl,ARCH_SET_GS,(unsigned long)base)) { perror("STOP: arch_prctl(ARCH_SET_GS)"); exit(21); }
@@ -110,8 +152,11 @@ static void attach(GuestThread *t) {
     set_gs(tcb);
     current=t;
 }
+#ifndef thread_record_alloc
+#define thread_record_alloc() calloc(1,sizeof(GuestThread))
+#endif
 static GuestThread *new_thread(void) {
-    GuestThread *t=calloc(1,sizeof(*t));
+    GuestThread *t=thread_record_alloc();
     if (!t) return NULL;
     t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=0x7f};
     return t;
@@ -249,7 +294,11 @@ static ABI int32_t attr_set_guard(ThreadAttr **slot,uint64_t size) {
 static void set_host_name(const char *name) {
     char host[16]={0};
     memcpy(host,name,strnlen(name,sizeof(host)-1));
+#ifdef __APPLE__
+    pthread_setname_np(host); /* the calling thread only */
+#else
     pthread_setname_np(pthread_self(),host);
+#endif
 #ifdef _WIN32
     /* winpthreads only names the thread for an attached debugger; the CPU report reads this. */
     wchar_t wide[32];
@@ -269,6 +318,11 @@ static void set_host_priority(const char *name,int guest_prio) {
 #ifdef _WIN32
     if (!SetThreadPriority(GetCurrentThread(),lower ? THREAD_PRIORITY_BELOW_NORMAL : THREAD_PRIORITY_ABOVE_NORMAL))
         printf("Runtime: cannot change the priority of '%s' (%lu)\n",name,GetLastError());
+#elif defined(__APPLE__)
+    /* Quality of service instead of priorities. Utility and below would move the workers to the
+     * efficiency cores, so they keep the default and the high-priority threads go above it. */
+    if (!lower && pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE,0))
+        printf("Runtime: cannot change the priority of '%s' (%d)\n",name,errno);
 #else
     /* Raising needs CAP_SYS_NICE; without it the thread keeps the normal priority. */
     if (setpriority(PRIO_PROCESS,(id_t)syscall(SYS_gettid),lower ? 5 : -5) && lower)
@@ -306,6 +360,10 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     uint64_t stack=t->attr.stack<MIN_STACK ? MIN_STACK : t->attr.stack;
     /* Stacks below 1 TiB as on PS4; guest code may pack stack addresses. */
     size_t stack_bytes=(size_t)stack+STACK_MARGIN;
+#ifdef __APPLE__
+    /* macOS rejects stack sizes that are not whole pages (the thread would get 512 KiB). */
+    stack_bytes=(stack_bytes+16383)&~(size_t)16383;
+#endif
 #ifdef _WIN32
     /* Windows places the stack itself (low: no high-entropy ASLR) and commits all of it:
      * guest code has no stack probes and would step over the guard page. */
@@ -437,6 +495,16 @@ static int by_cpu_desc(const void *a,const void *b) {
     double x=((const ThreadCpu *)a)->ms, y=((const ThreadCpu *)b)->ms;
     return (x<y)-(x>y);
 }
+#ifdef __APPLE__
+typedef struct { ThreadCpu *out; size_t max, count; } ThreadList;
+static void add_thread_cpu(void *context,const char *name,double ms) {
+    ThreadList *list=context;
+    if (list->count==list->max) return;
+    ThreadCpu *t=&list->out[list->count++];
+    t->ms=ms;
+    snprintf(t->name,sizeof(t->name),"%s",name);
+}
+#endif
 /* Live threads of this process with their CPU time; threads that already exited are not listed. */
 static size_t live_thread_cpu(ThreadCpu *out,size_t max) {
     size_t n=0;
@@ -465,6 +533,10 @@ static size_t live_thread_cpu(ThreadCpu *out,size_t max) {
         CloseHandle(h);
     }
     CloseHandle(snap);
+#elif defined(__APPLE__)
+    ThreadList list={out,max,0};
+    compat_each_thread(add_thread_cpu,&list);
+    n=list.count;
 #else
     DIR *dir=opendir("/proc/self/task");
     if (!dir) return 0;
@@ -500,6 +572,8 @@ static void cpu_report(void) {
 #ifdef _WIN32
     DWORD_PTR process_mask=0, system_mask=0;
     if (GetProcessAffinityMask(GetCurrentProcess(),&process_mask,&system_mask)) hw=__builtin_popcountll(process_mask);
+#elif defined(__APPLE__)
+    hw=sysconf(_SC_NPROCESSORS_ONLN);
 #else
     cpu_set_t set; CPU_ZERO(&set);
     if (!sched_getaffinity(0,sizeof(set),&set)) hw=CPU_COUNT(&set);

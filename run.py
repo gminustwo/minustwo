@@ -158,6 +158,10 @@ def main():
     if not env.get('MT_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
         env['MT_FSR411_DIR'] = str(data / 'fsr4_411')
 
+    if sys.platform == 'darwin':
+        # Rosetta 2 reports the AVX, F16C, BMI and MOVBE it runs only when asked (minustwo starts
+        # itself again with this otherwise).
+        env.setdefault('ROSETTA_ADVERTISE_AVX', '1')
     probe = Path(env['MT_PROBE']) if env.get('MT_PROBE') else find_executable('minustwo' + EXE_SUFFIX)
     if not probe or not probe.is_file():
         fail(f'minustwo{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
@@ -168,8 +172,14 @@ def main():
             env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
     # Instruction sets this CPU lacks (MOVBE, BMI1, LZCNT): the ISA rewrite covers them; exit 20
     # is a set nothing covers.
-    features = subprocess.run([str(probe), '--cpu-features'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              text=True, creationflags=no_console())
+    try:
+        features = subprocess.run([str(probe), '--cpu-features'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  text=True, creationflags=no_console())
+    except OSError as error:
+        # macOS on Apple silicon: minustwo is x86-64 (the game's own code) and runs under Rosetta 2.
+        if sys.platform == 'darwin' and error.errno == 86:  # EBADARCH
+            fail('Rosetta 2 is not installed; install it with: softwareupdate --install-rosetta --agree-to-license')
+        raise
     if features.returncode == 20:
         print(features.stdout, end='', flush=True)
         sys.exit(20)

@@ -43,6 +43,17 @@ asm(".section .rdata,\"dr\"\n"
     ".global mt_font_ttf_end\n"
     "mt_font_ttf_end:\n"
     ".text\n");
+#elif defined(__APPLE__)
+asm(".section __TEXT,__const\n"
+    ".p2align 4\n"
+    ".private_extern _mt_font_ttf\n"
+    ".globl _mt_font_ttf\n"
+    "_mt_font_ttf:\n"
+    ".incbin \"" MT_FONT_PATH "\"\n"
+    ".private_extern _mt_font_ttf_end\n"
+    ".globl _mt_font_ttf_end\n"
+    "_mt_font_ttf_end:\n"
+    ".text\n");
 #else
 asm(".section .rodata\n"
     ".balign 16\n"
@@ -598,7 +609,11 @@ void Menu() {
     ImGui::SameLine(0.0f, 14.0f * u);
     ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, baseline));
     DisabledText("Minus Two · port menu");
+#ifdef __APPLE__
+    const char* keys = PadText("Cmd+, / R3+L2", "Cmd+, / RS+LT", "Cmd+, / RS+ZL");
+#else
     const char* keys = PadText("Insert / R3+L2", "Insert / RS+LT", "Insert / RS+ZL");
+#endif
     ImGui::SameLine();
     ImGui::SetCursorScreenPos(ImVec2(right - ImGui::CalcTextSize(keys).x, baseline));
     ImGui::TextDisabled("%s", keys);
@@ -1636,9 +1651,15 @@ bool HandleEvent(const SDL_Event& event) {
             SetTrophyView(true); // the trophy list
             return true;
         }
-        if (down && !event.key.repeat &&
-            (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
-            SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
+#ifdef __APPLE__
+        // minustwo (macOS): Mac keyboards have no Insert key; Command-comma opens settings there.
+        const bool menu_key = event.key.key == SDLK_INSERT ||
+                              (event.key.key == SDLK_COMMA && (event.key.mod & SDL_KMOD_GUI));
+#else
+        const bool menu_key = event.key.key == SDLK_INSERT;
+#endif
+        if (down && !event.key.repeat && (menu_key || (is_open && event.key.key == SDLK_ESCAPE))) {
+            SetOpen(menu_key ? !is_open : false);
             return true;
         }
         if (!is_open) {

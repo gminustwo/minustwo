@@ -15,4 +15,7 @@ void IncrementRip(void* ctx, u64 length);
 
 bool IsWriteError(void* ctx);
 
+/// minustwo: the fault was an instruction fetch (code run from a page without execute access).
+bool IsExecuteError(void* ctx);
+
 } // namespace Common

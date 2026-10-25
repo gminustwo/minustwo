@@ -182,7 +182,8 @@ s32 PS4_SYSV_ABI sceKernelUsleep(u32 microseconds) {
 } // namespace Libraries::Kernel
 
 namespace {
-// SDL video must be driven from one thread: the window lives on its own host thread.
+// SDL video must be driven from one thread: the window lives on its own host thread (macOS: the
+// main thread, mtgpu_window_loop).
 std::thread g_window_thread;
 std::mutex g_window_mutex;
 std::condition_variable g_window_cv;
@@ -233,6 +234,9 @@ extern "C" int mtgpu_init(const MtGpuConfig* config) {
     // The window carries the project name; the dump's own title stays in ElfInfo (above).
     const std::string title = "MinusTwo";
     const s32 width = config->width, height = config->height;
+#ifdef __APPLE__
+    g_window = new Frontend::WindowSDL(width, height, title.c_str());
+#else
     g_window_thread = std::thread([title, width, height] {
         Common::SetCurrentThreadName("minustwo:window");
         auto* window = new Frontend::WindowSDL(width, height, title.c_str());
@@ -242,24 +246,29 @@ extern "C" int mtgpu_init(const MtGpuConfig* config) {
             g_window_ready = true;
         }
         g_window_cv.notify_all();
-        while (window->PollEvents()) {
-            SDL_Delay(2);
-        }
-        LOG_INFO(Frontend, "Window closed by user");
-        runtime_report();
-        std::fflush(stdout);
-        std::_Exit(0);
+        mtgpu_window_loop();
     });
     g_window_thread.detach();
     {
         std::unique_lock lock{g_window_mutex};
         g_window_cv.wait(lock, [] { return g_window_ready; });
     }
+#endif
     Core::Loader::SymbolsResolver resolver;
     // GnmDriver creates the presenter that the VideoOut present thread uses.
     Libraries::GnmDriver::RegisterLib(&resolver);
     Libraries::VideoOut::RegisterLib(&resolver);
     return 0;
+}
+
+extern "C" void mtgpu_window_loop(void) {
+    while (g_window->PollEvents()) {
+        SDL_Delay(2);
+    }
+    LOG_INFO(Frontend, "Window closed by user");
+    runtime_report();
+    std::fflush(stdout);
+    std::_Exit(0);
 }
 
 namespace Libraries::Kernel { void StartKernelService(); }

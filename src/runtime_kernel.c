@@ -12,7 +12,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/time.h>
-#ifndef _WIN32
+#if defined(__APPLE__)
+#include <sys/resource.h>
+#elif !defined(_WIN32)
 #include <sys/random.h>
 #include <sys/resource.h>
 #endif
@@ -213,7 +215,7 @@ typedef struct { GuestTimeval utime, stime; int64_t rest[14]; } GuestRusage;
 static ABI int32_t guest_getrusage(int who,GuestRusage *out) {
     if (!out || (who!=0 && who!=1)) return fail_posix(EINVAL);
     memset(out,0,sizeof(*out));
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
     int64_t user=0,kernel=0;
     compat_cpu_times(who,&user,&kernel);
     out->utime=(GuestTimeval){user/1000000,user%1000000};
@@ -233,6 +235,8 @@ static ABI int32_t guest_sysctl(const int32_t *name,uint32_t namelen,void *old,u
         if (!old || !oldlen) return fail_posix(EINVAL);
 #ifdef _WIN32
         if (compat_random(old,(size_t)*oldlen)) return fail_posix(EIO);
+#elif defined(__APPLE__)
+        arc4random_buf(old,(size_t)*oldlen);
 #else
         if (getrandom(old,(size_t)*oldlen,0)<0) return fail_posix(errno);
 #endif

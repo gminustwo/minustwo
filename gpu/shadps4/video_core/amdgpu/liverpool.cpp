@@ -6,6 +6,9 @@
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
 #include <time.h>
 #include "mt_copy.h"
 #include "mt_toggles.h"
@@ -104,7 +107,10 @@ void Liverpool::ProcessCommands() {
 
 void Liverpool::Process(std::stop_token stoken) {
     Common::SetCurrentThreadName("shadPS4:GpuCommandProcessor");
-#ifndef _WIN32
+#ifdef __APPLE__
+    // minustwo (macOS): no per-thread clock id; the driver reads the thread's times by its port.
+    MtStats::gpu_thread_id.store(pthread_mach_thread_np(pthread_self()));
+#elif !defined(_WIN32)
     if (clockid_t clock; pthread_getcpuclockid(pthread_self(), &clock) == 0) {
         MtStats::gpu_thread_clock.store(static_cast<int>(clock));
     }
@@ -112,7 +118,7 @@ void Liverpool::Process(std::stop_token stoken) {
     MtStats::gpu_thread_id.store(GetCurrentThreadId());
 #endif
     gpu_id = std::this_thread::get_id();
-#if defined(__linux__) || defined(_WIN32)
+#if defined(__linux__) || defined(_WIN32) || defined(__APPLE__)
     gpu_tid = gettid();
 #endif
 
@@ -1338,7 +1344,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     }
     if (seq != NoSeq && MtStats::enabled) {
         MtStats::submissions.fetch_add(1, std::memory_order_relaxed);
-#ifndef _WIN32 // minustwo: per-thread rusage statistics are Linux-only
+#if !defined(_WIN32) && !defined(__APPLE__) // minustwo: per-thread rusage statistics are Linux-only
         if (rusage usage{}; getrusage(RUSAGE_THREAD, &usage) == 0) {
             MtStats::gpu_user_us.store(u64(usage.ru_utime.tv_sec) * 1000000 + usage.ru_utime.tv_usec,
                                        std::memory_order_relaxed);

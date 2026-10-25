@@ -220,8 +220,8 @@ static ABI int32_t open_file(uint64_t library, const char *path, uint32_t mode, 
     if (!result) printf("Runtime: font %llx opened from %s\n",(unsigned long long)*out,path);
     return result;
 }
-/* A system font set: MT_SYSTEM_FONT, else Windows' UI font for Latin text followed by its
- * Japanese fonts (Japanese menus, katakana names). */
+/* A system font set: MT_SYSTEM_FONT, else Windows' (or macOS') UI font for Latin text followed by
+ * its Japanese fonts (Japanese menus, katakana names). */
 static ABI int32_t open_set(uint64_t library, uint32_t type, uint32_t mode, const unsigned char *detail, uint64_t *out) {
     (void)mode; (void)detail;
     if (!library_valid(library)) return ERR_INVALID_LIBRARY;
@@ -236,6 +236,12 @@ static ABI int32_t open_set(uint64_t library, uint32_t type, uint32_t mode, cons
                  windir,windir,windir,windir,windir);
         chosen=paths;
     } else snprintf(paths,sizeof(paths),"%s",chosen);
+#elif defined(__APPLE__)
+    /* macOS: Helvetica Neue for Latin text, then Hiragino Sans (Japanese) and Arial Unicode. */
+    if (!chosen || !*chosen)
+        chosen="/System/Library/Fonts/HelveticaNeue.ttc;/System/Library/Fonts/\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W3.ttc;"
+               "/System/Library/Fonts/Supplemental/Arial Unicode.ttf;/System/Library/Fonts/Helvetica.ttc";
+    snprintf(paths,sizeof(paths),"%s",chosen);
 #else
     if (!chosen || !*chosen)
         chosen="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf;/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc;"

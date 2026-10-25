@@ -1,4 +1,4 @@
-// minustwo: SDL3 window for the Vulkan swapchain (X11 or Wayland).
+// minustwo: SDL3 window for the Vulkan swapchain (X11, Wayland, Win32 or a Metal layer on macOS).
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -97,7 +97,12 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height_);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_MAXIMIZED_BOOLEAN, too_large);
+#ifdef __APPLE__
+    // The renderer makes its own Metal surface on the window's layer (vk_platform.cpp).
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_METAL_BOOLEAN, true);
+#else
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true);
+#endif
     base_title = title;
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
@@ -117,6 +122,13 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
         window_info.type = WindowSystemType::Windows;
         window_info.render_surface = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
         MtVblank::Start(window_info.render_surface);
+    } else
+#endif
+#ifdef __APPLE__
+    if (driver && !std::strcmp(driver, "cocoa")) {
+        // Vulkan on Metal presents to a CAMetalLayer (VK_EXT_metal_surface), as shadPS4 does on macOS.
+        window_info.type = WindowSystemType::Metal;
+        window_info.render_surface = SDL_Metal_GetLayer(SDL_Metal_CreateView(window));
     } else
 #endif
     if (driver && !std::strcmp(driver, "x11")) {

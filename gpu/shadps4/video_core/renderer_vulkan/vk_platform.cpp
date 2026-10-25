@@ -205,6 +205,11 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
+#ifdef __APPLE__
+    // minustwo (macOS): the loader lists portability drivers (Vulkan on Metal) only when asked to.
+    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
+
     // Sanitize extension list
     std::erase_if(extensions, [&](const char* extension) -> bool {
         const auto it =
@@ -261,14 +266,24 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
 
 #if defined(__APPLE__)
     // Initialize the environment with the path to the included ICD, so that the loader will
-    // find it.
+    // find it. minustwo: the manifest itself (the executable's folder holds other JSON files),
+    // beside the executable or in the app bundle's resources, unless the user chose a driver.
     static const auto icd_path = [] {
         char path[PATH_MAX];
         u32 length = PATH_MAX;
         _NSGetExecutablePath(path, &length);
-        return std::filesystem::path(path).parent_path();
+        const auto folder = std::filesystem::path(path).parent_path();
+        for (const auto& candidate : {folder / "kosmickrisp_mesa_icd.json",
+                                      folder / "../Resources/vulkan/icd.d/kosmickrisp_mesa_icd.json"}) {
+            if (std::filesystem::is_regular_file(candidate)) {
+                return candidate;
+            }
+        }
+        return std::filesystem::path{};
     }();
-    setenv("VK_DRIVER_FILES", icd_path.c_str(), true);
+    if (!icd_path.empty() && !getenv("VK_DRIVER_FILES") && !getenv("VK_ICD_FILENAMES")) {
+        setenv("VK_DRIVER_FILES", icd_path.c_str(), true);
+    }
 #endif
 
     static vk::detail::DynamicLoader dl;
@@ -406,6 +421,14 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
 
     vk::StructureChain<vk::InstanceCreateInfo, vk::LayerSettingsCreateInfoEXT> instance_ci_chain = {
         vk::InstanceCreateInfo{
+#ifdef __APPLE__
+            // minustwo (macOS): portability drivers too (GetInstanceExtensions).
+            .flags = std::ranges::find_if(extensions, [](const char* name) {
+                         return std::strcmp(name, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0;
+                     }) != extensions.end()
+                         ? vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR
+                         : vk::InstanceCreateFlags{},
+#endif
             .pApplicationInfo = &application_info,
             .enabledLayerCount = static_cast<u32>(layers.size()),
             .ppEnabledLayerNames = layers.data(),

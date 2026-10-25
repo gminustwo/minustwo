@@ -309,6 +309,11 @@ bool Instance::CreateDevice() {
         return false;
     };
 
+#ifdef __APPLE__
+    // minustwo (macOS): a device that reports the portability subset (Vulkan on Metal) must have
+    // it enabled.
+    add_extension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+#endif
     // Required
     ASSERT_MSG(add_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
                "Required Vulkan extension unavailable: {}", VK_KHR_SWAPCHAIN_EXTENSION_NAME);

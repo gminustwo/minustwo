@@ -1,5 +1,6 @@
 /* Independent backend smoke test: command submission and readback, no game graphics. */
 #include <vulkan/vulkan.h>
+#include "mt_vulkan_driver.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 int vulkan_smoke(void) {
     VkApplicationInfo app = {.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName="MinusTwo native probe", .apiVersion=VK_API_VERSION_1_0};
     VkInstanceCreateInfo ici = {.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo=&app};
+    mt_vulkan_portability(&ici);
     VkInstance instance; CHECK(vkCreateInstance(&ici, NULL, &instance));
     uint32_t count = 0; CHECK(vkEnumeratePhysicalDevices(instance, &count, NULL));
     if (!count) { fprintf(stderr, "Vulkan: no physical devices\n"); vkDestroyInstance(instance, NULL); return 1; }

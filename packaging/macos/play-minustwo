@@ -1,0 +1,23 @@
+#!/bin/sh
+# Play MinusTwo.app (packaging/macos/package.sh): starts the game with the saved settings and no
+# launcher window, as Play MinusTwo.exe does on Windows: MinusTwo --play, from the MinusTwo.app beside
+# this app, else the one in Applications. A start that fails (no game folder chosen yet, a missing
+# file) is shown in an alert: opened from the Finder, nobody would see the message otherwise.
+here=$(cd -- "$(dirname -- "$0")/../../.." && pwd)
+for app in "$here/MinusTwo.app" /Applications/MinusTwo.app "$HOME/Applications/MinusTwo.app"; do
+    if [ -x "$app/Contents/MacOS/MinusTwo" ]; then
+        errors=$(mktemp -t play-minustwo)
+        "$app/Contents/MacOS/MinusTwo" --play 2>"$errors"
+        status=$?
+        if [ "$status" -ne 0 ] && [ -s "$errors" ]; then
+            message=$(tail -n 3 "$errors" | tr '"\\' "'/")
+            osascript -e "display alert \"Play MinusTwo\" message \"$message
+
+Open MinusTwo to choose the game folder or to read the game log.\"" >/dev/null 2>&1
+        fi
+        rm -f "$errors"
+        exit "$status"
+    fi
+done
+osascript -e 'display alert "Play MinusTwo" message "MinusTwo.app was not found beside Play MinusTwo or in Applications."' >/dev/null 2>&1
+exit 1

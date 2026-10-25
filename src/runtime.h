@@ -2,6 +2,9 @@
 #define MT_RUNTIME_H
 #include <stdint.h>
 #include <stddef.h>
+#ifdef __APPLE__
+#include "compat_mac.h"
+#endif
 #ifdef _WIN32
 #include "compat_win.h"
 /* No signals on Windows: the exception handler resumes the thread in mt_longjmp
@@ -83,7 +86,8 @@ void runtime_thread_keys_cleanup(void);
 /* Guest-visible errno values are FreeBSD's. */
 int32_t runtime_guest_errno(int host_errno);
 void *runtime_low_map(size_t size, int prot);
-/* Windows: reserves the PS4 user address range as a placeholder (no-op elsewhere). */
+/* Windows and macOS: reserves the PS4 user address range so host allocations stay out of it
+ * (no-op on Linux, where the host maps from the top of the address space). */
 void runtime_memory_reserve(void);
 uintptr_t runtime_ajm_resolve(const char *name);
 void runtime_ajm_report(void);

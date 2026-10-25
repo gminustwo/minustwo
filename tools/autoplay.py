@@ -42,7 +42,12 @@ def kill_tree(process):
     if sys.platform == 'win32':
         subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
     else:
-        process.kill()
+        # run.py and the game it started share the process group of their own session.
+        import signal
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def sheet(frames, out):
@@ -101,7 +106,8 @@ def main():
     events = [parse_press(x) for x in a.press] + [parse_hold(x) for x in a.hold]
     log = open(a.out / 'run.log', 'wb')
     process = subprocess.Popen([sys.executable, str(PORT / 'run.py')], cwd=PORT, env=env, stdout=log,
-                               stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                               stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                               start_new_session=sys.platform != 'win32')
     start = time.monotonic()
     next_dump = a.every
     current = None

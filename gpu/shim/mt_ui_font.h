@@ -44,7 +44,9 @@ inline ChineseFontFile FindChineseFont() {
              "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
              "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
              "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-             "/System/Library/Fonts/PingFang.ttc"}) {
+             "/System/Library/Fonts/PingFang.ttc",
+             "/System/Library/Fonts/Hiragino Sans GB.ttc",
+             "/System/Library/Fonts/STHeiti Light.ttc"}) {
         std::filesystem::path path(name);
         if (UsableFont(path)) {
             // Noto's collection orders Japanese, Korean, Simplified Chinese, Traditional, HK.

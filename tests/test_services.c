@@ -98,11 +98,19 @@ int main(void) {
     assert(msg_result(result)==DIALOG_NOT_FINISHED);
     assert(msg_close()==0 && msg_status()==DIALOG_FINISHED);
     /* MT_AUTO_DIALOGS answers with the focused button (No when No has the focus). */
+#ifdef _WIN32
     _putenv("MT_AUTO_DIALOGS=1");
+#else
+    setenv("MT_AUTO_DIALOGS","1",1);
+#endif
     user.type=7;
     assert(msg_open(param)==0 && msg_status()==DIALOG_FINISHED && msg_result(result)==0);
     memcpy(&value,result+8,4); assert(value==2);
+#ifdef _WIN32
     _putenv("MT_AUTO_DIALOGS=");
+#else
+    unsetenv("MT_AUTO_DIALOGS");
+#endif
     memset(param+64,0,8);
     param[56]=2;
     assert(msg_open(param)==0 && msg_status()==DIALOG_RUNNING);

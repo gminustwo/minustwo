@@ -279,6 +279,10 @@ static int host_fd(int fd) {
 /* The CRT reads and writes at most INT_MAX bytes per call. */
 static ssize_t host_read(int h,void *buffer,uint64_t size) { return read(h,buffer,(unsigned)(size>0x7ffff000 ? 0x7ffff000 : size)); }
 static ssize_t host_write(int h,const void *buffer,uint64_t size) { return write(h,buffer,(unsigned)(size>0x7ffff000 ? 0x7ffff000 : size)); }
+#elif defined(__APPLE__)
+/* macOS fails reads and writes above INT_MAX bytes (EINVAL) instead of shortening them. */
+static ssize_t host_read(int h,void *buffer,uint64_t size) { return read(h,buffer,size>0x7ffff000 ? 0x7ffff000 : size); }
+static ssize_t host_write(int h,const void *buffer,uint64_t size) { return write(h,buffer,size>0x7ffff000 ? 0x7ffff000 : size); }
 #else
 #define host_read read
 #define host_write write

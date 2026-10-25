@@ -21,7 +21,25 @@ import tempfile
 import threading
 
 FROZEN = getattr(sys, 'frozen', False)
-PORT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
+
+
+def port_folder():
+    """The port's files (run.py, scripts, bin/): the source tree, else the frozen launcher's folder, which
+    in MinusTwo.app (packaging/macos/package.sh) is Contents/Resources (Contents/MacOS holds only code)."""
+    if not FROZEN:
+        return Path(__file__).resolve().parent.parent
+    here = Path(sys.executable).resolve().parent
+    if sys.platform == 'darwin' and here.name == 'MacOS' and (here.parent / 'Resources' / 'run.py').is_file():
+        return here.parent / 'Resources'
+    return here
+
+
+PORT = port_folder()
+if FROZEN and sys.platform == 'darwin':
+    # An app bundle is not written into: saves, settings, mods and the prepared game go to Application
+    # Support (run.py, started by this program, inherits the folder).
+    os.environ.setdefault('MT_DATA_DIR', str(Path.home() / 'Library' / 'Application Support' / 'MinusTwo'))
+    Path(os.environ['MT_DATA_DIR']).mkdir(parents=True, exist_ok=True)
 DATA = Path(os.environ.get('MT_DATA_DIR', PORT))
 SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
@@ -31,8 +49,9 @@ VERSION = '1.0.0'
 # The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
 GITHUB_REPO = 'gminustwo/minustwo'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
-# The release file of this system: the Windows zip, the Linux AppImage (Steam Deck).
-PACKAGE_SUFFIX = '.zip' if sys.platform == 'win32' else '.appimage'
+# The release file of this system: the Windows zip, the macOS zip (MinusTwo.app), the Linux AppImage (Steam
+# Deck). By name: a release holds both zips.
+PACKAGE_SUFFIX = {'win32': '-windows.zip', 'darwin': '-macos.zip'}.get(sys.platform, '.appimage')
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
               'patches.json', 'last_run.log', 'fsr4_shaders', 'nvngx_dlss*.dll')
@@ -139,12 +158,12 @@ def host_environment():
 
 
 def open_path(target):
-    """A folder, file or web page in the desktop's own program (Explorer, the file manager, the browser)."""
+    """A folder, file or web page in the desktop's own program (Explorer, Finder, the file manager, the browser)."""
     if sys.platform == 'win32':
         os.startfile(target)
     else:
-        subprocess.Popen(['xdg-open', str(target)], env=host_environment(), stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(target)], env=host_environment(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def game_command():
@@ -235,8 +254,8 @@ def version_tuple(text):
 
 def release_info(release, repo, suffix=PACKAGE_SUFFIX):
     """(version, package URL, checksum URL, page URL) of a GitHub release (the API's JSON): this system's
-    package (`suffix`: the Windows zip, the AppImage) and the `<package>.sha256` published beside it (None
-    when missing)."""
+    package (`suffix`: the Windows zip, the macOS zip, the AppImage) and the `<package>.sha256` published
+    beside it (None when missing)."""
     assets = {a.get('name', ''): a.get('browser_download_url') for a in release.get('assets', [])}
     package = next((name for name in assets if name.lower().endswith(suffix)), None)
     return ('.'.join(re.findall(r'\d+', release.get('tag_name', ''))), assets.get(package),
@@ -375,16 +394,24 @@ class Launcher:
         self.process = None
         self.root = tk.Tk()
         self.root.withdraw()
+        if sys.platform == 'darwin':
+            # macOS Tk counts 72 pixels per inch: 96 makes the sizes below (96-DPI pixels and
+            # points) come out as on Windows; the system scales them for Retina displays.
+            self.root.tk.call('tk', 'scaling', 96 / 72)
         self.root.title('GODZILLA — Minus Two')
         self.root.configure(bg=BG)
         families = set(tkfont.families(self.root))
-        pick = lambda *names: next((n for n in names if n in families), 'Segoe UI')  # noqa: E731
-        # Windows' fonts, else ones Linux and the Steam Deck have (Noto, DejaVu).
+        # Windows' fonts, else ones macOS (Impact too, Helvetica Neue, Avenir, Hiragino) and Linux and the
+        # Steam Deck (Noto, DejaVu) have.
+        self.ui_face = next((n for n in ('Segoe UI', 'Helvetica Neue') if n in families), 'Segoe UI')
+        self.ui_bold_face = next((n for n in ('Segoe UI Semibold', 'Helvetica Neue') if n in families), self.ui_face)
+        pick = lambda *names: next((n for n in names if n in families), self.ui_face)  # noqa: E731
         self.title_face = pick('Impact', 'Bahnschrift SemiBold Condensed', 'Segoe UI Black', 'Noto Sans Display',
                                'DejaVu Sans')
-        self.nav_face = pick('Bahnschrift SemiBold', 'Segoe UI Semibold', 'Noto Sans', 'DejaVu Sans')
-        self.kana_face = pick('Yu Gothic UI Semibold', 'Yu Gothic UI', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP',
-                              'Segoe UI')
+        self.nav_face = pick('Bahnschrift SemiBold', 'Segoe UI Semibold', 'Avenir Next Condensed', 'Noto Sans',
+                             'DejaVu Sans')
+        self.kana_face = pick('Yu Gothic UI Semibold', 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Noto Sans CJK JP',
+                              'Noto Sans JP', 'Segoe UI')
         self.has_kana = self.kana_face in families  # without a Japanese font, ゴジラ would be boxes
         # Sizes in 96-DPI pixels, scaled to the display (the process is DPI-aware: crisp text).
         self.scale = self.root.winfo_fpixels('1i') / 96.0
@@ -429,7 +456,8 @@ class Launcher:
             size -= 1
         return (face, size)
 
-    def font(self, size, weight='normal', face='Segoe UI'):
+    def font(self, size, weight='normal', face=None):
+        face = face or self.ui_face
         return (face, size, weight) if weight != 'normal' else (face, size)
 
     def dark_title_bar(self):
@@ -482,7 +510,7 @@ class Launcher:
         s.configure('Muted.TLabel', foreground=MUTED, font=self.font(9))
         s.configure('Section.TLabel', foreground=ACCENT_HI, font=(self.title_face, 15))
         s.configure('Heading.TLabel', font=(self.title_face, 24))
-        s.configure('Version.TLabel', foreground=ACCENT_HI, font=self.font(12, 'bold', 'Segoe UI Semibold'))
+        s.configure('Version.TLabel', foreground=ACCENT_HI, font=self.font(12, 'bold', self.ui_bold_face))
         s.configure('Check.TLabel', font=self.font(11))
         s.configure('TButton', background=CARD, foreground=TEXT, padding=self.px(6), borderwidth=self.px(1))
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
@@ -538,7 +566,8 @@ class Launcher:
             self.nav[name] = (row, bar, label)
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
         self.side = side
-        self.side_note = tk.Label(side, text='In the game: Insert or R3+L2\nopens the port\'s menu.', bg=BG,
+        menu_key = 'Command-comma' if sys.platform == 'darwin' else 'Insert'
+        self.side_note = tk.Label(side, text=f'In the game: {menu_key} or R3+L2\nopens the port\'s menu.', bg=BG,
                                   fg=MUTED, font=self.font(9), justify='left')
         self.side_note.pack(anchor='w', padx=self.px(24), pady=(0, self.px(18)))
 
@@ -981,7 +1010,7 @@ class Launcher:
             except OSError:
                 title = name
             label = tk.Label(line, text=title, bg=bg, anchor='w', cursor='hand2',
-                             font=self.font(11, 'bold', 'Segoe UI Semibold') if chosen else self.font(11))
+                             font=self.font(11, 'bold', self.ui_bold_face) if chosen else self.font(11))
             label.pack(side='left', fill='x', expand=True)
             for widget in (line, label):
                 widget.bind('<Button-1>', lambda _e, n=name: self.select_mod(n))
@@ -1230,7 +1259,8 @@ class Launcher:
         """The mouse wheel scrolls the trophy list and the mods page (not an open drop-down list)."""
         canvas = {'achievements': self.trophy_canvas, 'mods': self.mods_canvas}.get(self.current)
         if canvas and 'popdown' not in str(event.widget):
-            canvas.yview_scroll(int(-event.delta / 120), 'units')
+            # Windows reports 120 per notch; macOS a few units per step (trackpads included).
+            canvas.yview_scroll(-event.delta if sys.platform == 'darwin' else int(-event.delta / 120), 'units')
 
     def trophy_photo(self, trophy, png, locked):
         """The icon at 64 px (scaled); grey and dark while the trophy is locked."""
@@ -1293,7 +1323,7 @@ class Launcher:
             text = tk.Frame(card, bg=CARD)
             text.pack(side='left', fill='x', expand=True, pady=self.px(8))
             tk.Label(text, text=name, bg=CARD, fg=TEXT if done else '#b4c0ce', anchor='w',
-                     font=self.font(12, 'bold', 'Segoe UI Semibold')).pack(fill='x')
+                     font=self.font(12, 'bold', self.ui_bold_face)).pack(fill='x')
             tk.Label(text, text=description, bg=CARD, fg=TEXT if done else MUTED, anchor='w', justify='left',
                      wraplength=self.px(600), font=self.font(10)).pack(fill='x')
             tk.Label(text, text=grade.upper(), bg=CARD, fg=GRADE_COLOURS[grade] if done else MUTED, anchor='w',
@@ -1426,7 +1456,7 @@ class Launcher:
         tk, ttk = self.tk, self.ttk
         box = tk.Frame(self.side, bg=CARD, highlightthickness=self.px(1), highlightbackground=ACCENT)
         self.update_label = tk.Label(box, text=f'Version {version} is available.', bg=CARD, fg=TEXT,
-                                     font=self.font(10, 'bold', 'Segoe UI Semibold'), wraplength=self.px(170),
+                                     font=self.font(10, 'bold', self.ui_bold_face), wraplength=self.px(170),
                                      justify='left')
         self.update_label.pack(anchor='w', padx=self.px(10), pady=(self.px(8), self.px(6)))
         self.update_button = ttk.Button(box, text='Update', command=lambda: self.install_update(version, url, checksum,

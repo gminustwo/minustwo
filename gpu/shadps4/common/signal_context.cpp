@@ -47,4 +47,22 @@ bool IsWriteError(void* ctx) {
 #endif
 }
 
+// minustwo: x86 page faults set bit 4 of the error code for instruction fetches; Windows reports
+// the access type 8 (DEP).
+bool IsExecuteError(void* ctx) {
+#if defined(_WIN32)
+    return ((EXCEPTION_POINTERS*)ctx)->ExceptionRecord->ExceptionInformation[0] == 8;
+#elif defined(__APPLE__) && defined(ARCH_X86_64)
+    return ((ucontext_t*)ctx)->uc_mcontext->__es.__err & 0x10;
+#elif defined(__APPLE__) && defined(ARCH_ARM64)
+    return false;
+#elif defined(__FreeBSD__) && defined(ARCH_X86_64)
+    return ((ucontext_t*)ctx)->uc_mcontext.mc_err & 0x10;
+#elif defined(ARCH_X86_64)
+    return ((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR] & 0x10;
+#else
+#error "Unsupported architecture"
+#endif
+}
+
 } // namespace Common

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <vulkan/vulkan.h>
 
+#include "mt_vulkan_driver.h"
 #include "video_core/amdgpu/mt_msaa_default.h"
 
 static VkDeviceSize largest_local_heap(VkPhysicalDevice device) {
@@ -73,10 +74,11 @@ int main(int argc, char **argv) {
         .pApplicationName = "minustwo scene scaling probe",
         .apiVersion = VK_API_VERSION_1_3,
     };
-    const VkInstanceCreateInfo create = {
+    VkInstanceCreateInfo create = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app,
     };
+    mt_vulkan_portability(&create);
     VkInstance instance = VK_NULL_HANDLE;
     if (vkCreateInstance(&create, NULL, &instance) != VK_SUCCESS) {
         fputs("GPU scene scaling: cannot create Vulkan instance\n", stderr);

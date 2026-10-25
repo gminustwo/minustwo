@@ -14,6 +14,9 @@
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
 #include "common/assert.h"
 #include "mt_toggles.h"
 #include "mt_settings.h"
@@ -405,6 +408,17 @@ void VideoOutDriver::Flip(const Request& req) {
                 return ((u64(t.dwHighDateTime) << 32) | t.dwLowDateTime) * 100;
             };
             gpu_ns = ns(kernel) + ns(user);
+        }
+#elif defined(__APPLE__)
+        // minustwo (macOS): the GPU thread's user + system time, by its Mach thread port.
+        if (const auto thread = static_cast<mach_port_t>(MtStats::gpu_thread_id.load())) {
+            thread_basic_info_data_t info{};
+            mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+            if (thread_info(thread, THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&info), &count) ==
+                KERN_SUCCESS) {
+                gpu_ns = (u64(info.user_time.seconds + info.system_time.seconds) * 1000000ull +
+                          u64(info.user_time.microseconds + info.system_time.microseconds)) * 1000ull;
+            }
         }
 #else
         if (const int clock = MtStats::gpu_thread_clock.load(); clock != -1) {

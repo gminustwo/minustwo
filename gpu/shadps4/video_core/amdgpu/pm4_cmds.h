@@ -761,7 +761,12 @@ struct PM4CmdWriteData {
 
     template <typename T>
     T Address() const {
-        return reinterpret_cast<T>(addr64);
+        // minustwo: VAddr (unsigned long) and u64 (unsigned long long) differ on macOS.
+        if constexpr (std::is_pointer_v<T>) {
+            return reinterpret_cast<T>(addr64);
+        } else {
+            return static_cast<T>(addr64);
+        }
     }
 };
 

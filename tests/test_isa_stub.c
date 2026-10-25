@@ -7,6 +7,10 @@
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <signal.h>
+#include <sys/mman.h>
+#include <sys/ucontext.h>
 #else
 #include <signal.h>
 #include <sys/mman.h>
@@ -264,6 +268,31 @@ static LONG WINAPI trap_handler(EXCEPTION_POINTERS *info) {
 }
 
 static void install_trap_handler(void) { assert(AddVectoredExceptionHandler(1, trap_handler) != NULL); }
+#elif defined(__APPLE__)
+static void trap_handler(int sig, siginfo_t *info, void *context) {
+    (void)sig;
+    (void)info;
+    _STRUCT_X86_THREAD_STATE64 *s = &((ucontext_t *)context)->uc_mcontext->__ss;
+    uint64_t *gpr[16] = {&s->__rax, &s->__rcx, &s->__rdx, &s->__rbx, &s->__rsp, &s->__rbp, &s->__rsi, &s->__rdi,
+                         &s->__r8,  &s->__r9,  &s->__r10, &s->__r11, &s->__r12, &s->__r13, &s->__r14, &s->__r15};
+    IsaRegs regs;
+    for (int i = 0; i < 16; i++) regs.gpr[i] = *gpr[i];
+    regs.rflags = s->__rflags;
+    uintptr_t rip;
+    if (!isa_rewrite_trap(trap_table, (uintptr_t)s->__rip - 1, &regs, &rip)) abort();
+    for (int i = 0; i < 16; i++) *gpr[i] = regs.gpr[i];
+    s->__rflags = regs.rflags;
+    s->__rip = rip;
+}
+
+static void install_trap_handler(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = trap_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    assert(sigaction(SIGTRAP, &sa, NULL) == 0);
+}
 #else
 static void trap_handler(int sig, siginfo_t *info, void *context) {
     (void)sig;
