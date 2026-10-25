@@ -88,30 +88,17 @@ static auto UserPaths = [] {
     // minustwo: the port keeps GPU caches where MT_GPU_USER_DIR points.
     const char* port_dir = std::getenv("MT_GPU_USER_DIR");
     auto user_dir = port_dir ? std::filesystem::path(port_dir) : std::filesystem::current_path() / PORTABLE_DIR;
-    if (!std::filesystem::exists(user_dir)) {
-        // If it doesn't exist, use the standard path for the platform instead.
-        // NOTE: On Windows we currently just create the portable directory instead.
-#ifdef __APPLE__
-        user_dir =
-            std::filesystem::path(getenv("HOME")) / "Library" / "Application Support" / "shadPS4";
-#elif defined(__linux__)
-        const char* xdg_data_home = getenv("XDG_DATA_HOME");
-        if (xdg_data_home != nullptr && strlen(xdg_data_home) > 0) {
-            user_dir = std::filesystem::path(xdg_data_home) / "shadPS4";
-        } else {
-            user_dir = std::filesystem::path(getenv("HOME")) / ".local" / "share" / "shadPS4";
-        }
-#elif _WIN32
-        // minustwo: never shadPS4's %APPDATA% folder (an installed shadPS4 owns it); this runs
-        // before main, so the portable folder is created here (run.py sets MT_GPU_USER_DIR).
-        std::filesystem::create_directories(user_dir);
-#endif
-    }
+    // minustwo: never shadPS4's own folder (%APPDATA%, ~/.local/share/shadPS4: an installed shadPS4
+    // owns it). This runs before main, so the folder is created here (run.py sets MT_GPU_USER_DIR),
+    // and a folder that cannot be made (the AppImage's read-only one, for --cpu-features) is no error.
+    std::error_code ec;
+    std::filesystem::create_directories(user_dir, ec);
 
     std::unordered_map<PathType, fs::path> paths;
 
     const auto create_path = [&](PathType shad_path, const fs::path& new_path) {
-        std::filesystem::create_directory(new_path);
+        std::error_code ignored;
+        std::filesystem::create_directory(new_path, ignored);
         paths.insert_or_assign(shad_path, new_path);
     };
 

@@ -135,6 +135,19 @@ $env:MT_GAME_DIR = 'D:\Games\CUSA02046'
 python run.py
 ```
 
+Linux and the Steam Deck (an AppImage), on Ubuntu 24.04: its glibc 2.39 is the oldest the AppImage then needs
+(SteamOS, Debian 13, Fedora, Ubuntu 24.04 or newer). WSL's Ubuntu 24.04 works too.
+
+```bash
+# once: Ubuntu packages (root) and what 24.04 lacks (SDL3, Vulkan 1.4 headers, VMA) in a folder of your own
+PREFIX=$HOME/.local/minustwo-deps bash packaging/linux/ci-deps.sh
+MT_DEPS=$HOME/.local/minustwo-deps MT_LTO=OFF bash build.sh   # out/minustwo, out/gpu/libmtgpu.so
+bash packaging/linux/build.sh       # dist/minustwo-x86_64.AppImage and its .sha256
+```
+
+`./run.sh` starts a Linux build without the AppImage; `./run.sh --software` uses Mesa's software Vulkan
+(lavapipe), slow but enough to see the game boot on a machine without a usable GPU.
+
 ### Releases and updates
 
 The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
@@ -142,14 +155,15 @@ The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
 offers it when its tag is a higher version than `VERSION` in the same file. To publish a version:
 
 1. Raise `VERSION` (for example to `0.2.0`) and commit.
-2. `bash build.sh` and `bash packaging/windows/package.sh`: `dist/minustwo-windows.zip` and
-   `dist/minustwo-windows.zip.sha256`.
-3. On GitHub, create a release tagged `v0.2.0` and attach both files. The launcher refuses a zip without the
-   `.sha256` beside it, or one that does not match it.
+2. Windows: `bash build.sh` and `bash packaging/windows/package.sh`: `dist/minustwo-windows.zip` and
+   `dist/minustwo-windows.zip.sha256`. Linux: the AppImage and its `.sha256` (above).
+3. On GitHub, create a release tagged `v0.2.0` and attach the four files. The launcher refuses a download
+   without the `.sha256` beside it, or one that does not match it.
 
-"Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself over the
-installation once the launcher has closed, never the player's files (`USER_FILES`: `user`, settings, mods), then
-opens it.
+On Windows, "Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself
+over the installation once the launcher has closed, never the player's files (`USER_FILES`: `user`, settings,
+mods), then opens it. In the AppImage, it downloads the new AppImage beside the running one, checks it and
+renames it over it (the player's files are in `~/.local/share/minustwo`), then starts it.
 
 ## Tests
 

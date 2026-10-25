@@ -27,10 +27,12 @@ SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
 # This build of the port. A GitHub release is an update when its tag (v0.2.0) holds a higher version.
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 # The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
 GITHUB_REPO = 'gminustwo/minustwo'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
+# The release file of this system: the Windows zip, the Linux AppImage (Steam Deck).
+PACKAGE_SUFFIX = '.zip' if sys.platform == 'win32' else '.appimage'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
               'patches.json', 'last_run.log', 'fsr4_shaders', 'nvngx_dlss*.dll')
@@ -127,6 +129,24 @@ def write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
+def host_environment():
+    """The session's environment for programs outside the AppImage (file manager, browser): without the
+    bundle's library and Python paths, which would break them."""
+    env = dict(os.environ)
+    for name in ('LD_LIBRARY_PATH', 'PYTHONHOME', 'PYTHONPATH', 'TCL_LIBRARY', 'TK_LIBRARY'):
+        env.pop(name, None)
+    return env
+
+
+def open_path(target):
+    """A folder, file or web page in the desktop's own program (Explorer, the file manager, the browser)."""
+    if sys.platform == 'win32':
+        os.startfile(target)
+    else:
+        subprocess.Popen(['xdg-open', str(target)], env=host_environment(), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def game_command():
     return [sys.executable, '--run'] if FROZEN else [sys.executable, str(PORT / 'run.py')]
 
@@ -188,9 +208,10 @@ def display_refresh():
 def graphics_card():
     """The graphics card the game will use, from the port's Vulkan check (bin/minustwo-gpu-capabilities):
     its name, '' when the check found none, None when the check could not run."""
-    tool = PORT / 'bin' / 'minustwo-gpu-capabilities.exe'
+    name = 'minustwo-gpu-capabilities' + ('.exe' if sys.platform == 'win32' else '')
+    tool = PORT / 'bin' / name
     if not tool.is_file():
-        tool = PORT / 'out' / 'minustwo-gpu-capabilities.exe'
+        tool = PORT / 'out' / name
     try:
         done = subprocess.run([str(tool)], capture_output=True, text=True, timeout=10,
                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
@@ -212,11 +233,12 @@ def version_tuple(text):
     return tuple(int(number) for number in re.findall(r'\d+', text or ''))
 
 
-def release_info(release, repo):
-    """(version, package URL, checksum URL, page URL) of a GitHub release (the API's JSON): the zip
-    and the `<zip>.sha256` published beside it (None when missing)."""
+def release_info(release, repo, suffix=PACKAGE_SUFFIX):
+    """(version, package URL, checksum URL, page URL) of a GitHub release (the API's JSON): this system's
+    package (`suffix`: the Windows zip, the AppImage) and the `<package>.sha256` published beside it (None
+    when missing)."""
     assets = {a.get('name', ''): a.get('browser_download_url') for a in release.get('assets', [])}
-    package = next((name for name in assets if name.lower().endswith('.zip')), None)
+    package = next((name for name in assets if name.lower().endswith(suffix)), None)
     return ('.'.join(re.findall(r'\d+', release.get('tag_name', ''))), assets.get(package),
             assets.get(f'{package}.sha256') if package else None,
             release.get('html_url') or f'https://github.com/{repo}/releases/latest')
@@ -232,13 +254,11 @@ def latest_release(repo=None):
         return release_info(json.load(response), repo)
 
 
-def download_update(url, checksum_url, folder, progress=lambda percent: None):
-    """Downloads the release zip into `folder`, checks it against the published SHA-256 and unpacks it;
-    returns the unpacked folder that holds MinusTwo.exe. Raises OSError when anything is wrong."""
+def fetch_checked(url, checksum_url, path, progress=lambda percent: None):
+    """Downloads `url` to `path` and checks it against the SHA-256 published at `checksum_url`; a
+    download that does not match is removed. Raises OSError."""
     import hashlib
-    import shutil
     import urllib.request
-    import zipfile
     if not checksum_url:
         raise OSError('the release has no checksum (.sha256) beside its zip')
     request = urllib.request.Request(checksum_url, headers={'User-Agent': 'minustwo-launcher'})
@@ -246,12 +266,9 @@ def download_update(url, checksum_url, folder, progress=lambda percent: None):
         words = response.read(4096).decode('ascii', 'replace').split()
     if not words or not re.fullmatch(r'[0-9a-fA-F]{64}', words[0]):
         raise OSError('the release checksum is not a SHA-256')
-    folder = Path(folder)
-    shutil.rmtree(folder, ignore_errors=True)
-    folder.mkdir(parents=True)
-    archive, digest = folder / 'update.zip', hashlib.sha256()
+    path, digest = Path(path), hashlib.sha256()
     request = urllib.request.Request(url, headers={'User-Agent': 'minustwo-launcher'})
-    with urllib.request.urlopen(request, timeout=60) as response, open(archive, 'wb') as out:
+    with urllib.request.urlopen(request, timeout=60) as response, open(path, 'wb') as out:
         total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
         while chunk := response.read(1 << 20):
             out.write(chunk)
@@ -262,8 +279,20 @@ def download_update(url, checksum_url, folder, progress=lambda percent: None):
                 shown = percent
                 progress(percent)
     if digest.hexdigest() != words[0].lower():
-        archive.unlink()
+        path.unlink()
         raise OSError('the download does not match the published checksum')
+
+
+def download_update(url, checksum_url, folder, progress=lambda percent: None):
+    """Windows: downloads the release zip into `folder`, checks it against the published SHA-256 and
+    unpacks it; returns the unpacked folder that holds MinusTwo.exe. Raises OSError when anything is wrong."""
+    import shutil
+    import zipfile
+    folder = Path(folder)
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    archive = folder / 'update.zip'
+    fetch_checked(url, checksum_url, archive, progress)
     try:
         with zipfile.ZipFile(archive) as package:
             package.extractall(folder / 'new')
@@ -274,6 +303,28 @@ def download_update(url, checksum_url, folder, progress=lambda percent: None):
     if not new:
         raise OSError('MinusTwo.exe is missing from the download')
     return new
+
+
+def replace_appimage(url, checksum_url, target, progress=lambda percent: None):
+    """Linux: the AppImage at `target` replaced by the release's once it matches its checksum. The swap is
+    a rename, so the running copy keeps its own file until it exits; nothing changes when it fails."""
+    target = Path(os.path.realpath(target))  # through a symlink, the file behind it is the one to replace
+    partial = target.with_name(target.name + '.update')
+    try:
+        fetch_checked(url, checksum_url, partial, progress)
+        partial.chmod(partial.stat().st_mode | 0o755)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
+def relaunch_appimage(target):
+    """Starts the new AppImage apart from this one: the old mount's variables must not leak into it."""
+    env = host_environment()
+    for name in ('APPIMAGE', 'APPDIR', 'ARGV0', 'OWD'):
+        env.pop(name, None)
+    subprocess.Popen([str(target)], cwd=str(Path(target).parent), env=env, stdin=subprocess.DEVNULL,
+                     start_new_session=True)
 
 
 def copy_over(source, target):
@@ -328,9 +379,13 @@ class Launcher:
         self.root.configure(bg=BG)
         families = set(tkfont.families(self.root))
         pick = lambda *names: next((n for n in names if n in families), 'Segoe UI')  # noqa: E731
-        self.title_face = pick('Impact', 'Bahnschrift SemiBold Condensed', 'Segoe UI Black')
-        self.nav_face = pick('Bahnschrift SemiBold', 'Segoe UI Semibold')
-        self.kana_face = pick('Yu Gothic UI Semibold', 'Yu Gothic UI', 'Meiryo', 'Segoe UI')
+        # Windows' fonts, else ones Linux and the Steam Deck have (Noto, DejaVu).
+        self.title_face = pick('Impact', 'Bahnschrift SemiBold Condensed', 'Segoe UI Black', 'Noto Sans Display',
+                               'DejaVu Sans')
+        self.nav_face = pick('Bahnschrift SemiBold', 'Segoe UI Semibold', 'Noto Sans', 'DejaVu Sans')
+        self.kana_face = pick('Yu Gothic UI Semibold', 'Yu Gothic UI', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP',
+                              'Segoe UI')
+        self.has_kana = self.kana_face in families  # without a Japanese font, ゴジラ would be boxes
         # Sizes in 96-DPI pixels, scaled to the display (the process is DPI-aware: crisp text).
         self.scale = self.root.winfo_fpixels('1i') / 96.0
         width, height = int(1120 * self.scale), int(760 * self.scale)
@@ -365,6 +420,14 @@ class Launcher:
 
     def px(self, value):
         return int(round(value * self.scale))
+
+    def fitted(self, face, size, text, width):
+        """(face, size): at most `size`, smaller until `text` fits in `width` pixels. Impact fits; the
+        fonts Linux has instead are wider."""
+        import tkinter.font as tkfont
+        while size > 8 and tkfont.Font(root=self.root, family=face, size=size).measure(text) > width:
+            size -= 1
+        return (face, size)
 
     def font(self, size, weight='normal', face='Segoe UI'):
         return (face, size, weight) if weight != 'normal' else (face, size)
@@ -453,10 +516,12 @@ class Launcher:
         side.pack_propagate(False)
         brand = tk.Frame(side, bg=BG)
         brand.pack(anchor='w', padx=self.px(24), pady=(self.px(22), self.px(20)))
-        tk.Label(brand, text='ゴジラ', bg=BG, fg=RED, font=(self.kana_face, 11, 'bold')).pack(anchor='w')
-        tk.Label(brand, text='GODZILLA', bg=BG, fg=TEXT, font=(self.title_face, 31)).pack(anchor='w')
-        tk.Label(brand, text=f'Minus Two {VERSION} · native PC port', bg=BG, fg=MUTED, font=self.font(9)).pack(
-            anchor='w')
+        if self.has_kana:
+            tk.Label(brand, text='ゴジラ', bg=BG, fg=RED, font=(self.kana_face, 11, 'bold')).pack(anchor='w')
+        tk.Label(brand, text='GODZILLA', bg=BG, fg=TEXT,
+                 font=self.fitted(self.title_face, 31, 'GODZILLA', self.px(236 - 2 * 24))).pack(anchor='w')
+        tk.Label(brand, text=f'Minus Two {VERSION} · native PC port', bg=BG, fg=MUTED, font=self.font(9),
+                 wraplength=self.px(236 - 2 * 24), justify='left').pack(anchor='w')
         self.nav, self.current = {}, None
         for name, title in PAGES:
             row = tk.Frame(side, bg=BG, cursor='hand2')
@@ -622,7 +687,7 @@ class Launcher:
         if saves.is_dir() and any(saves.rglob('SAVEDATA*')):
             lines.append(('✓', f'Saves found in {DATA / "user"}', ACCENT_HI))
         else:
-            lines.append(('•', 'No saves yet: the game creates them in user\\savedata', MUTED))
+            lines.append(('•', f'No saves yet: the game creates them in {Path("user", "savedata")}', MUTED))
         card = getattr(self, 'card', 'checking')
         if card == 'checking':
             lines.append(('•', 'Graphics card: checking…', MUTED))
@@ -696,7 +761,10 @@ class Launcher:
             c.create_window(width // 2, height // 2 + self.px(40), window=self.choose_button)
 
     def load_art(self, folder):
+        """The key art of the chosen game (none before a game folder is chosen)."""
         self.art = None
+        if not folder:
+            return
         try:
             from PIL import Image
             path = Path(folder) / 'sce_sys' / 'pic1.png'
@@ -863,7 +931,7 @@ class Launcher:
 
     def open_folder(self, path):
         Path(path).mkdir(parents=True, exist_ok=True)
-        os.startfile(path) if sys.platform == 'win32' else subprocess.Popen(['xdg-open', str(path)])
+        open_path(path)
 
     def refresh_mods(self):
         """The load order (mods.json's, new mods last), the patches of this game version and their state."""
@@ -1047,8 +1115,7 @@ class Launcher:
         buttons.pack(anchor='w', pady=(self.px(14), 0))
         ttk.Button(buttons, text='Open mod folder', command=lambda: self.open_folder(MODS / name)).pack(side='left')
         if info['url']:
-            import webbrowser
-            ttk.Button(buttons, text='Website', command=lambda: webbrowser.open(info['url'])).pack(
+            ttk.Button(buttons, text='Website', command=lambda: open_path(info['url'])).pack(
                 side='left', padx=(self.px(6), 0))
         panel.grid(row=0, column=1, sticky='n', padx=(self.px(16), 0))
 
@@ -1356,7 +1423,6 @@ class Launcher:
         """A box above the sidebar's note: the new version, Update and What's new."""
         if self.update_box:
             return
-        import webbrowser
         tk, ttk = self.tk, self.ttk
         box = tk.Frame(self.side, bg=CARD, highlightthickness=self.px(1), highlightbackground=ACCENT)
         self.update_label = tk.Label(box, text=f'Version {version} is available.', bg=CARD, fg=TEXT,
@@ -1366,19 +1432,24 @@ class Launcher:
         self.update_button = ttk.Button(box, text='Update', command=lambda: self.install_update(version, url, checksum,
                                                                                                   page))
         self.update_button.pack(fill='x', padx=self.px(10))
-        ttk.Button(box, text="What's new", command=lambda: webbrowser.open(page)).pack(
+        ttk.Button(box, text="What's new", command=lambda: open_path(page)).pack(
             fill='x', padx=self.px(10), pady=(self.px(4), self.px(10)))
         box.pack(fill='x', padx=(self.px(20), self.px(18)), pady=(0, self.px(14)), before=self.side_note)
         self.update_box = box
 
     def install_update(self, version, url, checksum, page):
-        import webbrowser
         from tkinter import messagebox
         if self.process and self.process.poll() is None:
             messagebox.showinfo('Minus Two', 'Close the game before updating.')
             return
-        if not FROZEN or sys.platform != 'win32' or not url:
-            webbrowser.open(page)  # a source tree updates with git; a release without a zip by hand
+        appimage = os.environ.get('APPIMAGE') if sys.platform != 'win32' else None
+        if not url or not (appimage or (FROZEN and sys.platform == 'win32')):
+            open_path(page)  # a source tree updates with git; a release without this system's file by hand
+            return
+        if appimage and not os.access(Path(os.path.realpath(appimage)).parent, os.W_OK):
+            if messagebox.askyesno('Minus Two', f'The launcher cannot write to {Path(appimage).parent}, so it cannot '
+                                                'replace itself there. Open the release page to download it by hand?'):
+                open_path(page)
             return
         if not messagebox.askyesno('Minus Two', f'Install version {version} now? The launcher closes, installs it '
                                                 'and opens again. Saves, settings and mods are kept.'):
@@ -1395,6 +1466,11 @@ class Launcher:
 
         def work():
             try:
+                if appimage:
+                    replace_appimage(url, checksum, appimage, lambda p: self.ui_calls.put(lambda: progress(p)))
+                    relaunch_appimage(appimage)
+                    self.ui_calls.put(self.root.destroy)
+                    return
                 new = download_update(url, checksum, UPDATE_DIR, lambda p: self.ui_calls.put(lambda: progress(p)))
                 # The new launcher copies itself over this installation once this one has closed.
                 subprocess.Popen([str(new / 'MinusTwo.exe'), '--install-update', str(PORT), str(os.getpid())],
@@ -1435,11 +1511,11 @@ class Launcher:
 
     def open_data(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        os.startfile(DATA) if sys.platform == 'win32' else subprocess.Popen(['xdg-open', str(DATA)])
+        open_path(DATA)
 
     def open_log(self):
         if LOG.is_file():
-            os.startfile(LOG) if sys.platform == 'win32' else subprocess.Popen(['xdg-open', str(LOG)])
+            open_path(LOG)
         else:
             self.summary.configure(text='No game log yet.', fg=MUTED)
 

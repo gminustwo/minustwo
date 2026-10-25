@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# AppImage entry point: starts the frozen Tk launcher. The launcher picks the game folder, runs run.py
+# and handles --play (the game without a window, for Steam and Game Mode on the Steam Deck).
+# Usage: minustwo-x86_64.AppImage [--play]
+set -euo pipefail
+here=$(dirname -- "$(readlink -f -- "$0")")
+share=$here/usr/share/minustwo
+
+export LD_LIBRARY_PATH="$here/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# The C++ runtime: the bundled one (GCC 14, what the port needs) unless the system's is newer. The
+# system's Vulkan driver loads into the game too, and an older runtime than its own would stop it.
+newest_glibcxx() { { grep -aoE 'GLIBCXX_3\.4\.[0-9]+' "$1" 2>/dev/null || true; } | sort -uV | tail -1; }
+bundled=$(newest_glibcxx "$here/usr/lib/cxx/libstdc++.so.6")
+system_lib=$( { ldconfig -p 2>/dev/null || true; } | awk '/libstdc\+\+\.so\.6 \(libc6,x86-64\)/ {print $NF; exit}')
+system=
+[[ -n $system_lib ]] && system=$(newest_glibcxx "$system_lib")
+if [[ -z $system || $(printf '%s\n%s\n' "$system" "$bundled" | sort -V | tail -1) == "$bundled" ]]; then
+    export LD_LIBRARY_PATH="$here/usr/lib/cxx:$LD_LIBRARY_PATH"
+fi
+# The AppImage is read-only: saves, settings, mods and the prepared game go to the data folder.
+export MT_DATA_DIR=${MT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/minustwo}
+mkdir -p "$MT_DATA_DIR"
+
+cd -- "$share"
+exec "$share/minustwo-launcher" "$@"

@@ -139,7 +139,8 @@ class UpdateTest(unittest.TestCase):
     def test_versions_compare_as_numbers(self):
         v = self.launcher.version_tuple
         self.assertGreater(v('0.10.0'), v('0.9.1'))
-        self.assertGreater(v('v0.1.1'), v(self.launcher.VERSION))
+        major, minor, patch = v(self.launcher.VERSION)
+        self.assertGreater(v(f'v{major}.{minor}.{patch + 1}'), v(self.launcher.VERSION))
         self.assertEqual(v('windows-v0.2.0'), (0, 2, 0))
 
     def test_release_gives_the_zip_and_its_checksum(self):
@@ -176,6 +177,30 @@ class UpdateTest(unittest.TestCase):
         self.assertFalse((self.root / 'update' / 'new').exists())
         with self.assertRaises(OSError):  # a release without its .sha256
             self.launcher.download_update(url, None, self.root / 'update')
+
+    def test_linux_takes_the_appimage(self):
+        release = {'tag_name': 'v0.2.0', 'assets': [
+            {'name': 'minustwo-windows.zip', 'browser_download_url': 'https://x/zip'},
+            {'name': 'minustwo-x86_64.AppImage', 'browser_download_url': 'https://x/appimage'},
+            {'name': 'minustwo-x86_64.AppImage.sha256', 'browser_download_url': 'https://x/appimage.sha256'}]}
+        self.assertEqual(self.launcher.release_info(release, 'o/r', '.appimage')[1:3],
+                         ('https://x/appimage', 'https://x/appimage.sha256'))
+
+    def test_the_appimage_is_swapped_only_when_it_matches(self):
+        import hashlib
+        new = self.root / 'release.AppImage'
+        new.write_bytes(b'new appimage')
+        checksum = self.root / 'release.AppImage.sha256'
+        installed = self.root / 'minustwo-x86_64.AppImage'
+        installed.write_bytes(b'old appimage')
+        checksum.write_text('0' * 64 + '  release.AppImage\n')
+        with self.assertRaises(OSError):
+            self.launcher.replace_appimage(new.as_uri(), checksum.as_uri(), installed)
+        self.assertEqual(installed.read_bytes(), b'old appimage')
+        self.assertEqual([p.name for p in self.root.glob('*.update')], [])
+        checksum.write_text(hashlib.sha256(b'new appimage').hexdigest() + '  release.AppImage\n')
+        self.launcher.replace_appimage(new.as_uri(), checksum.as_uri(), installed)
+        self.assertEqual(installed.read_bytes(), b'new appimage')
 
     def test_installing_keeps_the_players_files(self):
         new, old = self.root / 'new', self.root / 'installed'

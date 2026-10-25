@@ -32,6 +32,18 @@ MINGW*|MSYS*)
     exit 0
     ;;
 esac
+# MT_DEPS: a folder with what the distribution lacks (packaging/linux/ci-deps.sh): SDL3, Vulkan 1.4
+# headers, VMA. Its headers come before the system's.
+if [[ -n ${MT_DEPS:-} ]]; then
+    export PKG_CONFIG_PATH="$MT_DEPS/lib/pkgconfig:$MT_DEPS/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export CMAKE_PREFIX_PATH="$MT_DEPS${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+    export CPATH="$MT_DEPS/include${CPATH:+:$CPATH}"
+    export LIBRARY_PATH="$MT_DEPS/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+fi
+# GCC 14 when installed (Ubuntu 24.04's default is 13): the renderer's C++23 needs it.
+if [[ -z ${CC:-} ]] && command -v gcc-14 >/dev/null; then
+    export CC=gcc-14 CXX=${CXX:-g++-14}
+fi
 if [[ -z ${CC:-} ]]; then
     CC=$(command -v cc || command -v gcc || true)
     if [[ -z $CC ]]; then

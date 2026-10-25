@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Minus Two
+Comment=GODZILLA (PS4) native PC port (bring your own game)
+Exec=AppRun
+Icon=minustwo
+Categories=Game;
+Terminal=false
+StartupWMClass=minustwo

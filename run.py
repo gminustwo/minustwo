@@ -127,6 +127,11 @@ def main():
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
     env.setdefault('MT_CONFIG', str(data / 'minustwo.ini'))
+    # GPU caches (shaders, pipelines) beside the saves. The game reads this before main(), its CPU check
+    # below included: without it, the folder would be the working directory's (read-only in the AppImage).
+    user_dir = Path(env.get('MT_USER_DIR', data / 'user')).resolve()
+    user_dir.mkdir(parents=True, exist_ok=True)
+    env.setdefault('MT_GPU_USER_DIR', str(user_dir))
     # Values this script derived on the previous start ("Apply and restart" inherits them) are
     # derived again from the new options.
     for key in env.pop('MT_DERIVED', '').split(','):
@@ -269,10 +274,6 @@ def main():
             print(warning, flush=True)
 
         # The in-game restart starts this script again once this process is gone.
-        # GPU caches (shaders, pipelines) beside the saves; read before main(), so set here.
-        user_dir = Path(env.get('MT_USER_DIR', data / 'user')).resolve()
-        user_dir.mkdir(parents=True, exist_ok=True)
-        env.setdefault('MT_GPU_USER_DIR', str(user_dir))
         from save_backup import backup
         try:
             if made := backup(user_dir):
