@@ -3,6 +3,8 @@
 **Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
 for Windows 10 and 11. It is a personal project, for playing a copy of the game you own.
 
+Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
+
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
 > and `sce_sys` (tested: CUSA02046, version 01.01). This project is not affiliated with or endorsed by Toho, Bandai
 > Namco, Natsume Atari or Sony Interactive Entertainment. GODZILLA is a trademark of Toho Co., Ltd.
@@ -76,7 +78,8 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
   only the volumes, routing and a limiter are applied.
 - The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MT_SYSTEM_FONT` to other font
   files (separated by `;`) if you prefer.
-- Online features (rankings, matchmaking) are offline: the game sees a console that is not signed in to PSN.
+- Online play (VS Mode) is not supported yet: the game sees a console that is not signed in to PSN. Playing VS
+  between two copies of the port by direct connection is being looked at.
 - Only the US release (CUSA02046 01.01) has been tested.
 
 ## Playing

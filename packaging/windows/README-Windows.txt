@@ -38,6 +38,8 @@ While playing
 - Keyboard: WASD walk, Q / E turn, mouse or arrows move the camera, left click normal attack,
   right click strong attack, Space Cross, Left Shift Circle, Return Options.
 - The add-ons (pre-order unlocks, diorama figure sets) are unlocked; Settings turns that off.
+- Online play (VS Mode) is not supported yet; playing it between two copies of the port is
+  being looked at.
 
 Mods and patches
 - Put each mod in its own folder (or a .zip) under mods\, holding the game's folders with the
@@ -52,3 +54,5 @@ Files
 - settings.json (launcher) and minustwo.ini (display and input) hold your settings.
 
 If the game does not start, open Advanced > Show the last game log in the launcher.
+
+Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q

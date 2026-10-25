@@ -27,6 +27,10 @@ Other Linux PCs
 - chmod +x minustwo-x86_64.AppImage, then run it. The launcher works as on Windows.
 - "minustwo-x86_64.AppImage --play" starts the game without the launcher.
 
+Online play
+- VS Mode online is not supported yet; playing it between two copies of the port is being
+  looked at.
+
 Updates
 - When a new version is out, the launcher shows it at the bottom left; "Update" replaces the
   AppImage with it and opens the launcher again (saves, settings and mods are kept).
@@ -35,3 +39,5 @@ Files
 - Saves, settings, mods, the prepared game and the shader cache are in ~/.local/share/minustwo
   (the AppImage itself is read-only). Keep that folder when you update.
 - If the game does not start, open Advanced > Show the last game log in the launcher.
+
+Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
