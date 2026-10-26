@@ -82,7 +82,10 @@ STARTUP_PATCHES = (
 # The Game page's cheats, kept in minustwo.ini (the in-game menu's Game tab turns them on and off as you play).
 CHEATS = (('cheat_no_damage', 'No damage', "Godzilla's health is full again the moment he is hit."),
           ('cheat_infinite_breath', 'Infinite atomic breath',
-           'The temperature is at its maximum again right after each atomic breath.'))
+           'The temperature is at its maximum again right after each atomic breath.'),
+          ('cheat_all_kaiju', 'Unlock all kaiju',
+           'Every kaiju is unlocked to play. The game saves them as unlocked: they stay unlocked when this '
+           'is turned off.'))
 MODS, MODS_CONFIG, MOD_PRESETS = DATA / 'mods', DATA / 'mods.json', DATA / 'mods_presets.json'
 PATCHES, PATCHES_CONFIG = DATA / 'patches', DATA / 'patches.json'
 
@@ -1270,6 +1273,13 @@ class Launcher:
         box.pack(side='left')
         box.bind('<<ComboboxSelected>>', lambda _e: self.refresh_achievements())
         ttk.Button(filters, text='Refresh', command=self.refresh_achievements).pack(side='left', padx=(self.px(8), 0))
+        switch = ttk.Frame(head)
+        switch.grid(row=4, column=0, columnspan=3, sticky='w', pady=(self.px(14), 0))
+        # Kept in minustwo.ini; the in-game menu's Game tab turns it on and off while you play.
+        self.achievements_var = tk.BooleanVar(value=self.ini.get('achievements', '1') != '0')
+        ttk.Checkbutton(switch, text='Unlock achievements', variable=self.achievements_var).pack(side='left')
+        ttk.Label(switch, text='Off: the game unlocks no trophies and shows no notices. Those already unlocked stay.',
+                  style='Muted.TLabel').pack(side='left', padx=(self.px(18), 0))
 
         holder = ttk.Frame(outer, padding=(self.px(32), self.px(12), self.px(16), self.px(12)))
         holder.pack(fill='both', expand=True)
@@ -1423,6 +1433,7 @@ class Launcher:
                    'anisotropy': dict(ANISOTROPY)[self.anisotropy_var.get()],
                    'fps_limit': dict(FPS_LIMITS)[self.fps_var.get()], 'show_fps': int(self.show_fps_var.get()),
                    'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get(),
+                   'achievements': int(self.achievements_var.get()),
                    **{key: int(var.get()) for key, var in self.cheat_vars.items()}})
         if announce:
             self.summary.configure(text='Settings saved.', fg=ACCENT_HI)

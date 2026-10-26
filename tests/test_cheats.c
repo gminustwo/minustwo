@@ -1,5 +1,6 @@
 /* The menu's cheats (src/runtime_cheats.c): the player table found by signature, the cheats'
- * values held in its entry 0 and the game's own put back. */
+ * values held in its entry 0 and the game's own put back; the save data's kaiju records found
+ * the same way and every kaiju unlocked. */
 #undef NDEBUG /* the checks are asserts; release builds define NDEBUG */
 #include "../src/runtime_cheats.c"
 #include <assert.h>
@@ -18,6 +19,12 @@ static uint64_t place(unsigned char *image, uint64_t at, const MtSignature *sig)
     return at + sig->at;
 }
 
+/* A rip-relative reference at `ref` (its rel32) to `target`. */
+static void point(unsigned char *image, uint64_t ref, uint64_t target) {
+    const int32_t displacement = (int32_t)(target - (ref + 4));
+    memcpy(image + ref, &displacement, 4);
+}
+
 static uint32_t bits(float f) { uint32_t v; memcpy(&v, &f, 4); return v; }
 static uint32_t get(unsigned offset) { uint32_t v; memcpy(&v, player + offset, 4); return v; }
 static void put(unsigned offset, uint32_t v) { memcpy(player + offset, &v, 4); }
@@ -29,15 +36,15 @@ int main(void) {
     runtime_cheats_configure(image, SIZE); /* code unlike the game's: no cheats, no thread */
     assert(found_reported == 0 && !player);
 
-    const uint64_t ref = place(image, 0x100, &table_ref);
-    const int32_t displacement = (int32_t)(TABLE - (ref + 4));
-    memcpy(image + ref, &displacement, 4);
-    assert(!find_player(image, SIZE)); /* the reads of the fields are missing */
+    point(image, place(image, 0x100, &table_ref), TABLE);
+    runtime_cheats_configure(image, SIZE); /* the reads of the fields are missing */
+    assert(found_reported == 0 && !player && !save);
     for (size_t i = 0; i < sizeof(field_reads) / sizeof(*field_reads); ++i)
         place(image, 0x1000 + i * 0x100, &field_reads[i]);
-    player = find_player(image, SIZE);
+    player = find_data(image, SIZE, &table_ref, field_reads, sizeof(field_reads) / sizeof(*field_reads), 0xd0);
     assert(player == image + TABLE);
-    assert(!find_player(image, TABLE + 0x80)); /* the entry must be inside the image */
+    /* the entry must be inside the image */
+    assert(!find_data(image, TABLE + 0x80, &table_ref, field_reads, sizeof(field_reads) / sizeof(*field_reads), 0xd0));
 
     /* The game's values for a stage. */
     put(0x34, bits(0.001111f)); put(0x38, bits(0.3f)); put(0x3c, bits(0.016667f)); put(0x48, 0);
@@ -65,6 +72,59 @@ int main(void) {
     apply(0);
     assert(get(0x34) == bits(0.003f));
 
+    /* The save data: kaiju records found once the code that walks them and reads their flags is there. */
+    enum { SAVE = 0x10000, BIG = 0x20000, RECORDS = KAIJU_RECORDS + (KAIJU_LAST + 1) * KAIJU_RECORD_SIZE };
+    unsigned char *big = calloc(BIG, 1);
+    assert(big);
+    memcpy(big, image, SIZE);
+    point(big, place(big, 0x2000, &save_ref), SAVE);
+    assert(!find_data(big, BIG, &save_ref, kaiju_reads, 2, RECORDS));
+    place(big, 0x2100, &kaiju_reads[0]);
+    place(big, 0x2200, &kaiju_reads[1]);
+    save = find_data(big, BIG, &save_ref, kaiju_reads, 2, RECORDS);
+    assert(save == big + SAVE);
+    assert(!find_data(big, SAVE + RECORDS - 1, &save_ref, kaiju_reads, 2, RECORDS));
+
+    /* No save loaded yet (the records hold no ids): nothing is written. */
+    apply(MTGPU_CHEAT_ALL_KAIJU);
+    for (unsigned i = 0; i < RECORDS; ++i) assert(!save[i]);
+    /* A save: every record has its id; Godzilla (1) unlocked, Godzilla 1964 (8) in one mode. */
+    unsigned char *record[KAIJU_LAST + 2];
+    for (uint32_t id = 0; id <= KAIJU_LAST + 1; ++id) {
+        record[id] = save + KAIJU_RECORDS + id * KAIJU_RECORD_SIZE;
+        if (id <= KAIJU_LAST) memcpy(record[id], &id, 4);
+    }
+    memset(record[1] + 4, 1, 4);
+    record[8][4] = 1;
+    record[5][8] = 0x7f; /* the record goes on after the flags */
+    unsigned char before[RECORDS];
+    memcpy(before, save, RECORDS);
+    apply(MTGPU_CHEAT_NO_DAMAGE);
+    assert(!memcmp(before, save, RECORDS)); /* not with the other cheats alone */
+    apply(MTGPU_CHEAT_ALL_KAIJU);
+    for (uint32_t id = 0; id <= KAIJU_LAST; ++id) {
+        const int unlocked = id && id != KAIJU_UNUSED;
+        for (unsigned flag = 4; flag < 8; ++flag) assert(record[id][flag] == unlocked);
+    }
+    for (unsigned i = 0; i < RECORDS; ++i) { /* nothing but the flags changed */
+        const unsigned in_record = (i - KAIJU_RECORDS) % KAIJU_RECORD_SIZE;
+        if (i < KAIJU_RECORDS || in_record < 4 || in_record >= 8) assert(save[i] == before[i]);
+    }
+    assert(record[5][8] == 0x7f && record[KAIJU_LAST + 1][4] == 0); /* past the last kaiju */
+    /* A record that does not hold its id (being written) is left alone. */
+    memset(record[3] + 4, 0, 4);
+    record[3][0] = 0;
+    apply(MTGPU_CHEAT_ALL_KAIJU);
+    assert(!record[3][4] && record[2][4]);
+    /* Turned off: the unlocks stay (the game has them in its save now). */
+    record[3][0] = 3;
+    apply(0);
+    assert(record[2][4] && record[2][7] && !record[3][4]);
+
+    /* Both found: all three cheats. The thread started here reads big until the test ends. */
+    runtime_cheats_configure(big, BIG);
+    assert(found_reported == (MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU));
+    assert(player == big + TABLE && save == big + SAVE);
     free(image);
     puts("PASS: cheats");
     return 0;

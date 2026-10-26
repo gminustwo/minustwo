@@ -484,24 +484,40 @@ void ControlsTab() {
     ImGui::PopTextWrapPos();
 }
 
-// The cheats (src/runtime_cheats.c), applied at once; the launcher's Game page sets the same.
+// The cheats (src/runtime_cheats.c) and achievements on or off, applied at once; the launcher's
+// Game and Achievements pages set the same.
 void GameTab() {
     auto& s = MtSettings::Get();
+    const int found = s.cheats_found;
+    constexpr int all = MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU;
     Separator("Cheats");
-    if (!s.cheats_found) {
+    if (found != all) {
         ImGui::PushTextWrapPos(0.0f);
-        DisabledText("Unavailable: game version or code signature mismatch.");
+        DisabledText(found ? "Some are unavailable: game version or code signature mismatch."
+                           : "Unavailable: game version or code signature mismatch.");
         ImGui::PopTextWrapPos();
     }
-    ImGui::BeginDisabled(!s.cheats_found);
+    const auto cheat = [found](int bit, const char* label, std::atomic<bool>& value, const char* help) {
+        ImGui::BeginDisabled(!(found & bit));
+        CheckRow(label, value, help);
+        ImGui::EndDisabled();
+    };
     if (BeginRows("##cheats")) {
-        CheckRow("No damage", s.cheat_no_damage,
-                 "Godzilla's health is full again the moment he is hit.");
-        CheckRow("Infinite atomic breath", s.cheat_infinite_breath,
-                 "The temperature is at its maximum again right after each atomic breath.");
+        cheat(MTGPU_CHEAT_NO_DAMAGE, "No damage", s.cheat_no_damage,
+              "Godzilla's health is full again the moment he is hit.");
+        cheat(MTGPU_CHEAT_INFINITE_BREATH, "Infinite atomic breath", s.cheat_infinite_breath,
+              "The temperature is at its maximum again right after each atomic breath.");
+        cheat(MTGPU_CHEAT_ALL_KAIJU, "Unlock all kaiju", s.cheat_all_kaiju,
+              "Every kaiju is unlocked to play. The game saves them as unlocked: they stay unlocked "
+              "when this is turned off.");
         ImGui::EndTable();
     }
-    ImGui::EndDisabled();
+    Separator("Achievements");
+    if (BeginRows("##achievements")) {
+        CheckRow("Unlock achievements", s.achievements,
+                 "Off: the game unlocks no trophies and shows no notices. Those already unlocked stay.");
+        ImGui::EndTable();
+    }
 }
 
 void OverlayTab() {

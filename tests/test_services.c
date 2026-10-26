@@ -2,6 +2,14 @@
 #undef NDEBUG /* the checks are asserts; release builds define NDEBUG */
 #include "../src/runtime_services.c"
 #include <assert.h>
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#define rmdir _rmdir
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
 int mtgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
@@ -14,6 +22,10 @@ void mtgpu_toast_trophy(const char *title, const char *detail, const unsigned ch
     snprintf(last_trophy,sizeof(last_trophy),"%s",title ? title : "");
     snprintf(last_trophy_detail,sizeof(last_trophy_detail),"%s",detail ? detail : "");
 }
+static int achievements=1;
+int mtgpu_achievements_enabled(void) { return achievements; }
+static const char *user_dir="services-test-no-user-dir";
+const char *runtime_file_user_dir(void) { return user_dir; }
 void mtgpu_trophy_setup(const MtGpuTrophyLabels *labels, const MtGpuTrophyInfo *items,
                                 int count, const volatile uint32_t *unlocked) {
     (void)labels; (void)items; (void)count; (void)unlocked;
@@ -282,11 +294,6 @@ int main(void) {
     assert(playgo_close(handle)==0 && playgo_close(handle)==PLAYGO_BAD_HANDLE && playgo_terminate()==0);
 
     /* Trophies: nothing unlocked (a user dir without trophies.dat or texts; unlocks are not saved). */
-#ifdef _WIN32
-    _putenv("MT_USER_DIR=services-test-no-user-dir");
-#else
-    setenv("MT_USER_DIR","services-test-no-user-dir",1);
-#endif
     uint32_t flags[4]={~0u,~0u,~0u,~0u}, count=7;
     assert(trophy_unlock_state(1,1,flags,&count)==0 && !flags[0] && !flags[3] && count==0);
     assert(trophy_unlock_state(1,1,NULL,&count)==TROPHY_INVALID && trophy_release(0)==TROPHY_INVALID);
@@ -297,6 +304,29 @@ int main(void) {
     assert(trophy_unlock(1,1,7,NULL)==TROPHY_ALREADY_UNLOCKED);
     assert(trophy_unlock(1,1,1,NULL)==0 && !strcmp(last_trophy,"The Scars of Disaster"));
     assert(!strcmp(trophy_names[44],"Crazy for Godzilla") && !strcmp(trophy_names[0],"GODZILLA"));
+    /* Achievements off: the game is told the trophy is unlocked, but it is neither kept nor shown. */
+    achievements=0; last_trophy[0]=0;
+    assert(trophy_unlock(1,1,20,NULL)==0 && !last_trophy[0] && !(trophy_flags[0]&1u<<20));
+    achievements=1;
+    assert(trophy_unlock(1,1,20,NULL)==0 && !strcmp(last_trophy,"100% Destruction"));
+
+    /* The unlocks are kept in the user folder (the one --user names, with the saves) and a new
+     * session starts with them: on the Mac the app's folder was not the working directory's "user",
+     * and every session started with none. */
+    user_dir="services-test-user";
+    mkdir(user_dir,0755);
+    remove("services-test-user/trophies.dat");
+    trophy_ready=0; memset(trophy_flags,0,sizeof(trophy_flags));
+    assert(trophy_unlock(1,1,7,NULL)==0 && trophy_unlock(1,1,40,NULL)==0);
+    FILE *kept=fopen("services-test-user/trophies.dat","rb");
+    uint32_t on_disk[4]={0};
+    assert(kept && fread(on_disk,sizeof(on_disk),1,kept)==1 && on_disk[0]==1u<<7 && on_disk[1]==1u<<8 && !on_disk[2]);
+    fclose(kept);
+    trophy_ready=0; memset(trophy_flags,0,sizeof(trophy_flags)); /* the next session */
+    assert(trophy_unlock_state(1,1,flags,&count)==0 && flags[0]==1u<<7 && flags[1]==1u<<8);
+    assert(trophy_unlock(1,1,7,NULL)==TROPHY_ALREADY_UNLOCKED);
+    remove("services-test-user/trophies.dat");
+    rmdir(user_dir);
 
     float ratio=0; assert(safe_area(&ratio)==0 && ratio==1.0f && safe_area(NULL)==SYSTEM_PARAMETER);
 

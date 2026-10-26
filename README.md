@@ -64,7 +64,13 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - **Cheats** (the in-game menu's *Game* tab, live, or the launcher's *Game* page): *No damage* and *Infinite atomic
   breath*. They hold the tuning values of the player's entry in the game's player table, which every kaiju's gauges
   are updated from each frame: Godzilla's health and his temperature refill at once (`src/runtime_cheats.c`). Only an
-  instant defeat the game scripts itself still ends a stage.
+  instant defeat the game scripts itself still ends a stage. *Unlock all kaiju* sets the unlock flags of the 22
+  kaiju's records in the save data, as the game's own unlock does: King of Kaiju and Evolution modes then offer all
+  of them. The game saves them, so they stay unlocked when the cheat is turned off, and it awards *Kaiju Sighting*
+  and *Kaiju Collector* for them unless achievements are off.
+- **Achievements**: the trophies the game unlocks are kept in `trophies.dat` in the user folder, beside the saves,
+  and listed on the launcher's *Achievements* page and in-game (F8, or R3 + R2). *Unlock achievements* (that page, or
+  the in-game menu's *Game* tab) turns them off: the game then unlocks none and shows no notices.
 - The God of War III specific parts of SpartanPort (cheats, QTE helpers, orb multipliers, button-icon and pause-menu
   patching) are removed.
 

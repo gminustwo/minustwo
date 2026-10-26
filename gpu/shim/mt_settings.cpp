@@ -140,6 +140,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.cheat_no_damage = i != 0;
     } else if (key == "cheat_infinite_breath") {
         v.cheat_infinite_breath = i != 0;
+    } else if (key == "cheat_all_kaiju") {
+        v.cheat_all_kaiju = i != 0;
+    } else if (key == "achievements") {
+        v.achievements = value.empty() || i != 0;
     } else if (key == "restart_unconfirmed") {
         v.restart_unconfirmed = i != 0;
     } else if (key == "fsr4_auto_exposure") {
@@ -358,8 +362,9 @@ void Save() {
                        "mouse_aim_sensitivity=%d\n",
                  v.anisotropy.load(), v.vibration.load(), v.mouse_prompt_distance.load(), int(v.mouse_lock.load()),
                  v.mouse_aim_style.load(), v.mouse_aim_sensitivity.load());
-    std::fprintf(file, "cheat_no_damage=%d\ncheat_infinite_breath=%d\n", int(v.cheat_no_damage.load()),
-                 int(v.cheat_infinite_breath.load()));
+    std::fprintf(file, "cheat_no_damage=%d\ncheat_infinite_breath=%d\ncheat_all_kaiju=%d\nachievements=%d\n",
+                 int(v.cheat_no_damage.load()), int(v.cheat_infinite_breath.load()), int(v.cheat_all_kaiju.load()),
+                 int(v.achievements.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

@@ -79,11 +79,15 @@ struct Values {
     std::atomic<int> mouse_aim_style{0};
     /// L2 aim sensitivity in percent, 10 to 200: lower needs more mouse for the same stick. Live.
     std::atomic<int> mouse_aim_sensitivity{100};
-    /// Cheats (src/runtime_cheats.c): Godzilla's health and atomic breath refill every frame.
-    /// Live. cheats_found: this game build has them (set by the runtime at start).
+    /// Cheats (src/runtime_cheats.c): Godzilla's health and atomic breath refill every frame, and
+    /// every kaiju is unlocked in the save. Live. cheats_found: the MTGPU_CHEAT_* bits this game
+    /// build has (set by the runtime at start).
     std::atomic<bool> cheat_no_damage{false};
     std::atomic<bool> cheat_infinite_breath{false};
-    std::atomic<bool> cheats_found{false};
+    std::atomic<bool> cheat_all_kaiju{false};
+    std::atomic<int> cheats_found{0};
+    /// Off: the game unlocks no trophies and shows no notices (runtime_services.c). Live.
+    std::atomic<bool> achievements{true};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
     std::atomic<int> engine_fps{60};

@@ -372,11 +372,16 @@ extern "C" int mtgpu_vibration_percent(void) {
 extern "C" int mtgpu_cheats(void) {
     const auto& s = MtSettings::Get();
     return (s.cheat_no_damage.load(std::memory_order_relaxed) ? MTGPU_CHEAT_NO_DAMAGE : 0) |
-           (s.cheat_infinite_breath.load(std::memory_order_relaxed) ? MTGPU_CHEAT_INFINITE_BREATH : 0);
+           (s.cheat_infinite_breath.load(std::memory_order_relaxed) ? MTGPU_CHEAT_INFINITE_BREATH : 0) |
+           (s.cheat_all_kaiju.load(std::memory_order_relaxed) ? MTGPU_CHEAT_ALL_KAIJU : 0);
+}
+
+extern "C" int mtgpu_achievements_enabled(void) {
+    return MtSettings::Get().achievements.load(std::memory_order_relaxed);
 }
 
 extern "C" void mtgpu_cheats_found(int found) {
-    MtSettings::Get().cheats_found = found != 0;
+    MtSettings::Get().cheats_found = found;
 }
 
 extern "C" void mtgpu_movie_picture(void) {

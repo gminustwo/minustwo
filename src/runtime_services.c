@@ -642,9 +642,11 @@ static ABI int32_t ime_term(void) { memset(&ime,0,sizeof(ime)); return 0; }
 
 /* ---- Trophies: unlocks are kept on disk and reported back to the game ----
  * The count of trophies and their icons (TROP000.PNG, TROP001.PNG...) come from the game's
- * own sce_sys/trophy/trophy00.trp. The unlocked set is saved in <user dir>/trophies.dat
- * (user dir: MT_USER_DIR, or "user"). The texts come from <user dir>/trophy_texts.txt or
- * trophy_names.txt when one is there, otherwise from GODZILLA's list built in (English). */
+ * own sce_sys/trophy/trophy00.trp. The unlocked set is saved in <user dir>/trophies.dat (the
+ * --user folder, which holds the saves too; the launcher's Achievements page reads it there).
+ * The texts come from <user dir>/trophy_texts.txt or trophy_names.txt when one is there,
+ * otherwise from GODZILLA's list built in (English). With achievements off in the menu, an
+ * unlock is neither saved nor shown. */
 #define TROPHY_MAX 128
 #define TROPHY_ALREADY_UNLOCKED ((int32_t)0x80551609)
 static uint32_t trophy_flags[4];
@@ -653,8 +655,7 @@ static int trophy_ready;
 
 static const char *trophy_state_path(void) {
     static char path[512];
-    const char *dir=getenv("MT_USER_DIR");
-    snprintf(path,sizeof(path),"%s/trophies.dat",dir && dir[0] ? dir : "user");
+    snprintf(path,sizeof(path),"%s/trophies.dat",runtime_file_user_dir());
     return path;
 }
 static uint32_t trp_be32(const unsigned char *p) { return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3]; }
@@ -747,10 +748,9 @@ static const char *const godzilla_trophies[45][2]={
     {"Crazy for Godzilla","View all entries in the Kaiju Guide."}, /* 44: Bronze */
 };
 static FILE *trophy_open_text(char *path,size_t size) {
-    const char *dir=getenv("MT_USER_DIR");
     static const char *const files[2]={"trophy_texts.txt","trophy_names.txt"};
     for (int i=0;i<2;i++) {
-        snprintf(path,size,"%s/%s",dir && dir[0] ? dir : "user",files[i]);
+        snprintf(path,size,"%s/%s",runtime_file_user_dir(),files[i]);
         FILE *f=fopen(path,"rb");
         if (f) return f;
     }
@@ -908,6 +908,11 @@ static ABI int32_t trophy_unlock(int32_t ctx,int32_t handle,int32_t id,int32_t *
     (void)ctx; (void)handle;
     if (platinum) *platinum=-1;
     if (id<0 || id>=TROPHY_MAX) return TROPHY_INVALID;
+    if (!mtgpu_achievements_enabled()) {
+        /* As if unlocked: the game goes on; a later session with achievements on unlocks it again. */
+        printf("Runtime: trophy %d not unlocked: achievements are off\n",id);
+        return 0;
+    }
     pthread_mutex_lock(&lock);
     trophy_load_once();
     uint32_t bit=1u<<(id%32);
