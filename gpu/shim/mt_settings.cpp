@@ -62,7 +62,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         return;
     }
     if (key == "menu_tab") {
-        v.menu_tab = i >= 0 && i <= 3 ? i : 0;
+        v.menu_tab = i >= 0 && i <= 4 ? i : 0;
         return;
     }
     if (key == "upscaler") {
@@ -136,6 +136,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mouse_aim_style = std::clamp(i, 0, 1);
     } else if (key == "mouse_aim_sensitivity") {
         v.mouse_aim_sensitivity = value.empty() ? 100 : std::clamp(i, 10, 200);
+    } else if (key == "cheat_no_damage") {
+        v.cheat_no_damage = i != 0;
+    } else if (key == "cheat_infinite_breath") {
+        v.cheat_infinite_breath = i != 0;
     } else if (key == "restart_unconfirmed") {
         v.restart_unconfirmed = i != 0;
     } else if (key == "fsr4_auto_exposure") {
@@ -354,6 +358,8 @@ void Save() {
                        "mouse_aim_sensitivity=%d\n",
                  v.anisotropy.load(), v.vibration.load(), v.mouse_prompt_distance.load(), int(v.mouse_lock.load()),
                  v.mouse_aim_style.load(), v.mouse_aim_sensitivity.load());
+    std::fprintf(file, "cheat_no_damage=%d\ncheat_infinite_breath=%d\n", int(v.cheat_no_damage.load()),
+                 int(v.cheat_infinite_breath.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

@@ -125,7 +125,7 @@ ImU32 U32(const ImVec4& c, float a = 1.0f) { return ImGui::ColorConvertFloat4ToU
 ImFont* heading_font = nullptr;
 ImFont* nav_font = nullptr;
 ImFont* kana_font = nullptr;
-constexpr int kMenuTabs = 4;
+constexpr int kMenuTabs = 5;
 
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
@@ -484,6 +484,26 @@ void ControlsTab() {
     ImGui::PopTextWrapPos();
 }
 
+// The cheats (src/runtime_cheats.c), applied at once; the launcher's Game page sets the same.
+void GameTab() {
+    auto& s = MtSettings::Get();
+    Separator("Cheats");
+    if (!s.cheats_found) {
+        ImGui::PushTextWrapPos(0.0f);
+        DisabledText("Unavailable: game version or code signature mismatch.");
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::BeginDisabled(!s.cheats_found);
+    if (BeginRows("##cheats")) {
+        CheckRow("No damage", s.cheat_no_damage,
+                 "Godzilla's health is full again the moment he is hit.");
+        CheckRow("Infinite atomic breath", s.cheat_infinite_breath,
+                 "The temperature is at its maximum again right after each atomic breath.");
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+}
+
 void OverlayTab() {
     namespace P = MtPerfStats;
     auto& s = MtSettings::Get();
@@ -619,7 +639,7 @@ void Menu() {
     ImGui::TextDisabled("%s", keys);
 
     // The tabs: names in capitals, the chosen one atomic blue and underlined, over a rule.
-    static const char* const tabs[kMenuTabs] = {"Image", "Performance", "Controls", "Overlay"};
+    static const char* const tabs[kMenuTabs] = {"Image", "Performance", "Controls", "Overlay", "Game"};
     ImGui::Dummy(ImVec2(0.0f, 10.0f * u));
     const ImVec2 strip = ImGui::GetCursorScreenPos();
     ImGui::PushFont(MtUi::chinese ? nullptr : nav_font, 19.0f);
@@ -659,7 +679,8 @@ void Menu() {
         case 0: ImageTab(); break;
         case 1: PerformanceTab(); break;
         case 2: ControlsTab(); break;
-        default: OverlayTab(); break;
+        case 3: OverlayTab(); break;
+        default: GameTab(); break;
         }
     }
     ImGui::EndChild();
@@ -689,6 +710,27 @@ void Menu() {
     } else {
         ImGui::NewLine();
     }
+    // Quit to desktop asks once more, then ends the game as the window's close button does (the
+    // window loop ends the process; what the game has not saved yet is lost).
+    static bool confirm_quit = false;
+    if (confirm_quit) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(Theme::Warn, "%s", Tr("Quit to desktop? Unsaved progress is lost."));
+        ImGui::SameLine();
+        if (Button("Quit")) {
+            MtSettings::Save();
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
+        ImGui::SameLine();
+        if (Button("Cancel")) {
+            confirm_quit = false;
+        }
+    } else if (Button("Quit to desktop")) {
+        confirm_quit = true;
+    }
+    ImGui::SameLine();
     const float close_width = ImGui::CalcTextSize(Tr("Close")).x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - close_width);
     if (Button("Close")) {
@@ -696,6 +738,7 @@ void Menu() {
     }
     ImGui::End();
     if (!keep_open) {
+        confirm_quit = false;
         SetOpen(false);
     }
 }

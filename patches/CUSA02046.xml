@@ -6,4 +6,43 @@
     <TitleID>
         <ID>CUSA02046</ID>
     </TitleID>
+    <!-- The logo scene (scene 0x712) loads the save data and shows the first-start dialogs, then
+         plays the logos in state 2 of its update (0x2b5f0). State 2 goes straight to state 0x10,
+         which hands over to the title as the last logo does. -->
+    <Metadata Title="GODZILLA" Name="Skip startup logos"
+              Note="Goes from the save data notices straight to the opening movie or the title."
+              Author="Minus Two" PatchVer="1.0" AppVer="01.01" AppElf="eboot.bin">
+        <PatchList>
+            <Target Name="logo_return" Address="0x42b81e" Pattern="48 83 c4 08 5b 5d c3 0f 1f 00 fb fd ff ff a2 fe ff ff c2" At="0"/>
+            <Line Type="bytes" Address="0x42b6ea" Pattern="ba 01 00 00 00 e9 ?? ?? ?? ?? 48 8b bb b8 03 00 00 80 bf 78 03 00 00 00" At="10"
+                  Value="66 c7 83 9a 00 00 00 10 00 e9 {rel:logo_return:0}"/>
+        </PatchList>
+    </Metadata>
+    <!-- The title plays 01_op.mp4 when it comes from the logos (flag 0x6a2dcc); the flag is
+         cleared and the title skips to its menu as it does on the way back from the main menu. -->
+    <Metadata Title="GODZILLA" Name="Skip opening movie"
+              Note="The title screen appears without the opening movie (it still plays after a while on the title screen)."
+              Author="Minus Two" PatchVer="1.0" AppVer="01.01" AppElf="eboot.bin">
+        <PatchList>
+            <Target Name="title_menu" Address="0x43150e" Pattern="5b 41 5e 5d c3 66 c7 83 9a 00 00 00 10 00 eb f0" At="5"/>
+            <Line Type="bytes" Address="0x431488" Pattern="80 38 00 0f 84 ?? ?? ?? ?? c6 00 00 bf 1e 00 00 00" At="3"
+                  Value="c6 00 00 e9 {rel:title_menu:0}"/>
+        </PatchList>
+    </Metadata>
+    <!-- START on a new save, and New Game, start the tutorial stage (title state 0x22,
+         0x1f7d0(0, 1)); state 0x40 opens the main menu instead, as START does on a save that has
+         played. The save still records that the game was started (offset 0x2c).
+         God of Destruction in the main menu (0x2c640) also starts the tutorial while no stage has
+         been played (save offset 0xd2f44, set when a stage starts); it goes to the stage map. -->
+    <Metadata Title="GODZILLA" Name="Skip tutorial"
+              Note="A new game opens the main menu, and God of Destruction its first stage, without the 1954 tutorial stage."
+              Author="Minus Two" PatchVer="1.0" AppVer="01.01" AppElf="eboot.bin">
+        <PatchList>
+            <Target Name="title_next" Address="0x431682" Pattern="eb 42 ff 83 c8 06 00 00 83 bb e4 03 00 00 00 74 0a" At="8"/>
+            <Line Type="bytes" Address="0x43187e" Pattern="31 ff be 01 00 00 00 e8 ?? ?? ?? ?? 66 ff 83 9a 00 00 00" At="0"
+                  Value="66 c7 83 9a 00 00 00 40 00 e9 {rel:title_next:0}"/>
+            <Line Type="bytes" Address="0x42c7bb" Pattern="8b b1 44 2f 0d 00 09 d6 0f 84 ?? ?? ?? ?? 85 d2" At="8"
+                  Value="66 0f 1f 44 00 00"/>
+        </PatchList>
+    </Metadata>
 </Patch>

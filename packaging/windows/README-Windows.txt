@@ -29,7 +29,11 @@ and installs it and opens the launcher again (saves, settings and mods are kept)
 
 While playing
 - Insert on the keyboard, or R3 + L2 on a controller, opens the port's menu (display mode,
-  VSync, frame rate limit, controller vibration, mouse camera, overlay).
+  VSync, frame rate limit, controller vibration, mouse camera, overlay, and the Game tab's
+  cheats: No damage, Infinite atomic breath). Quit to desktop at its bottom ends the game
+  (it asks first: what the game has not saved yet is lost).
+- Settings -> Game: skip the startup logos, the opening movie or the 1954 tutorial stage, and
+  the same cheats.
 - Render resolution in that menu draws the game above 1080p, up to 4K and 8K (Apply and
   restart).
 - Match refresh rate (on by default): in Borderless and Fullscreen, a display whose refresh

@@ -79,6 +79,11 @@ struct Values {
     std::atomic<int> mouse_aim_style{0};
     /// L2 aim sensitivity in percent, 10 to 200: lower needs more mouse for the same stick. Live.
     std::atomic<int> mouse_aim_sensitivity{100};
+    /// Cheats (src/runtime_cheats.c): Godzilla's health and atomic breath refill every frame.
+    /// Live. cheats_found: this game build has them (set by the runtime at start).
+    std::atomic<bool> cheat_no_damage{false};
+    std::atomic<bool> cheat_infinite_breath{false};
+    std::atomic<bool> cheats_found{false};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
     std::atomic<int> engine_fps{60};

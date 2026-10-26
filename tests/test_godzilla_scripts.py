@@ -61,7 +61,27 @@ class ProfileTest(unittest.TestCase):
         self.assertIsNone(patches.game_profile('CUSA01623', 'God of War III Remastered'))
 
     def test_built_in_patch_file_parses(self):
-        self.assertEqual(patches.available_patches(patches.PATCHES_DIR / 'CUSA02046.xml', '01.01'), set())
+        self.assertEqual(patches.available_patches(patches.PATCHES_DIR / 'CUSA02046.xml', '01.01'),
+                         {'Skip startup logos', 'Skip opening movie', 'Skip tutorial'})
+
+    def test_startup_patches_write_their_jumps(self):
+        # At the reference build's addresses (no game image: Address and Target addresses), the
+        # jumps land where the comments in the XML say.
+        names = ['Skip startup logos', 'Skip opening movie', 'Skip tutorial']
+        writes = patches.compile_patches(patches.PATCHES_DIR / 'CUSA02046.xml', names, '01.01', [(0, 0x64f208)])
+        self.assertEqual([(hex(offset), data.hex(' ')) for offset, data in writes], [
+            ('0x2b6ea', '66 c7 83 9a 00 00 00 10 00 e9 26 01 00 00'),  # state 0x10, jmp 0x2b81e
+            ('0x31488', 'c6 00 00 e9 7e 00 00 00'),                    # flag cleared, jmp 0x3150e
+            ('0x3187e', '66 c7 83 9a 00 00 00 40 00 e9 f6 fd ff ff'),  # state 0x40, jmp 0x31682
+            ('0x2c7bb', '66 0f 1f 44 00 00'),                          # no tutorial branch
+        ])
+
+    def test_each_patch_line_signature_covers_its_write(self):
+        import xml.etree.ElementTree as ET
+        for line in ET.parse(patches.PATCHES_DIR / 'CUSA02046.xml').getroot().iter('Line'):
+            pattern = patches.parse_pattern(line.get('Pattern'))
+            written = len(patches.fill(line.get('Value'), 0, {'logo_return': 0, 'title_menu': 0, 'title_next': 0}))
+            self.assertLessEqual(int(line.get('At')) + written, len(pattern), line.get('Address'))
 
 
 class LauncherTest(unittest.TestCase):
@@ -100,6 +120,21 @@ class LauncherTest(unittest.TestCase):
         env = self.launcher.game_environment(values)
         self.assertEqual((env['MT_GAME_DIR'], env['MT_LANGUAGE'], env['MT_UNLOCK_ADDONS']), ('G', '17', '0'))
         self.assertEqual(env['MT_KEY_MAP'], 'cross=Return,circle=Comma')
+
+    def test_startup_options_reach_run_py_as_patches(self):
+        values = {**self.launcher.DEFAULTS, 'game_dir': 'G'}
+        os.environ.pop('MT_PATCHES', None)
+        self.assertNotIn('MT_PATCHES', self.launcher.game_environment(values))
+        values.update(skip_logos=True, skip_tutorial=True)
+        self.assertEqual(self.launcher.game_environment(values)['MT_PATCHES'], 'Skip startup logos;Skip tutorial')
+        os.environ['MT_PATCHES'] = 'Other;Skip tutorial'
+        try:
+            self.assertEqual(self.launcher.game_environment(values)['MT_PATCHES'],
+                             'Other;Skip tutorial;Skip startup logos')
+        finally:
+            os.environ.pop('MT_PATCHES')
+        available = patches.available_patches(patches.PATCHES_DIR / 'CUSA02046.xml', '01.01')
+        self.assertTrue({patch for _, patch, _, _ in self.launcher.STARTUP_PATCHES} <= available)
 
     def test_settings_with_a_byte_order_mark_load(self):
         self.launcher.SETTINGS.write_text(json.dumps({'game_dir': 'D:/G'}), encoding='utf-8-sig')

@@ -52,7 +52,7 @@ int main() {
         std::ofstream out(path);
         out << "show_fps=1\noverlay_fps=0\noverlay_frametime=1\noverlay_upscaler=0\noverlay_gpu=1\n"
                "overlay_cpu=1\noverlay_ram=0\noverlay_vram=1\noverlay_scale=400\noverlay_corner=2\n"
-               "overlay_opacity=-5\noverlay_layout=1\nmenu_tab=2\n";
+               "overlay_opacity=-5\noverlay_layout=1\nmenu_tab=2\ncheat_no_damage=1\n";
     }
     _putenv_s("MT_CONFIG", path);
     auto& v = MtSettings::Get();
@@ -61,6 +61,8 @@ int main() {
     assert(v.overlay_items == (P::FrameTime | P::Gpu | P::Cpu | P::Vram));
     assert(v.overlay_scale == 300 && v.overlay_corner == 2 && v.overlay_opacity == 0);
     assert(v.overlay_layout == 1 && v.menu_tab == 2);
+    assert(v.cheat_no_damage && !v.cheat_infinite_breath);  // the cheats are off unless the file says
+    v.cheat_infinite_breath = true;
     v.overlay_items = P::Fps | P::Ram;
     v.overlay_scale = 150;
     v.overlay_opacity = 70;
@@ -69,7 +71,8 @@ int main() {
     const std::string saved = Read(path);
     for (const char* line : {"overlay_fps=1\n", "overlay_frametime=0\n", "overlay_ram=1\n", "overlay_vram=0\n",
                              "overlay_scale=150\n", "overlay_corner=2\n", "overlay_opacity=70\n",
-                             "overlay_layout=1\n", "menu_tab=1\n"}) {
+                             "overlay_layout=1\n", "menu_tab=1\n", "cheat_no_damage=1\n",
+                             "cheat_infinite_breath=1\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
     {
@@ -78,6 +81,18 @@ int main() {
     }
     MtSettings::Load();
     assert(v.overlay_corner == 1 && v.menu_tab == 0 && v.overlay_scale == 50);
+    {
+        std::ofstream out(path);
+        out << "menu_tab=4\ncheat_no_damage=0\n";  // 4: the Game tab
+    }
+    MtSettings::Load();
+    assert(v.menu_tab == 4 && !v.cheat_no_damage && v.cheat_infinite_breath);
+    {
+        std::ofstream out(path);
+        out << "menu_tab=5\n";
+    }
+    MtSettings::Load();
+    assert(v.menu_tab == 0);
     std::remove(path);
     std::puts("PASS: performance overlay");
 }

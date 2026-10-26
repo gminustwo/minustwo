@@ -91,6 +91,9 @@ void *runtime_low_map(size_t size, int prot);
 void runtime_memory_reserve(void);
 uintptr_t runtime_ajm_resolve(const char *name);
 void runtime_ajm_report(void);
+/* The menu's cheats (runtime_cheats.c): finds the game's player table in the loaded image and
+ * keeps the cheats the menu turns on applied. */
+void runtime_cheats_configure(unsigned char *image, uint64_t size);
 /* AjmDecMp3ParseFrame (guest layout). */
 typedef struct {
     uint64_t frame_size;

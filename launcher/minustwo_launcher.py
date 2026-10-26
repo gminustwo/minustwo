@@ -70,7 +70,19 @@ KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('mov
         ('left', 'D-pad left', 'J'), ('right', 'D-pad right', 'L'), ('look_up', 'Camera up', 'Up'),
         ('look_down', 'Camera down', 'Down'), ('look_left', 'Camera left', 'Left'), ('look_right', 'Camera right', 'Right'))
 DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True,
-            'check_updates': True}
+            'check_updates': True, 'skip_logos': False, 'skip_movie': False, 'skip_tutorial': False}
+# The Game page's startup options: a setting, its built-in patch (patches/CUSA02046.xml), the label and the hint.
+STARTUP_PATCHES = (
+    ('skip_logos', 'Skip startup logos', 'Skip the logos',
+     'No publisher and studio logos after the save data notices.'),
+    ('skip_movie', 'Skip opening movie', 'Skip the opening movie',
+     'The title screen at once (the movie still plays when the title screen is left alone).'),
+    ('skip_tutorial', 'Skip tutorial', 'Skip the tutorial',
+     'New games skip the 1954 tutorial stage; it stays in the God of Destruction menu.'))
+# The Game page's cheats, kept in minustwo.ini (the in-game menu's Game tab turns them on and off as you play).
+CHEATS = (('cheat_no_damage', 'No damage', "Godzilla's health is full again the moment he is hit."),
+          ('cheat_infinite_breath', 'Infinite atomic breath',
+           'The temperature is at its maximum again right after each atomic breath.'))
 MODS, MODS_CONFIG, MOD_PRESETS = DATA / 'mods', DATA / 'mods.json', DATA / 'mods_presets.json'
 PATCHES, PATCHES_CONFIG = DATA / 'patches', DATA / 'patches.json'
 
@@ -128,6 +140,11 @@ def game_environment(values):
            'MT_UNLOCK_ADDONS': '1' if values['unlock_addons'] else '0', 'MT_CONFIG': str(INI),
            'MT_DATA_DIR': str(DATA), 'MT_MODS_ENABLED': '1' if values.get('mods_enabled', True) else '0',
            'PYTHONIOENCODING': 'utf-8'}
+    # The startup options are built-in patches (run.py adds them to the ones MT_PATCHES already names).
+    chosen = [n for n in os.environ.get('MT_PATCHES', '').split(';') if n.strip()]
+    chosen += [patch for key, patch, _, _ in STARTUP_PATCHES if values.get(key) and patch not in chosen]
+    if chosen:
+        env['MT_PATCHES'] = ';'.join(chosen)
     changed = {k: v for k, v in values['keys'].items() if v and v != dict((a, d) for a, _, d in KEYS).get(k)}
     if changed:
         # ',' and '=' separate the entries: the runtime knows those two keys as Comma and Equals.
@@ -836,7 +853,7 @@ class Launcher:
 
     def build_game(self):
         tk = self.tk
-        page = self.page('game', 'Game', 'Language, add-ons and the controller.')
+        page = self.page('game', 'Game', 'Language, add-ons, startup, cheats and the controller.')
         self.section(page, 'Game')
         self.language_var, box = self.choice(page, LANGUAGES, self.values['language'], width=26)
         self.row(page, 'Game language', box)
@@ -844,6 +861,20 @@ class Launcher:
         self.addons_var.trace_add('write', lambda *_a: self.refresh_checks())
         self.row(page, 'Unlock the add-ons', self.check(page, self.addons_var),
                  'The pre-order and diorama add-ons are unlocks of content already in the game.')
+        self.section(page, 'Startup')
+        self.startup_vars = {}
+        for key, _, label, hint in STARTUP_PATCHES:
+            self.startup_vars[key] = tk.BooleanVar(value=bool(self.values[key]))
+            self.row(page, label, self.check(page, self.startup_vars[key]), hint)
+        self.section(page, 'Cheats')
+        self.cheat_vars = {}
+        for key, label, hint in CHEATS:
+            self.cheat_vars[key] = tk.BooleanVar(value=self.ini.get(key, '0') == '1')
+            self.row(page, label, self.check(page, self.cheat_vars[key]), hint)
+        self.ttk.Label(page, text='The in-game menu (Game tab) turns the cheats on and off while you play.',
+                       style='Muted.TLabel').grid(row=page.next_row, column=0, columnspan=2, sticky='w',
+                                                  pady=(self.px(6), 0))
+        page.next_row += 1
         self.section(page, 'Controls')
         self.vibration_var = tk.IntVar(value=int(self.ini.get('vibration', '100') or 100))
         self.row(page, 'Controller vibration (%)', self.slider(page, self.vibration_var, 0, 100))
@@ -1377,6 +1408,8 @@ class Launcher:
         self.values['unlock_addons'] = bool(self.addons_var.get())
         self.values['mods_enabled'] = bool(self.mods_enabled_var.get())
         self.values['check_updates'] = bool(self.check_updates_var.get())
+        for key, var in self.startup_vars.items():
+            self.values[key] = bool(var.get())
         defaults = {a: d for a, _, d in KEYS}
         self.values['keys'] = {a: v.get().strip() for a, v in self.key_vars.items() if v.get().strip() != defaults[a]}
 
@@ -1389,7 +1422,8 @@ class Launcher:
                    'match_refresh': int(self.match_refresh_var.get()), 'render_resolution': resolution,
                    'anisotropy': dict(ANISOTROPY)[self.anisotropy_var.get()],
                    'fps_limit': dict(FPS_LIMITS)[self.fps_var.get()], 'show_fps': int(self.show_fps_var.get()),
-                   'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get()})
+                   'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get(),
+                   **{key: int(var.get()) for key, var in self.cheat_vars.items()}})
         if announce:
             self.summary.configure(text='Settings saved.', fg=ACCENT_HI)
             self.root.after(2500, self.update_summary)

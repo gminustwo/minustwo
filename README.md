@@ -27,7 +27,7 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 | Loader | `src/probe.c` | Loads the image, binds its imports to the runtime and starts the game's original code |
 | Runtime | `src/runtime_*.c` | The PS4 system functions: kernel, memory, threads, files, audio (AudioOut and the Ngs2 mixer), fonts, pad, saves, dialogs, services |
 | GPU | `gpu/shadps4/` | The shadPS4 video core: PS4 GPU commands and shaders to Vulkan, with SpartanPort's background shader cache |
-| In-game menu | `gpu/shim/` | Dear ImGui menu (Insert, or R3 + L2) with display, performance and overlay settings |
+| In-game menu | `gpu/shim/` | Dear ImGui menu (Insert, or R3 + L2) with display, performance and overlay settings, cheats and Quit to desktop |
 | Launcher | `launcher/minustwo_launcher.py` | Game folder, settings, controls and the Play button |
 
 ### What this port adds for GODZILLA
@@ -57,6 +57,14 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - The add-ons (the pre-order early unlocks and the diorama figure sets, whose content is in the base game) are
   reported as owned. Turn it off in the launcher, or with `MT_UNLOCK_ADDONS=0`.
 - Keyboard and mouse defaults for GODZILLA's controls, mouse camera.
+- **Startup options** (the launcher's *Game* page, built-in patches in `patches/CUSA02046.xml`): skip the publisher
+  and studio logos, skip the opening movie (it still plays as the title screen's attract movie), and skip the 1954
+  tutorial stage. With *Skip tutorial*, a new game opens the main menu and *God of Destruction* starts at its first
+  stage; the tutorial stays in the *God of Destruction* menu.
+- **Cheats** (the in-game menu's *Game* tab, live, or the launcher's *Game* page): *No damage* and *Infinite atomic
+  breath*. They hold the tuning values of the player's entry in the game's player table, which every kaiju's gauges
+  are updated from each frame: Godzilla's health and his temperature refill at once (`src/runtime_cheats.c`). Only an
+  instant defeat the game scripts itself still ends a stage.
 - The God of War III specific parts of SpartanPort (cheats, QTE helpers, orb multipliers, button-icon and pause-menu
   patching) are removed.
 
@@ -188,8 +196,8 @@ the release page; the new apps replace the old ones by hand (the player's files 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"     # launcher, patch selection, preparation scripts
 source ./msys2-env.sh                                     # in MSYS2 CLANG64, after build.sh:
-ninja -C out/gpu ngs2-test eventflag-test services-test pad-map-test graphics-settings-test
-out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
+ninja -C out/gpu ngs2-test eventflag-test services-test cheats-test pad-map-test graphics-settings-test
+out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe && out/gpu/cheats-test.exe
 ```
 
 ## Tools for testing

@@ -45,6 +45,11 @@ int mtgpu_choice_confirm(const char *title, const char *const *items, int count,
 int mtgpu_overlay_captures_input(void);
 /* Controller vibration strength set in the menu, 0 (off) to 100 (the game's own). */
 int mtgpu_vibration_percent(void);
+/* The cheats turned on in the menu (MTGPU_CHEAT_* bits), read live by src/runtime_cheats.c, and
+ * whether this game build has them (the menu shows them unavailable otherwise). */
+enum { MTGPU_CHEAT_NO_DAMAGE = 1, MTGPU_CHEAT_INFINITE_BREATH = 2 };
+int mtgpu_cheats(void);
+void mtgpu_cheats_found(int found);
 /* R3 + L1 + R1 (pad) or F9: the next engine frame rate (60, 100, 120, 144, 180, 240), applied live. */
 void mtgpu_engine_fps_cycle(void);
 /* The video decoder handed the game a picture: a cutscene is on screen (the presenter draws
