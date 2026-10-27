@@ -4,12 +4,14 @@
 # Homebrew on Apple silicon only has arm64 ones. They are built from source into out/macos-deps as
 # shared libraries with @rpath install names (packaging/macos/package.sh copies them into the app),
 # the Vulkan driver (KosmicKrisp) too. Each one is built once: its stamp in out/macos-deps/stamps
-# names the version, so raising a version below rebuilds only that library.
+# names the version (and +N when this script changed how it is built), so raising a version below
+# rebuilds only that library.
 # Needs Xcode (or its command line tools), git, curl, python3 and Homebrew's cmake, ninja, pkgconf,
 # nasm, llvm, spirv-tools and spirv-llvm-translator (the last three for KosmicKrisp's compiler).
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
-prefix=$PWD/out/macos-deps
+root=$PWD
+prefix=$root/out/macos-deps
 src=$prefix/src
 stamps=$prefix/stamps
 mkdir -p "$src" "$stamps"
@@ -69,11 +71,13 @@ if ! done_already vulkan-headers $VULKAN; then
     cmake_install vulkan-headers "$src/vulkan-headers"
     finish vulkan-headers $VULKAN
 fi
-if ! done_already vulkan-loader $VULKAN; then
+if ! done_already vulkan-loader $VULKAN+1; then
+    # SYSCONFDIR=/etc: the system folder it searches besides the driver the game names (VK_DRIVER_FILES);
+    # by default the prefix's etc as well, a path in the builder's home folder that players do not have.
     fetch vulkan-loader KhronosGroup/Vulkan-Loader $VULKAN
     cmake_install vulkan-loader "$src/vulkan-loader" -DBUILD_TESTS=OFF -DUPDATE_DEPS=OFF \
-        -DVulkanHeaders_DIR="$prefix/share/cmake/VulkanHeaders"
-    finish vulkan-loader $VULKAN
+        -DVulkanHeaders_DIR="$prefix/share/cmake/VulkanHeaders" -DSYSCONFDIR=/etc
+    finish vulkan-loader $VULKAN+1
 fi
 if ! done_already kosmickrisp $KOSMICKRISP; then
     # KosmicKrisp, LunarG's Mesa Vulkan driver on Metal (macOS 26 and newer), as shadPS4 uses it on
@@ -127,25 +131,28 @@ if ! done_already freetype $FREETYPE; then
         -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
     finish freetype $FREETYPE
 fi
-if ! done_already ffmpeg $FFMPEG; then
+if ! done_already ffmpeg $FFMPEG+1; then
     # What the movie player (MP4: H.264/HEVC with AAC), the video and MP3 decoders and the PNG
     # reader use. nasm assembles the x86 SIMD code, which Rosetta translates like the rest.
+    # Neither the assert paths nor the configure line the libraries keep (avcodec_configuration())
+    # hold the build folder, which is in the builder's home folder: both start at the repository.
     fetch ffmpeg FFmpeg/FFmpeg $FFMPEG
     rm -rf "${src:?}/ffmpeg-build" && mkdir -p "$src/ffmpeg-build"
     (
         cd "$src/ffmpeg-build"
         "$src/ffmpeg/configure" --prefix="$prefix" --enable-shared --disable-static --install-name-dir=@rpath \
             --arch=x86_64 --target-os=darwin --enable-cross-compile --cc="clang -arch x86_64" \
-            --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET -ffile-prefix-map=$root/=" \
             --extra-ldflags="-arch x86_64 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" --x86asmexe=nasm \
             --disable-programs --disable-doc --disable-network --disable-autodetect --enable-pthreads --enable-zlib \
             --disable-everything --disable-avdevice --disable-avfilter --enable-avcodec --enable-avformat --enable-avutil --enable-swscale --enable-swresample \
             --enable-decoder=h264,hevc,aac,mp3,mp3float,png --enable-parser=h264,hevc,aac,mpegaudio,png \
             --enable-demuxer=mov,mp3,aac,h264,hevc --enable-protocol=file
+        sed -i '' "s#$root/##g" config.h
         make -j "$jobs"
         make install
     ) > "$src/ffmpeg-build.log" 2>&1 || { tail -30 "$src/ffmpeg-build.log" >&2; echo 'macOS dependencies: building FFmpeg failed' >&2; exit 1; }
-    finish ffmpeg $FFMPEG
+    finish ffmpeg $FFMPEG+1
 fi
 if ! done_already fmt $FMT; then
     fetch fmt fmtlib/fmt $FMT

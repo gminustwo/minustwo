@@ -155,6 +155,13 @@ if [[ -n $forbidden ]]; then
     echo "$forbidden" >&2
     exit 1
 fi
+# Nor the builder's home folder, whose path names the account (/Users/<name>): build paths are kept out
+# of the binaries (gpu/CMakeLists.txt, packaging/macos/deps.sh).
+if leaks=$(grep -rlF "$HOME/" "$dest"); then
+    echo "Package holds paths in your home folder ($HOME):" >&2
+    echo "$leaks" >&2
+    exit 1
+fi
 
 mkdir -p dist
 rm -f dist/minustwo-macos.zip
