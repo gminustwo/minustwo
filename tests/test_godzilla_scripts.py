@@ -246,6 +246,83 @@ class UpdateTest(unittest.TestCase):
         self.launcher.replace_appimage(new.as_uri(), checksum.as_uri(), installed)
         self.assertEqual(installed.read_bytes(), b'new appimage')
 
+    def test_the_feed_can_be_another_url(self):
+        feed = self.root / 'release.json'
+        feed.write_text(json.dumps({'tag_name': 'v9.0.0', 'html_url': 'https://x/page', 'assets': [
+            {'name': f'minustwo{self.launcher.PACKAGE_SUFFIX}', 'browser_download_url': 'https://x/package'},
+            {'name': f'minustwo{self.launcher.PACKAGE_SUFFIX}.sha256', 'browser_download_url': 'https://x/sum'}]}))
+        os.environ['MT_UPDATE_FEED'] = feed.as_uri()
+        try:
+            self.assertEqual(self.launcher.latest_release(), ('9.0.0', 'https://x/package', 'https://x/sum', 'https://x/page'))
+        finally:
+            os.environ.pop('MT_UPDATE_FEED')
+
+    def test_the_macos_package_unpacks_to_its_apps(self):
+        import hashlib
+        import zipfile
+        archive = self.root / 'minustwo-macos.zip'
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('minustwo-macos/MinusTwo.app/Contents/MacOS/MinusTwo', b'new launcher')
+            z.writestr('minustwo-macos/Play MinusTwo.app/Contents/MacOS/play-minustwo', b'play')
+        checksum = self.root / 'minustwo-macos.zip.sha256'
+        checksum.write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  minustwo-macos.zip\n')
+        new = self.launcher.download_update(archive.as_uri(), checksum.as_uri(), self.root / 'update',
+                                            launcher='MinusTwo.app')
+        self.assertEqual(new.name, 'minustwo-macos')
+        self.assertTrue((new / 'Play MinusTwo.app').is_dir())
+
+    def app(self, folder, name, text):
+        contents = folder / name / 'Contents'
+        (contents / 'MacOS').mkdir(parents=True)
+        (contents / 'MacOS' / 'MinusTwo').write_text(text)
+        (contents / 'Frameworks').mkdir()
+        os.symlink('../MacOS/MinusTwo', contents / 'Frameworks' / 'link')
+        return folder / name
+
+    def test_macos_apps_are_swapped_whole(self):
+        new, installed = self.root / 'new', self.root / 'Applications'
+        self.app(new, 'MinusTwo.app', 'new')
+        self.app(new, 'Play MinusTwo.app', 'new play')
+        old = self.app(installed, 'MinusTwo.app', 'old')
+        (old / 'Contents' / 'MacOS' / 'gone.txt').write_text('a file the new version no longer has')
+        self.launcher.replace_apps(new, installed)
+        contents = installed / 'MinusTwo.app' / 'Contents'
+        self.assertEqual((contents / 'MacOS' / 'MinusTwo').read_text(), 'new')
+        self.assertFalse((contents / 'MacOS' / 'gone.txt').exists())
+        self.assertTrue((contents / 'Frameworks' / 'link').is_symlink())  # kept as a link, as the bundle needs
+        # Play MinusTwo.app only replaces one the player has: it is not added beside MinusTwo.app.
+        self.assertEqual(sorted(p.name for p in installed.iterdir()), ['MinusTwo.app'])
+        self.app(installed, 'Play MinusTwo.app', 'old play')
+        self.launcher.replace_apps(new, installed)
+        self.assertEqual((installed / 'Play MinusTwo.app' / 'Contents' / 'MacOS' / 'MinusTwo').read_text(), 'new play')
+        self.assertEqual(sorted(p.name for p in installed.iterdir()), ['MinusTwo.app', 'Play MinusTwo.app'])
+
+    def test_the_installation_is_the_folder_of_the_app(self):
+        from unittest import mock
+        resources = self.root / 'Applications' / 'MinusTwo.app' / 'Contents' / 'Resources'
+        with mock.patch.object(self.launcher, 'PORT', resources), mock.patch.object(self.launcher.sys, 'platform', 'darwin'):
+            self.assertEqual(self.launcher.installation(), self.root / 'Applications')
+            self.assertEqual(self.launcher.launcher_in(self.root / 'Applications'),
+                             self.root / 'Applications' / 'MinusTwo.app' / 'Contents' / 'MacOS' / 'MinusTwo')
+        with mock.patch.object(self.launcher, 'PORT', self.root / 'minustwo-windows'):
+            self.assertEqual(self.launcher.installation(), self.root / 'minustwo-windows')
+
+    def test_the_restart_opens_the_same_page(self):
+        self.launcher.RESUME.parent.mkdir(parents=True, exist_ok=True)
+        self.launcher.save_resume('achievements', '1200x800+40+-10')
+        state = self.launcher.take_resume()
+        self.assertEqual((state['page'], state['geometry'], state['version']),
+                         ('achievements', '1200x800+40+-10', self.launcher.VERSION))
+        self.assertIsNone(self.launcher.take_resume())  # once
+        self.launcher.save_resume('game', '1x1+0+0')
+        stale = json.loads(self.launcher.RESUME.read_text())
+        stale['time'] -= 3600  # an update that never restarted: the next start is an ordinary one
+        self.launcher.RESUME.write_text(json.dumps(stale))
+        self.assertIsNone(self.launcher.take_resume())
+        self.launcher.RESUME.write_text('not json')
+        self.assertIsNone(self.launcher.take_resume())
+        self.assertFalse(self.launcher.RESUME.exists())
+
     def test_installing_keeps_the_players_files(self):
         new, old = self.root / 'new', self.root / 'installed'
         for folder in (new, old):

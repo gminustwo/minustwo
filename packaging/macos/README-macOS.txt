@@ -18,6 +18,12 @@ Starting
    The apps are not signed by a developer: if macOS refuses to open one that was downloaded,
    right-click it > Open, or in Terminal: xattr -dr com.apple.quarantine MinusTwo.app
 
+Updates
+- When a new version is out, the launcher shows it at the bottom left; "Update" downloads it,
+  replaces MinusTwo.app (and Play MinusTwo.app beside it) and opens the launcher again where you
+  were. Saves, settings and mods are kept; there is no new zip to download or unpack. This needs
+  the apps in a folder you can write to, such as Applications (step 1 above).
+
 In the game
 - Command-comma (or R3 + L2) opens the port's menu.
 - The mouse turns the camera while the game window is active; Command-Tab releases it.

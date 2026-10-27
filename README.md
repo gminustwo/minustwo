@@ -179,23 +179,29 @@ The launcher checks the latest release of the GitHub repository in `GITHUB_REPO`
 (`launcher/minustwo_launcher.py`, `owner/name`; the repository must be public, empty turns the check off) and
 offers it when its tag is a higher version than `VERSION` in the same file. To publish a version:
 
-1. Raise `VERSION` (for example to `1.1.0`) and commit.
+1. Raise `VERSION` (for example to `1.2.0`) and commit.
 2. Build each package on its own system, since none cross-builds:
    - Windows: `bash build.sh` and `bash packaging/windows/package.sh` give `dist/minustwo-windows.zip` and
      `dist/minustwo-windows.zip.sha256`.
    - Linux: the AppImage and its `.sha256` (above).
    - macOS: `bash build.sh` and `bash packaging/macos/package.sh` give `dist/minustwo-macos.zip` and
      `dist/minustwo-macos.zip.sha256`.
-3. On GitHub, create a release tagged `v1.1.0` and attach the six files. Each launcher takes its own system's
+3. On GitHub, create a release tagged `v1.2.0` and attach the six files. Each launcher takes its own system's
    package by name (`PACKAGE_SUFFIX`). It refuses a download without the `.sha256` beside it, or one that does
    not match it.
 
-On Windows, "Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`) copies itself
-over the installation once the launcher has closed, never the player's files (`USER_FILES`: `user`, settings,
-mods), then opens it. In the AppImage, it downloads the new AppImage beside the running one, checks it and
-renames it over it (the player's files are in `~/.local/share/minustwo`), then starts it. On macOS, "Update" opens
-the release page; the new apps replace the old ones by hand (the player's files are in
-`~/Library/Application Support/MinusTwo`).
+A newer release shows up as a box at the bottom left of the launcher; nothing is installed until the player
+clicks "Update". On Windows, "Update" downloads the zip, checks it, and the new `MinusTwo.exe` (`--install-update`)
+copies itself over the installation once the launcher has closed, never the player's files (`USER_FILES`: `user`,
+settings, mods), then opens it. On macOS it does the same with the macOS zip (unpacked with `ditto`): the new
+`MinusTwo.app` replaces the old one, and `Play MinusTwo.app` when it is beside it, each copied next to the old
+one and swapped in by renames (the player's files are in `~/Library/Application Support/MinusTwo`). An app that
+macOS runs from a read-only copy (one never moved out of the folder it was unzipped in) cannot replace itself,
+so the launcher offers the release page instead. In the AppImage, it downloads the new AppImage beside the
+running one, checks it and renames it over it (the player's files are in `~/.local/share/minustwo`), then starts
+it. In each case the new launcher opens on the page and at the window position the old one had
+(`resume.json` in the data folder). Clicked while the game runs, the update is downloaded and installed once the
+game closes. `MT_UPDATE_FEED=<URL of a release's JSON>` tries an update without publishing it.
 
 ## Tests
 

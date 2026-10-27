@@ -36,7 +36,8 @@ Online play
 
 Updates
 - When a new version is out, the launcher shows it at the bottom left; "Update" replaces the
-  AppImage with it and opens the launcher again (saves, settings and mods are kept).
+  AppImage with it and opens the launcher again where you were (saves, settings and mods are
+  kept).
 
 Files
 - Saves, settings, mods, the prepared game and the shader cache are in ~/.local/share/minustwo

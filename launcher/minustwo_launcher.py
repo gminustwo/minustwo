@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 FROZEN = getattr(sys, 'frozen', False)
 
@@ -45,10 +46,15 @@ SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
 # This build of the port. A GitHub release is an update when its tag (v0.2.0) holds a higher version.
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 # The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
 GITHUB_REPO = 'gminustwo/minustwo'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
+# The page and window an update's restart opens again (written just before it, read once).
+RESUME = DATA / 'resume.json'
+# macOS: the apps an update replaces, side by side in the installation folder (Play MinusTwo.app only when
+# the player kept it there).
+MAC_APPS = ('MinusTwo.app', 'Play MinusTwo.app')
 # The release file of this system: the Windows zip, the macOS zip (MinusTwo.app), the Linux AppImage (Steam
 # Deck). By name: a release holds both zips.
 PACKAGE_SUFFIX = {'win32': '-windows.zip', 'darwin': '-macos.zip'}.get(sys.platform, '.appimage')
@@ -284,9 +290,12 @@ def release_info(release, repo, suffix=PACKAGE_SUFFIX):
 
 
 def latest_release(repo=None):
+    """The newest release of `repo` (GitHub's API; MT_UPDATE_FEED: another URL of the same JSON, to try an
+    update without publishing one)."""
     import urllib.request
     repo = repo or GITHUB_REPO
-    request = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/latest',
+    feed = os.environ.get('MT_UPDATE_FEED') or f'https://api.github.com/repos/{repo}/releases/latest'
+    request = urllib.request.Request(feed,
                                      headers={'Accept': 'application/vnd.github+json',
                                               'User-Agent': 'minustwo-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -322,9 +331,10 @@ def fetch_checked(url, checksum_url, path, progress=lambda percent: None):
         raise OSError('the download does not match the published checksum')
 
 
-def download_update(url, checksum_url, folder, progress=lambda percent: None):
-    """Windows: downloads the release zip into `folder`, checks it against the published SHA-256 and
-    unpacks it; returns the unpacked folder that holds MinusTwo.exe. Raises OSError when anything is wrong."""
+def download_update(url, checksum_url, folder, progress=lambda percent: None, launcher='MinusTwo.exe'):
+    """Windows and macOS: downloads the release zip into `folder`, checks it against the published SHA-256
+    and unpacks it; returns the unpacked folder that holds `launcher` (MinusTwo.exe, or MinusTwo.app on
+    macOS). Raises OSError when anything is wrong."""
     import shutil
     import zipfile
     folder = Path(folder)
@@ -332,15 +342,22 @@ def download_update(url, checksum_url, folder, progress=lambda percent: None):
     folder.mkdir(parents=True)
     archive = folder / 'update.zip'
     fetch_checked(url, checksum_url, archive, progress)
-    try:
-        with zipfile.ZipFile(archive) as package:
-            package.extractall(folder / 'new')
-    except zipfile.BadZipFile as error:
-        raise OSError(f'the download is not a zip: {error}') from error
+    if sys.platform == 'darwin':
+        # ditto keeps what an app bundle needs and zipfile loses: symbolic links and executable bits.
+        unpacked = subprocess.run(['ditto', '-x', '-k', str(archive), str(folder / 'new')], stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+        if unpacked.returncode:
+            raise OSError(f'the download is not a zip: {unpacked.stdout.strip()}')
+    else:
+        try:
+            with zipfile.ZipFile(archive) as package:
+                package.extractall(folder / 'new')
+        except zipfile.BadZipFile as error:
+            raise OSError(f'the download is not a zip: {error}') from error
     archive.unlink()
-    new = next((exe.parent for exe in (folder / 'new').rglob('MinusTwo.exe')), None)
+    new = next((found.parent for found in (folder / 'new').rglob(launcher)), None)
     if not new:
-        raise OSError('MinusTwo.exe is missing from the download')
+        raise OSError(f'{launcher} is missing from the download')
     return new
 
 
@@ -372,32 +389,119 @@ def copy_over(source, target):
     shutil.copytree(source, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*USER_FILES))
 
 
-def install_update(target, wait_pid):
-    """--install-update TARGET PID, run by the downloaded version from its temporary folder: waits for
-    the old launcher to close, copies this version over TARGET and starts it there."""
-    import time
-    target = Path(target)
+def installation():
+    """The folder an update replaces: the one with MinusTwo.exe, or on macOS the one with MinusTwo.app (whose
+    Contents/Resources is PORT)."""
+    bundle = PORT.parent.parent
+    if sys.platform == 'darwin' and PORT.name == 'Resources' and bundle.suffix == '.app':
+        return bundle.parent
+    return PORT
+
+
+def replace_apps(source, target):
+    """macOS: the new apps in `source` in place of those in `target` (MAC_APPS; Play MinusTwo.app only where
+    the player has it). Each is copied beside the old one, then swapped in by renames: a copy that fails
+    leaves the old app. The player's files are in Application Support, never in the apps."""
+    import shutil
+    for name in MAC_APPS:
+        new, old = Path(source) / name, Path(target) / name
+        if not new.is_dir() or (name != MAC_APPS[0] and not old.exists()):
+            continue
+        staged, retired = old.with_name(f'{name}.update'), old.with_name(f'{name}.old')
+        for leftover in (staged, retired):
+            shutil.rmtree(leftover, ignore_errors=True)
+        try:
+            shutil.copytree(new, staged, symlinks=True)
+        except OSError:
+            shutil.rmtree(staged, ignore_errors=True)
+            raise
+        if old.exists():
+            os.rename(old, retired)
+        os.rename(staged, old)
+        shutil.rmtree(retired, ignore_errors=True)
+
+
+def launcher_in(folder):
+    """The launcher executable of an installation (or of an unpacked update)."""
+    folder = Path(folder)
+    if sys.platform == 'darwin':
+        return folder / 'MinusTwo.app' / 'Contents' / 'MacOS' / 'MinusTwo'
+    return folder / 'MinusTwo.exe'
+
+
+def wait_for_exit(pid, seconds=60):
     if sys.platform == 'win32':
         import ctypes
         kernel = ctypes.windll.kernel32
-        handle = kernel.OpenProcess(0x00100000, False, int(wait_pid))  # SYNCHRONIZE
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
         if handle:
-            kernel.WaitForSingleObject(handle, 60000)
+            kernel.WaitForSingleObject(handle, seconds * 1000)
             kernel.CloseHandle(handle)
+        return
+    for _tick in range(seconds * 10):
+        try:
+            os.kill(pid, 0)
+        except OSError:  # gone (or never ours)
+            return
+        time.sleep(0.1)
+
+
+def alert(text):
+    """A message for the player where no launcher window is open (the installer has none)."""
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, 'Minus Two', 0x10)
+    elif sys.platform == 'darwin':
+        subprocess.run(['osascript', '-e', f'display alert "Minus Two" message {json.dumps(text)}'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(text, file=sys.stderr)
+
+
+def install_update(target, wait_pid):
+    """--install-update TARGET PID, run by the downloaded version from its temporary folder: waits for
+    the old launcher to close, puts this version over TARGET (its installation folder) and starts it
+    there, which opens on the page the old one showed (RESUME)."""
+    target = Path(target)
+    wait_for_exit(int(wait_pid))
     for _attempt in range(30):
         try:
-            copy_over(PORT, target)
+            if sys.platform == 'darwin':
+                replace_apps(installation(), target)
+            else:
+                copy_over(PORT, target)
             break
         except OSError:  # a file still in use: the old launcher is closing
             time.sleep(1)
     else:
-        if sys.platform == 'win32':
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(None, 'Could not install the update (files in use). Close the game '
-                                                   'and the launcher, then try again.', 'Minus Two', 0x10)
+        alert('Could not install the update (files in use). Close the game and the launcher, then try again.')
         return 1
-    subprocess.Popen([str(target / 'MinusTwo.exe')], cwd=str(target))
+    subprocess.Popen([str(launcher_in(target))], cwd=str(target), stdin=subprocess.DEVNULL,
+                     start_new_session=sys.platform != 'win32')
     return 0
+
+
+def save_resume(page, geometry):
+    """Before an update's restart: the page and the window (Tk geometry) to open again, and this version."""
+    try:
+        RESUME.write_text(json.dumps({'page': page, 'geometry': geometry, 'version': VERSION, 'time': time.time()}))
+    except OSError:
+        pass
+
+
+def take_resume():
+    """What save_resume left, once; None when there is none or it is from more than ten minutes ago (an
+    update that never restarted)."""
+    try:
+        state = json.loads(RESUME.read_text())
+    except (OSError, ValueError):
+        return None
+    finally:
+        RESUME.unlink(missing_ok=True)
+    try:
+        recent = 0 <= time.time() - float(state['time']) < 600
+    except (TypeError, KeyError, ValueError):
+        return None
+    return state if recent else None
 
 
 class Launcher:
@@ -450,6 +554,7 @@ class Launcher:
         self.banner_photo = None
         self.build()
         self.refresh_game()
+        self.resume(take_resume())
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.deiconify()
         self.dark_title_bar()
@@ -462,6 +567,7 @@ class Launcher:
         self.ui_calls = queue.Queue()
         self.root.after(150, self.poll_ui)
         self.update_box = None
+        self.pending_update = None  # an update ready while the game runs: installed once it closes
         if GITHUB_REPO and self.values.get('check_updates', True):
             threading.Thread(target=self.check_update, daemon=True).start()
 
@@ -618,6 +724,21 @@ class Launcher:
             var.trace_add('write', lambda *_a: self.update_summary())
         self.update_summary()
         self.show('play')
+
+    def resume(self, state):
+        """After an update's restart: the page and the window the previous version had (take_resume)."""
+        if not state:
+            return
+        geometry = str(state.get('geometry', ''))
+        if re.fullmatch(r'\d+x\d+[+-]-?\d+[+-]-?\d+', geometry):
+            self.root.geometry(geometry)
+        if state.get('page') in self.pages:
+            self.show(state['page'])
+        if state.get('version') != VERSION:
+            self.summary.configure(text=f'Updated to version {VERSION}.', fg=ACCENT_HI)
+            self.root.after(8000, self.update_summary)
+        self.root.lift()
+        self.root.focus_force()
 
     def hover(self, name, inside):
         if name != self.current:
@@ -1512,22 +1633,39 @@ class Launcher:
         box.pack(fill='x', padx=(self.px(20), self.px(18)), pady=(0, self.px(14)), before=self.side_note)
         self.update_box = box
 
+    def update_method(self, url):
+        """How this copy takes an update: 'appimage' (the AppImage replaced), 'files' (the Windows folder, or the
+        macOS apps, replaced by the new launcher), 'readonly' (one of those where it cannot write), or None (a
+        source tree, or a release without this system's package): the release page then."""
+        if not url:
+            return None
+        appimage = os.environ.get('APPIMAGE') if sys.platform not in ('win32', 'darwin') else None
+        if appimage:
+            return 'appimage' if os.access(Path(os.path.realpath(appimage)).parent, os.W_OK) else 'readonly'
+        if FROZEN and (sys.platform == 'win32' or installation() != PORT):
+            # macOS runs a downloaded app that was never moved from a read-only copy (App Translocation).
+            folder = installation()
+            return 'readonly' if 'AppTranslocation' in folder.parts or not os.access(folder, os.W_OK) else 'files'
+        return None
+
     def install_update(self, version, url, checksum, page):
+        """Update: downloads the new version, checks and installs it; the launcher opens again on this page
+        (hand_over)."""
         from tkinter import messagebox
-        if self.process and self.process.poll() is None:
-            messagebox.showinfo('Minus Two', 'Close the game before updating.')
-            return
-        appimage = os.environ.get('APPIMAGE') if sys.platform != 'win32' else None
-        if not url or not (appimage or (FROZEN and sys.platform == 'win32')):
+        method = self.update_method(url)
+        if method is None:
             open_path(page)  # a source tree updates with git; a release without this system's file by hand
             return
-        if appimage and not os.access(Path(os.path.realpath(appimage)).parent, os.W_OK):
-            if messagebox.askyesno('Minus Two', f'The launcher cannot write to {Path(appimage).parent}, so it cannot '
-                                                'replace itself there. Open the release page to download it by hand?'):
+        if method == 'readonly':
+            if messagebox.askyesno(
+                    'Minus Two', f'The launcher cannot write to {installation()}, so it cannot replace itself there '
+                                 '(on a Mac, move MinusTwo.app to Applications first). Open the release page to '
+                                 'download it by hand?'):
                 open_path(page)
             return
-        if not messagebox.askyesno('Minus Two', f'Install version {version} now? The launcher closes, installs it '
-                                                'and opens again. Saves, settings and mods are kept.'):
+        if not messagebox.askyesno(
+                'Minus Two', f'Install version {version} now? The launcher closes, installs it and opens again '
+                             'where you were. Saves, settings and mods are kept.'):
             return
         self.update_button.state(['disabled'])
 
@@ -1541,19 +1679,42 @@ class Launcher:
 
         def work():
             try:
-                if appimage:
+                if method == 'appimage':
+                    appimage = os.environ['APPIMAGE']
                     replace_appimage(url, checksum, appimage, lambda p: self.ui_calls.put(lambda: progress(p)))
-                    relaunch_appimage(appimage)
-                    self.ui_calls.put(self.root.destroy)
+                    self.ui_calls.put(lambda: self.hand_over(version, appimage=appimage))
                     return
-                new = download_update(url, checksum, UPDATE_DIR, lambda p: self.ui_calls.put(lambda: progress(p)))
-                # The new launcher copies itself over this installation once this one has closed.
-                subprocess.Popen([str(new / 'MinusTwo.exe'), '--install-update', str(PORT), str(os.getpid())],
-                                 cwd=str(new), stdin=subprocess.DEVNULL)
-                self.ui_calls.put(self.root.destroy)
+                new = download_update(url, checksum, UPDATE_DIR, lambda p: self.ui_calls.put(lambda: progress(p)),
+                                      'MinusTwo.app' if sys.platform == 'darwin' else 'MinusTwo.exe')
+                self.ui_calls.put(lambda: self.hand_over(version, new=new))
             except OSError as failure:
                 self.ui_calls.put(lambda error=failure: failed(error))
+        self.update_failed = failed
         threading.Thread(target=work, daemon=True).start()
+
+    def hand_over(self, version, new=None, appimage=None):
+        """The update is ready: the launcher keeps its page and window for the next start (RESUME) and its
+        settings, and closes; the new launcher puts itself over this installation (or the new AppImage, already
+        in place, starts). While the game runs, this waits for it to close."""
+        if self.process and self.process.poll() is None:
+            self.pending_update = lambda: self.hand_over(version, new, appimage)
+            self.update_label.configure(text=f'Version {version} is installed when the game closes.')
+            return
+        self.update_label.configure(text=f'Installing version {version}…')
+        save_resume(self.current, self.root.geometry())
+        self.collect()
+        save_settings(self.values)
+        try:
+            if appimage:
+                relaunch_appimage(appimage)
+            else:
+                subprocess.Popen([str(launcher_in(new)), '--install-update', str(installation()), str(os.getpid())],
+                                 cwd=str(new), stdin=subprocess.DEVNULL, start_new_session=sys.platform != 'win32')
+        except OSError as error:
+            RESUME.unlink(missing_ok=True)
+            self.update_failed(error)
+            return
+        self.root.destroy()
 
     # ---- the game -----------------------------------------------------------------------------
     def play(self):
@@ -1579,6 +1740,10 @@ class Launcher:
 
     def finished(self, code):
         self.play_button.state(['!disabled'])
+        if self.pending_update:
+            pending, self.pending_update = self.pending_update, None
+            pending()
+            return
         if code in (0, 1, None):
             self.update_summary()
         else:
