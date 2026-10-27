@@ -279,6 +279,7 @@ class UpdateTest(unittest.TestCase):
         os.symlink('../MacOS/MinusTwo', contents / 'Frameworks' / 'link')
         return folder / name
 
+    @unittest.skipIf(os.name == 'nt', 'the bundles hold symbolic links, which need extra rights on Windows')
     def test_macos_apps_are_swapped_whole(self):
         new, installed = self.root / 'new', self.root / 'Applications'
         self.app(new, 'MinusTwo.app', 'new')

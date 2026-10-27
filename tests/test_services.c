@@ -3,9 +3,7 @@
 #include "../src/runtime_services.c"
 #include <assert.h>
 #ifdef _WIN32
-#include <direct.h>
-#define mkdir(path, mode) _mkdir(path)
-#define rmdir _rmdir
+#define rmdir _rmdir /* mkdir comes from compat_win.h */
 #else
 #include <sys/stat.h>
 #include <unistd.h>
