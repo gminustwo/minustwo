@@ -9,8 +9,8 @@ Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
 
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
-> and `sce_sys` (tested: CUSA02046, version 01.01). This project is not affiliated with or endorsed by Toho, Bandai
-> Namco, Natsume Atari or Sony Interactive Entertainment. GODZILLA is a trademark of Toho Co., Ltd.
+> and `sce_sys` (tested: CUSA02046, versions 01.01 and 01.00). This project is not affiliated with or endorsed by
+> Toho, Bandai Namco, Natsume Atari or Sony Interactive Entertainment. GODZILLA is a trademark of Toho Co., Ltd.
 
 ## How it works
 
@@ -67,7 +67,8 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   instant defeat the game scripts itself still ends a stage. *Unlock all kaiju* sets the unlock flags of the 22
   kaiju's records in the save data, as the game's own unlock does: King of Kaiju and Evolution modes then offer all
   of them. The game saves them, so they stay unlocked when the cheat is turned off, and it awards *Kaiju Sighting*
-  and *Kaiju Collector* for them unless achievements are off.
+  and *Kaiju Collector* for them unless achievements are off. The startup options and the cheats work in
+  versions 01.01 and 01.00 of the game.
 - **Achievements**: the trophies the game unlocks are kept in `trophies.dat` in the user folder, beside the saves,
   and listed on the launcher's *Achievements* page and in-game (F8, or R3 + R2). *Unlock achievements* (that page, or
   the in-game menu's *Game* tab) turns them off: the game then unlocks none and shows no notices.
@@ -97,7 +98,7 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
   files (separated by `;`) if you prefer.
 - Online play (VS Mode) is not supported yet: the game sees a console that is not signed in to PSN. Playing VS
   between two copies of the port by direct connection is being looked at.
-- Only the US release (CUSA02046 01.01) has been tested.
+- Only the US release (CUSA02046) has been tested: version 01.01, and 01.00 for the startup options and cheats.
 
 ## Playing
 

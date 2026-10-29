@@ -17,7 +17,8 @@
  * kaiju stay unlocked after the cheat is turned off.
  * The table and the save data are found through code that references them, and the fields
  * through code that reads them: a build whose code differs lacks those cheats, and the menu
- * says so. */
+ * says so. The addresses here are the reference build's (01.01); 01.00 has the same table and
+ * records (0x79a8f0, 0x6c3f80), and its code that differs has signatures of its own. */
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "signature.h"
@@ -28,9 +29,10 @@
 #include <string.h>
 #include <time.h>
 
-/* The table reset (guest 0x16fa10): lea r12, [rip + table]. */
+/* The table reset (guest 0x16fa10): lea r12, [rip + table], then a store far into the block the
+ * table starts (+0x279cc0; 01.00 has that block 8 bytes shorter there: +0x279cb8). */
 static const MtSignature table_ref = {
-    "55 48 89 e5 41 57 41 56 41 55 41 54 53 50 4c 8d 25 ?? ?? ?? ?? 41 c7 84 24 c0 9c 27 00 00 00 00 00", 17};
+    "55 48 89 e5 41 57 41 56 41 55 41 54 53 50 4c 8d 25 ?? ?? ?? ?? 41 c7 84 24 ?? ?? ?? ?? 00 00 00 00", 17};
 /* The gauge update's reads of +0x34, +0x48, +0x38 and +0x3c through the kaiju's entry (+0x818). */
 static const MtSignature field_reads[] = {
     {"48 8b 83 18 08 00 00 c5 fa 10 40 34 c5 fa 59 05 ?? ?? ?? ?? 4c 89 f7 e8 ?? ?? ?? ??", 0},
@@ -48,6 +50,12 @@ static const MtSignature save_ref = {
 static const MtSignature kaiju_reads[] = {
     {"49 89 ff 4c 8d 25 ?? ?? ?? ?? 49 83 c4 10 49 81 c7 24 05 00 00 31 db 45 31 f6", 0},
     {"48 63 c6 8a 44 07 04 c3 0f 1f 84 00 00 00 00 00 55 48 89 e5 41 56 53 48 89 fb 83 3b 08", 0},
+};
+/* The same in 01.00, compiled otherwise: the walk (0x161e90 there) moves a pointer from record 1,
+ * and the unlock of all four (0x161430) writes them at once, without 01.01's check of kaiju 8. */
+static const MtSignature kaiju_reads_100[] = {
+    {"48 89 fb 48 81 c3 24 05 00 00 45 31 f6 41 bf 10 00 00 00 4c 8d 25 ?? ?? ?? ??", 0},
+    {"48 63 c6 8a 44 07 04 c3 0f 1f 84 00 00 00 00 00 c7 47 04 01 01 01 01 c3", 0},
 };
 enum { KAIJU_RECORDS = 0x88, KAIJU_RECORD_SIZE = 0x524, KAIJU_LAST = 23, KAIJU_UNUSED = 11 };
 
@@ -121,6 +129,9 @@ void runtime_cheats_configure(unsigned char *image, uint64_t size) {
     player = find_data(image, size, &table_ref, field_reads, sizeof(field_reads) / sizeof(*field_reads), 0xd0);
     save = find_data(image, size, &save_ref, kaiju_reads, sizeof(kaiju_reads) / sizeof(*kaiju_reads),
                      KAIJU_RECORDS + (KAIJU_LAST + 1) * KAIJU_RECORD_SIZE);
+    if (!save)
+        save = find_data(image, size, &save_ref, kaiju_reads_100, sizeof(kaiju_reads_100) / sizeof(*kaiju_reads_100),
+                         KAIJU_RECORDS + (KAIJU_LAST + 1) * KAIJU_RECORD_SIZE);
     const int found = (player ? MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH : 0) |
                       (save ? MTGPU_CHEAT_ALL_KAIJU : 0);
     if (!player) puts("Cheats: the player table was not found in this game build: no health or breath cheats");

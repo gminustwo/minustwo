@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <!-- Minus Two: patches for the GODZILLA CUSA02046 v01.01 eboot.bin with sha256
      c2e2a6f4ff62d1c4004f80cddf1ab1dc38386540a96f77f7130a55583fc32462 (scripts/patches.py checks it).
-     Each line may carry a signature (Pattern/At) so it is found in any build whose code matches. -->
+     Each line may carry a signature (Pattern/At) so it is found in any build whose code matches;
+     all of them are also found in v01.00 (sha256 f1a6a78c9275f87be1af32bb47fe1f38d02519832f7f795cdd1c8aeb26b5db01). -->
 <Patch>
     <TitleID>
         <ID>CUSA02046</ID>
@@ -33,7 +34,8 @@
          0x1f7d0(0, 1)); state 0x40 opens the main menu instead, as START does on a save that has
          played. The save still records that the game was started (offset 0x2c).
          God of Destruction in the main menu (0x2c640) also starts the tutorial while no stage has
-         been played (save offset 0xd2f44, set when a stage starts); it goes to the stage map. -->
+         been played (save offset 0xd2f44, set when a stage starts); it goes to the stage map.
+         01.00 has that test in other registers: its pattern leaves them open (the ModRM bytes). -->
     <Metadata Title="GODZILLA" Name="Skip tutorial"
               Note="A new game opens the main menu, and God of Destruction its first stage, without the 1954 tutorial stage."
               Author="Minus Two" PatchVer="1.0" AppVer="01.01" AppElf="eboot.bin">
@@ -41,7 +43,7 @@
             <Target Name="title_next" Address="0x431682" Pattern="eb 42 ff 83 c8 06 00 00 83 bb e4 03 00 00 00 74 0a" At="8"/>
             <Line Type="bytes" Address="0x43187e" Pattern="31 ff be 01 00 00 00 e8 ?? ?? ?? ?? 66 ff 83 9a 00 00 00" At="0"
                   Value="66 c7 83 9a 00 00 00 40 00 e9 {rel:title_next:0}"/>
-            <Line Type="bytes" Address="0x42c7bb" Pattern="8b b1 44 2f 0d 00 09 d6 0f 84 ?? ?? ?? ?? 85 d2" At="8"
+            <Line Type="bytes" Address="0x42c7bb" Pattern="8b ?? d0 01 00 00 8b ?? 44 2f 0d 00 09 ?? 0f 84 ?? ?? ?? ??" At="14"
                   Value="66 0f 1f 44 00 00"/>
         </PatchList>
     </Metadata>

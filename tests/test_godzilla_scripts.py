@@ -76,6 +76,18 @@ class ProfileTest(unittest.TestCase):
             ('0x2c7bb', '66 0f 1f 44 00 00'),                          # no tutorial branch
         ])
 
+    def test_god_of_destruction_line_is_found_in_both_builds(self):
+        # The save's stage flag test before the tutorial branch: 01.01's registers, then 01.00's.
+        import xml.etree.ElementTree as ET
+        meta = next(m for m in ET.parse(patches.PATCHES_DIR / 'CUSA02046.xml').getroot().iter('Metadata')
+                    if m.get('Name') == 'Skip tutorial')
+        line = next(line for line in meta.iter('Line') if line.get('Address') == '0x42c7bb')
+        for code in ('8b 97 d0 01 00 00 8b b1 44 2f 0d 00 09 d6 0f 84 38 01 00 00',
+                     '8b 8f d0 01 00 00 8b b2 44 2f 0d 00 09 ce 0f 84 9a 01 00 00'):
+            image = bytes(0x40) + bytes.fromhex(code) + bytes(0x40)
+            self.assertEqual(patches.locate(image, line), 0x40 + 14)  # the je
+            self.assertEqual(image[0x40 + 14:0x40 + 16], b'\x0f\x84')
+
     def test_each_patch_line_signature_covers_its_write(self):
         import xml.etree.ElementTree as ET
         for line in ET.parse(patches.PATCHES_DIR / 'CUSA02046.xml').getroot().iter('Line'):

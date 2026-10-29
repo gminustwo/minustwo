@@ -36,6 +36,16 @@ int main(void) {
     runtime_cheats_configure(image, SIZE); /* code unlike the game's: no cheats, no thread */
     assert(found_reported == 0 && !player);
 
+    /* The table reset as 01.01 and 01.00 have it (the store goes to another offset): both match. */
+    static const MtSignature resets[] = {
+        {"55 48 89 e5 41 57 41 56 41 55 41 54 53 50 4c 8d 25 eb af 62 00 41 c7 84 24 c0 9c 27 00 00 00 00 00", 17},
+        {"55 48 89 e5 41 57 41 56 41 55 41 54 53 50 4c 8d 25 db b5 62 00 41 c7 84 24 b8 9c 27 00 00 00 00 00", 17},
+    };
+    for (size_t i = 0; i < sizeof(resets) / sizeof(*resets); ++i) {
+        const uint64_t site = place(image, 0x100, &resets[i]);
+        assert(mt_signature_find(image, SIZE, &table_ref) == site);
+        memset(image + 0x100, 0, 0x100);
+    }
     point(image, place(image, 0x100, &table_ref), TABLE);
     runtime_cheats_configure(image, SIZE); /* the reads of the fields are missing */
     assert(found_reported == 0 && !player && !save);
@@ -121,7 +131,18 @@ int main(void) {
     apply(0);
     assert(record[2][4] && record[2][7] && !record[3][4]);
 
-    /* Both found: all three cheats. The thread started here reads big until the test ends. */
+    /* 01.00 walks the records and unlocks them with other code (kaiju_reads_100). */
+    memset(big + 0x2100, 0, 0x200);
+    assert(!find_data(big, BIG, &save_ref, kaiju_reads, 2, RECORDS));
+    place(big, 0x2100, &kaiju_reads_100[0]);
+    assert(!find_data(big, BIG, &save_ref, kaiju_reads_100, 2, RECORDS));
+    place(big, 0x2200, &kaiju_reads_100[1]);
+    assert(!find_data(big, BIG, &save_ref, kaiju_reads, 2, RECORDS));
+    assert(find_data(big, BIG, &save_ref, kaiju_reads_100, 2, RECORDS) == big + SAVE);
+
+    /* Both found (the records through 01.00's code): all three cheats. The thread started here
+     * reads big until the test ends. */
+    save = player = NULL;
     runtime_cheats_configure(big, BIG);
     assert(found_reported == (MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU));
     assert(player == big + TABLE && save == big + SAVE);
