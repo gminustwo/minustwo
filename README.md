@@ -50,6 +50,12 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   60 (144 Hz) at 120 Hz in Borderless and Fullscreen, and the emulated 60 Hz vblank ticks on every 2nd vblank of the
   display itself (`gpu/shim/mt_vblank.cpp`, D3DKMT), so every frame lasts exactly two refreshes. With VRR, or a
   display whose vblanks do not come steadily, it stays on its timer.
+- **A CPU core less**: the game's render thread waits for the GPU before it reuses a command buffer by spinning on
+  the GPU's end-of-pipe label, which kept a whole core busy (96% of it at 60 FPS). Its four wait loops now call into
+  the port and sleep until the GPU command processor writes the label (`src/runtime_label_wait.c`,
+  `gpu/shim/mt_label_wait.cpp`): the render thread uses 2% of a core, the frame rate and pacing are unchanged, and
+  a 4-core machine such as the Steam Deck has the core and its power budget back. `MT_LABEL_WAIT=0` keeps the
+  game's loops.
 - **libSceFont** on FreeType: the game renders its subtitles glyph by glyph from the FOT-NewCinemaB font it ships,
   and the PS4 system font set is stood in for by Windows' fonts (`src/runtime_font.c`).
 - Kernel event flags, the offline PSN, matchmaking, Rudp, friend list, error dialog, broadcasting, screenshot and
@@ -209,8 +215,8 @@ game closes. `MT_UPDATE_FEED=<URL of a release's JSON>` tries an update without 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"     # launcher, patch selection, preparation scripts
 source ./msys2-env.sh                                     # in MSYS2 CLANG64, after build.sh:
-ninja -C out/gpu ngs2-test eventflag-test services-test cheats-test pad-map-test graphics-settings-test
-out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe && out/gpu/cheats-test.exe
+ninja -C out/gpu ngs2-test eventflag-test services-test cheats-test label-wait-test pad-map-test graphics-settings-test
+out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe && out/gpu/cheats-test.exe && out/gpu/label-wait-test.exe
 ```
 
 ## Tools for testing

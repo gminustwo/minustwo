@@ -69,6 +69,12 @@ int mtgpu_mouse_aim_sensitivity(void);
 unsigned mtgpu_symbol_count(void);
 /* Yields of threads waiting for guest memory copies (CPU report, #209). */
 unsigned long long mtgpu_copy_yields(void);
+/* Sleeps until the low 32 bits at `label` reach `target` (a wrapping count, as the game tests its
+ * end-of-pipe labels); the GPU's writes to guest memory wake it (src/runtime_label_wait.c). */
+void mtgpu_wait_label(const volatile void *label, uint32_t target);
+/* Waits so far, the times they woke, and the times the label was written without waking them (they
+ * slept on to their 2 ms timeout) (CPU report). */
+void mtgpu_label_wait_counts(unsigned long long *waits, unsigned long long *wakeups, unsigned long long *missed);
 /* Trophy notice at the top-right of the game window (any thread). title: the trophy's name,
  * detail: its description (null or empty: none), png: its icon (PNG bytes; null: a drawn medal). */
 void mtgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size);

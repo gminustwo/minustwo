@@ -26,6 +26,7 @@
 #include "core/memory.h"
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "mt_label_wait.h"
 #include "mt_write_log.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderdoc.h"
@@ -258,6 +259,7 @@ void SignalEop(const PM4CmdEventWriteEop& eop) {
             if (!memory->TryWriteBacking(address, &data, num_bytes)) {
                 memcpy(address, &data, num_bytes);
             }
+            MtLabelWait::Written(address, num_bytes);
         },
         [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
 }
@@ -339,6 +341,7 @@ void RunWriteData(Vulkan::Rasterizer& rasterizer, const u8* data) {
                      (header->type3.count.Value() - 2) * sizeof(u32), MtWriteLog::WriteData);
     std::memcpy(write_data->Address<u64*>(), write_data->data,
                 (header->type3.count.Value() - 2) * sizeof(u32));
+    MtLabelWait::Written(write_data->Address<void*>(), (header->type3.count.Value() - 2) * sizeof(u32));
 }
 
 void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
@@ -353,12 +356,14 @@ void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
         if (!memory->TryWriteBacking(address, &value, num_bytes)) {
             memcpy(address, &value, num_bytes);
         }
+        MtLabelWait::Written(address, num_bytes);
     });
     if (event_eos.command == PM4CmdEventWriteEos::Command::GdsStore) {
         ASSERT(event_eos.size == 1);
         rasterizer.Finish();
         const u32 value = rasterizer.ReadDataFromGds(event_eos.gds_index);
         *event_eos.Address() = value;
+        MtLabelWait::Written(event_eos.Address(), sizeof(u32));
     }
 }
 } // namespace
@@ -1190,6 +1195,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     }
                 } else {
                     std::memcpy(write_data->Address<u64*>(), write_data->data, (count - 2) * 4);
+                    MtLabelWait::Written(write_data->Address<void*>(), (count - 2) * 4);
                 }
                 break;
             }
@@ -1581,6 +1587,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             const u32 data_size = (header->type3.count.Value() - 2) * 4;
             if (!write_data->wr_one_addr.Value()) {
                 std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
+                MtLabelWait::Written(write_data->Address<void*>(), data_size);
             } else {
                 UNREACHABLE();
             }
@@ -1624,6 +1631,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 [this](VAddr dst, u16 gds_index, u16 num_dwords) {
                     rasterizer->CopyBuffer(dst, gds_index, num_dwords * sizeof(u32), false, true);
                 });
+            MtLabelWait::Written(release_mem->Address<void*>(), sizeof(u64));
             break;
         }
         case PM4ItOpcode::EventWrite: {

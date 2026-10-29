@@ -56,6 +56,11 @@ static IsaTable *isa_table; /* rewritten sites (--isa-rewrite); the fault handle
 static void loader_report_hook(void) {
     if (isa_table) isa_rewrite_report(isa_table, stdout);
     if (gpu_enabled) printf("GPU: copy waits yielded %llu times\n", mtgpu_copy_yields());
+    if (gpu_enabled) {
+        unsigned long long waits, wakeups, missed;
+        mtgpu_label_wait_counts(&waits, &wakeups, &missed);
+        printf("GPU: render thread label waits %llu, woken %llu times, %llu writes that woke no one\n", waits, wakeups, missed);
+    }
 }
 int vulkan_smoke(void);
 
@@ -842,10 +847,13 @@ int main(int argc, char **argv) {
     }
     isa_table = isa_sets && isa_file ? isa_table_load(isa_file) : NULL;
     if (!isa_table && cpu_missing_sets) { printf("STOP: this CPU lacks %s and no rewrite table matches the image\n", missing); return 20; }
-    /* The stubs follow the image in the same low mapping (rel32 jmps reach them). */
+    /* The stubs follow the image in the same low mapping (rel32 jmps reach them), then the
+     * render thread's GPU wait stubs (runtime_label_wait.c). */
     size_t stub_area = isa_table ? round_page(isa_stub_area_size(isa_table)) : 0;
-    image = allocate(round_page(size) + stub_area);
+    size_t wait_area = round_page(RUNTIME_LABEL_WAIT_STUB_AREA);
+    image = allocate(round_page(size) + stub_area + wait_area);
     unsigned char *stubs = image + round_page(size);
+    unsigned char *wait_stubs = stubs + stub_area;
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (isa_table && isa_table_matches(isa_table, image, size)) {
@@ -914,6 +922,8 @@ int main(int argc, char **argv) {
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     runtime_cheats_configure(image, size);
+    if (gpu_enabled) runtime_label_wait_install(image, size, wait_stubs, wait_area);
+    protect(wait_stubs, wait_area, 5);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #elif defined(__APPLE__)
