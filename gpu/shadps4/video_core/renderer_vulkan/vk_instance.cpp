@@ -180,13 +180,14 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
     } else {
         physical_device = physical_devices[physical_device_index];
     }
-    std::printf("GPU: using %s\n", physical_device.getProperties().deviceName.data());
-
     available_extensions = GetSupportedExtensions(physical_device);
     format_properties = GetFormatProperties(physical_device);
     properties = physical_device.getProperties();
     memory_properties = physical_device.getMemoryProperties();
     CollectDeviceParameters();
+    // minustwo: the driver and its version too: a player's report of a driver crash had neither.
+    std::printf("GPU: using %s (%s %s)\n", properties.deviceName.data(), vendor_name.c_str(),
+                GetDriverVersionName().c_str());
     ASSERT_MSG(properties.apiVersion >= TargetVulkanApiVersion,
                "Vulkan {}.{} is required, but only {}.{} is supported by device!",
                VK_VERSION_MAJOR(TargetVulkanApiVersion), VK_VERSION_MINOR(TargetVulkanApiVersion),
@@ -223,21 +224,33 @@ std::string Instance::GetDriverVersionName() {
 }
 
 namespace {
-bool PipelineBinaryCacheRequested() {
+// minustwo: MT_PIPELINE_BINARIES=0 turns the pipeline binary disk cache off, 1 on. Unset, it is on
+// except with NVIDIA's Linux driver, which crashed in vkGetPipelineKeyKHR (the global key) on a
+// player's RTX 3070 (GitHub issue #1). Pipelines then compile as on a driver without the extension,
+// and the driver's own shader disk cache still keeps them between runs.
+bool PipelineBinaryCacheRequested(vk::DriverId driver) {
     const char* setting = std::getenv("MT_PIPELINE_BINARIES");
-    return !setting || *setting != '0';
+    if (setting && *setting) {
+        return *setting != '0';
+    }
+#ifdef __linux__
+    if (driver == vk::DriverId::eNvidiaProprietary) {
+        std::printf("GPU: pipeline binary cache off with NVIDIA's Linux driver "
+                    "(MT_PIPELINE_BINARIES=1 turns it on)\n");
+        return false;
+    }
+#else
+    (void)driver;
+#endif
+    return true;
 }
 }
 
 bool InitializePipelineBinaryCache(vk::Device device, bool supported,
                                    vk::PipelineBinaryKeyKHR& global_key) {
     global_key = vk::PipelineBinaryKeyKHR{};
-    if (!PipelineBinaryCacheRequested()) {
-        LOG_INFO(Render_Vulkan, "Pipeline binary cache disabled by settings; using normal compilation");
-        return false;
-    }
     if (!supported) {
-        LOG_INFO(Render_Vulkan, "Pipeline binary cache unsupported; using normal compilation");
+        LOG_INFO(Render_Vulkan, "Pipeline binary cache off or unsupported; using normal compilation");
         return false;
     }
     const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
@@ -335,7 +348,7 @@ bool Instance::CreateDevice() {
 
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
-    pipeline_binaries = PipelineBinaryCacheRequested() && maintenance_5 &&
+    pipeline_binaries = PipelineBinaryCacheRequested(driver_id) && maintenance_5 &&
         feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5 &&
         feature_chain.get<vk::PhysicalDevicePipelineBinaryFeaturesKHR>().pipelineBinaries &&
         add_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
