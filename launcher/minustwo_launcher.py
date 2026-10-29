@@ -711,6 +711,7 @@ class Launcher:
         self.content.pack(fill='both', expand=True)
 
         self.pages = {}
+        self.scrollers = {}  # page name -> the canvas the wheel scrolls
         self.build_play()
         self.build_graphics()
         self.build_display()
@@ -720,6 +721,13 @@ class Launcher:
         self.build_achievements()
         self.build_advanced()
         self.root.bind_all('<MouseWheel>', self.wheel)
+        if self.root.tk.call('tk', 'windowingsystem') == 'x11':
+            # Tk 8.6 on Linux (the AppImage, the Steam Deck) reports the wheel as buttons 4 and 5.
+            self.root.bind_all('<Button-4>', self.wheel)
+            self.root.bind_all('<Button-5>', self.wheel)
+        # The wheel scrolls the page, not the choice of the drop-down box under the pointer.
+        for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            self.root.unbind_class('TCombobox', sequence)
         for var in (self.mode_var, self.resolution_var, self.vsync_var, self.match_refresh_var, self.fps_var):
             var.trace_add('write', lambda *_a: self.update_summary())
         self.update_summary()
@@ -761,13 +769,43 @@ class Launcher:
         if name == 'mods':
             self.refresh_mods()  # mods may have been added to the folder since
 
+    def scrolling(self, name, padding=0):
+        """Page `name`, which scrolls when the window is shorter than it (the Steam Deck's 800 pixels):
+        returns the frame to fill. The scrollbar shows only then, and the page scrolls a little past its
+        last row; the wheel scrolls it (wheel())."""
+        tk, ttk = self.tk, self.ttk
+        outer = ttk.Frame(self.content)
+        outer.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        frame = ttk.Frame(canvas, padding=padding)
+        window = canvas.create_window(0, 0, window=frame, anchor='nw')
+
+        def fit(_event=None):
+            width, height = canvas.winfo_width(), frame.winfo_reqheight()
+            canvas.itemconfigure(window, width=width)
+            if height > canvas.winfo_height():
+                canvas.configure(scrollregion=(0, 0, width, height + self.px(24)))
+                bar.grid(row=0, column=1, sticky='ns')
+            else:
+                canvas.configure(scrollregion=(0, 0, width, height))
+                bar.grid_remove()
+                canvas.yview_moveto(0)
+        frame.bind('<Configure>', fit)
+        canvas.bind('<Configure>', fit)
+        self.pages[name] = outer
+        self.scrollers[name] = canvas
+        return frame
+
     def page(self, name, title, subtitle):
         """A settings page: its title, a line under it, then rows (grid, two columns)."""
-        frame = self.ttk.Frame(self.content, padding=(self.px(32), self.px(26), self.px(32), self.px(16)))
+        frame = self.scrolling(name, (self.px(32), self.px(26), self.px(32), self.px(16)))
         self.ttk.Label(frame, text=title.upper(), style='Heading.TLabel').grid(row=0, column=0, columnspan=2, sticky='w')
         self.ttk.Label(frame, text=subtitle, style='Muted.TLabel').grid(row=1, column=0, columnspan=2, sticky='w')
         frame.next_row = 2
-        self.pages[name] = frame
         return frame
 
     def section(self, parent, title, column=0, columnspan=2):
@@ -807,8 +845,7 @@ class Launcher:
     # ---- the Play page ------------------------------------------------------------------------
     def build_play(self):
         tk, ttk = self.tk, self.ttk
-        page = tk.Frame(self.content, bg=PANEL)
-        self.pages['play'] = page
+        page = self.scrolling('play')
         self.banner = tk.Canvas(page, height=self.px(330), bg=BG, highlightthickness=0, bd=0)
         self.banner.pack(fill='x')
         self.banner.bind('<Configure>', lambda _e: self.draw_banner())
@@ -1029,17 +1066,7 @@ class Launcher:
         """Loose-file mods layered over the game when it starts (scripts/mods.py), in a load order with
         a details panel for the selected mod, presets, and third-party eboot patches (patches.py)."""
         tk, ttk = self.tk, self.ttk
-        outer = ttk.Frame(self.content)
-        self.pages['mods'] = outer
-        self.mods_canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
-        bar = ttk.Scrollbar(outer, orient='vertical', command=self.mods_canvas.yview)
-        page = ttk.Frame(self.mods_canvas, padding=(self.px(32), self.px(26), self.px(32), self.px(24)))
-        window = self.mods_canvas.create_window(0, 0, window=page, anchor='nw')
-        page.bind('<Configure>', lambda _e: self.mods_canvas.configure(scrollregion=self.mods_canvas.bbox('all')))
-        self.mods_canvas.bind('<Configure>', lambda e: self.mods_canvas.itemconfigure(window, width=e.width))
-        self.mods_canvas.configure(yscrollcommand=bar.set)
-        bar.pack(side='right', fill='y')
-        self.mods_canvas.pack(side='left', fill='both', expand=True)
+        page = self.scrolling('mods', (self.px(32), self.px(26), self.px(32), self.px(24)))
         page.columnconfigure(0, weight=1)
         ttk.Label(page, text='MODS & PATCHES', style='Heading.TLabel').grid(row=0, column=0, sticky='w')
         ttk.Label(page, text='Change textures, sounds and text, or the game\'s code. Your game files stay untouched.',
@@ -1414,15 +1441,22 @@ class Launcher:
         self.trophy_canvas.configure(yscrollcommand=bar.set)
         bar.pack(side='right', fill='y', padx=(self.px(8), 0))
         self.trophy_canvas.pack(side='left', fill='both', expand=True)
+        self.scrollers['achievements'] = self.trophy_canvas
         self.trophy_icons = {}    # (game folder, id) -> PNG bytes of the dump's trophy00.trp
         self.trophy_photos = {}   # (id, locked) -> the icon as shown
 
     def wheel(self, event):
-        """The mouse wheel scrolls the trophy list and the mods page (not an open drop-down list)."""
-        canvas = {'achievements': self.trophy_canvas, 'mods': self.mods_canvas}.get(self.current)
-        if canvas and 'popdown' not in str(event.widget):
+        """The mouse wheel scrolls the page shown (the trophy list on Achievements), not an open
+        drop-down list."""
+        canvas = self.scrollers.get(self.current)
+        if not canvas or 'popdown' in str(event.widget):
+            return
+        if event.num in (4, 5):  # X11: button 4 up, 5 down
+            steps = -1 if event.num == 4 else 1
+        else:
             # Windows reports 120 per notch; macOS a few units per step (trackpads included).
-            canvas.yview_scroll(-event.delta if sys.platform == 'darwin' else int(-event.delta / 120), 'units')
+            steps = -event.delta if sys.platform == 'darwin' else int(-event.delta / 120)
+        canvas.yview_scroll(steps, 'units')
 
     def trophy_photo(self, trophy, png, locked):
         """The icon at 64 px (scaled); grey and dark while the trophy is locked."""
