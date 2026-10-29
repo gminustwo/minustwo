@@ -46,7 +46,7 @@ SETTINGS = DATA / 'settings.json'
 INI = DATA / 'minustwo.ini'
 LOG = DATA / 'user' / 'last_run.log'
 # This build of the port. A GitHub release is an update when its tag (v0.2.0) holds a higher version.
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 # The GitHub repository (owner/name, public) whose releases are this port's updates; empty: no update check.
 GITHUB_REPO = 'gminustwo/minustwo'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'minustwo-update'
