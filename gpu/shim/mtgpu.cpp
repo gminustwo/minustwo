@@ -408,10 +408,6 @@ extern "C" int mtgpu_overlay_captures_input(void) {
     return MtOverlay::CapturesInput() ? 1 : 0;
 }
 
-extern "C" void mtgpu_engine_fps_cycle(void) {
-    MtOverlay::CycleEngineFps();
-}
-
 // src/probe.c: the game's maximum frame rate globals (MtSettings::SyncEngineFps writes them).
 extern "C" void mt_engine_fps_globals(uintptr_t fps, uintptr_t rounded) {
     auto& s = MtSettings::Get();

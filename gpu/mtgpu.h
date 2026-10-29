@@ -52,8 +52,6 @@ int mtgpu_cheats(void);
 void mtgpu_cheats_found(int found);
 /* Achievements on in the menu (the default): 0 and the runtime unlocks no trophy. Read live. */
 int mtgpu_achievements_enabled(void);
-/* R3 + L1 + R1 (pad) or F9: the next engine frame rate (60, 100, 120, 144, 180, 240), applied live. */
-void mtgpu_engine_fps_cycle(void);
 /* The video decoder handed the game a picture: a cutscene is on screen (the presenter draws
  * black bars outside its 16:9 picture when the render resolution is not 16:9). */
 void mtgpu_movie_picture(void);

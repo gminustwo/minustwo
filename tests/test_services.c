@@ -12,7 +12,7 @@
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
 int mtgpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
 int mtgpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
-static char last_toast[256];
+static char last_toast[sizeof(msg.text)]; /* the whole dialog text */
 void mtgpu_toast(const char *text) { snprintf(last_toast,sizeof(last_toast),"%s",text ? text : ""); }
 static char last_trophy[256], last_trophy_detail[256];
 void mtgpu_toast_trophy(const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {

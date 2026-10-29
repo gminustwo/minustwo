@@ -318,7 +318,7 @@ bool ResolutionNeedsRestart() {
 }
 
 void Save() {
-    static std::mutex mutex; // the menu and the pad thread (CycleEngineFps)
+    static std::mutex mutex; // the menu and the window's F9 (CycleEngineFps) save from their own threads
     std::scoped_lock lock{mutex};
     const auto& v = Get();
     FILE* file = std::fopen(Path(), "w");
