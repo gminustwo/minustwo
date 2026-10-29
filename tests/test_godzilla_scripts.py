@@ -258,6 +258,27 @@ class UpdateTest(unittest.TestCase):
         self.launcher.replace_appimage(new.as_uri(), checksum.as_uri(), installed)
         self.assertEqual(installed.read_bytes(), b'new appimage')
 
+    def test_https_takes_the_system_certificates_where_openssl_has_none(self):
+        """The AppImage's OpenSSL (built on Ubuntu) looks in /usr/lib/ssl, which SteamOS lacks."""
+        import ssl
+        from unittest import mock
+        bundle = self.root / 'ca-certificates.crt'
+        bundle.write_text('certificates')
+        missing = ssl.DefaultVerifyPaths(None, None, 'SSL_CERT_FILE', '/usr/lib/ssl/cert.pem',
+                                         'SSL_CERT_DIR', '/usr/lib/ssl/certs')
+        found = ssl.DefaultVerifyPaths('/usr/lib/ssl/cert.pem', '/usr/lib/ssl/certs', 'SSL_CERT_FILE',
+                                       '/usr/lib/ssl/cert.pem', 'SSL_CERT_DIR', '/usr/lib/ssl/certs')
+        for platform, paths, loaded in (('linux', missing, [str(bundle)]), ('darwin', missing, [str(bundle)]),
+                                        ('linux', found, []), ('win32', missing, [])):
+            context = mock.Mock()
+            with mock.patch.object(self.launcher.sys, 'platform', platform), \
+                    mock.patch.object(self.launcher, 'CA_BUNDLES', (str(self.root / 'none.crt'), str(bundle))), \
+                    mock.patch('ssl.get_default_verify_paths', return_value=paths), \
+                    mock.patch('ssl.create_default_context', return_value=context):
+                self.assertIs(self.launcher.https_context(), context)
+            self.assertEqual([call.kwargs['cafile'] for call in context.load_verify_locations.call_args_list],
+                             loaded, (platform, paths))
+
     def test_the_feed_can_be_another_url(self):
         feed = self.root / 'release.json'
         feed.write_text(json.dumps({'tag_name': 'v9.0.0', 'html_url': 'https://x/page', 'assets': [

@@ -289,6 +289,26 @@ def release_info(release, repo, suffix=PACKAGE_SUFFIX):
             release.get('html_url') or f'https://github.com/{repo}/releases/latest')
 
 
+# The systems' own bundles of CA certificates: Debian, Ubuntu, Arch and SteamOS; Fedora; openSUSE; macOS.
+CA_BUNDLES = ('/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt', '/etc/ssl/ca-bundle.pem',
+              '/etc/ssl/cert.pem')
+
+
+def https_context():
+    """TLS for GitHub. A frozen launcher's OpenSSL looks for CA certificates where the system it was built
+    on keeps them: the AppImage's (built on Ubuntu) in /usr/lib/ssl, which SteamOS does not have, so every
+    request failed there (no update box, "Could not check for updates"). Where that place is missing, the
+    system's own bundle is used."""
+    import ssl
+    context = ssl.create_default_context()
+    paths = ssl.get_default_verify_paths()
+    if sys.platform != 'win32' and not paths.cafile and not paths.capath:
+        bundle = next((path for path in CA_BUNDLES if os.path.isfile(path)), None)
+        if bundle:
+            context.load_verify_locations(cafile=bundle)
+    return context
+
+
 def latest_release(repo=None):
     """The newest release of `repo` (GitHub's API; MT_UPDATE_FEED: another URL of the same JSON, to try an
     update without publishing one)."""
@@ -298,7 +318,7 @@ def latest_release(repo=None):
     request = urllib.request.Request(feed,
                                      headers={'Accept': 'application/vnd.github+json',
                                               'User-Agent': 'minustwo-launcher'})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=15, context=https_context()) as response:
         return release_info(json.load(response), repo)
 
 
@@ -310,13 +330,14 @@ def fetch_checked(url, checksum_url, path, progress=lambda percent: None):
     if not checksum_url:
         raise OSError('the release has no checksum (.sha256) beside its zip')
     request = urllib.request.Request(checksum_url, headers={'User-Agent': 'minustwo-launcher'})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    context = https_context()
+    with urllib.request.urlopen(request, timeout=30, context=context) as response:
         words = response.read(4096).decode('ascii', 'replace').split()
     if not words or not re.fullmatch(r'[0-9a-fA-F]{64}', words[0]):
         raise OSError('the release checksum is not a SHA-256')
     path, digest = Path(path), hashlib.sha256()
     request = urllib.request.Request(url, headers={'User-Agent': 'minustwo-launcher'})
-    with urllib.request.urlopen(request, timeout=60) as response, open(path, 'wb') as out:
+    with urllib.request.urlopen(request, timeout=60, context=context) as response, open(path, 'wb') as out:
         total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
         while chunk := response.read(1 << 20):
             out.write(chunk)
@@ -1691,8 +1712,10 @@ class Launcher:
             open_path(page)  # a source tree updates with git; a release without this system's file by hand
             return
         if method == 'readonly':
+            appimage = os.environ.get('APPIMAGE') if sys.platform not in ('win32', 'darwin') else None
+            folder = Path(os.path.realpath(appimage)).parent if appimage else installation()  # not the AppImage's mount
             if messagebox.askyesno(
-                    'Minus Two', f'The launcher cannot write to {installation()}, so it cannot replace itself there '
+                    'Minus Two', f'The launcher cannot write to {folder}, so it cannot replace itself there '
                                  '(on a Mac, move MinusTwo.app to Applications first). Open the release page to '
                                  'download it by hand?'):
                 open_path(page)
