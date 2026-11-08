@@ -11,8 +11,8 @@ endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
 # Source paths in asserts and log lines (__FILE__) start at the repository, not at the folder it was
-# built in: on macOS that is under the builder's home folder, which names the account.
-if (APPLE)
+# built in: on macOS and Linux that is under the builder's home folder, which names the account.
+if (NOT WIN32)
     get_filename_component(MT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
     add_compile_options(-ffile-prefix-map=${MT_ROOT}/=)
 endif()

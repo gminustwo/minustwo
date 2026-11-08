@@ -69,6 +69,22 @@ for name in libstdc++.so.6 libgcc_s.so.1; do
     install -m755 "$(ldd out/gpu/libmtgpu.so | awk -v n="$name" '$1==n{print $3}')" "$appdir/usr/lib/cxx/$name"
 done
 find "$appdir/usr/lib" -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
+# Library search paths of the build machine (out/gpu, the deps folder: under the builder's home folder,
+# which names the account) do not ship. AppRun's LD_LIBRARY_PATH and the $ORIGIN entries find everything.
+# A shorter path is written over the old one, which patchelf clears; --remove-rpath would leave its text.
+while IFS= read -r -d '' elf; do
+    rpath=$(patchelf --print-rpath "$elf" 2>/dev/null) || continue
+    [[ -n $rpath ]] || continue
+    kept=$(tr ':' '\n' <<<"$rpath" | grep '^\$ORIGIN' | paste -sd: - || true)
+    [[ $kept == "$rpath" ]] && continue
+    patchelf --set-rpath "${kept:-\$ORIGIN}" "$elf"
+done < <(find "$appdir/usr" -type f \( -name '*.so*' -o -path '*/bin/*' \) -print0)
+named=$(grep -r -l -a -F "$HOME/" "$appdir" || true)
+if [[ -n $named ]]; then
+    echo "Package names the build machine's home folder ($HOME):" >&2
+    echo "$named" >&2
+    exit 1
+fi
 
 # No game files and nothing a player made (saves, shader caches, settings, logs) may ship.
 forbidden=$(find "$appdir" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
