@@ -57,6 +57,8 @@ ldd "$dest/bin/minustwo.exe" "$dest/bin/minustwo-gpu-capabilities.exe" |
     done
 cp -r scripts patches "$dest/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
+# RecompLauncher reads this next to MinusTwo.exe.
+cp recomplauncher.json "$dest/"
 find "$dest" -name __pycache__ -prune -exec rm -r {} +
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.

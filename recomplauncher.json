@@ -1,0 +1,94 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Minus Two",
+  "repo": "gminustwo/minustwo",
+  "game": {
+    "kind": "folder",
+    "label": "Your dump of GODZILLA (PS4, CUSA02046): the folder with eboot.bin, sce_module and sce_sys.",
+    "check": { "file": "eboot.bin" }
+  },
+  "start": {
+    "program": ["MinusTwo.exe", "minustwo-x86_64.AppImage"],
+    "args": ["--play", "--game", "{game}"]
+  },
+  "config": [
+    {
+      "id": "main",
+      "format": "ini",
+      "file": [
+        { "path": "{install}/minustwo.ini", "if": "{install}/MinusTwo.exe" },
+        { "path": "{local}/minustwo/minustwo.ini" }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "id": "display_mode",
+      "label": "Window",
+      "help": "Borderless and fullscreen fill the screen; windowed keeps a normal window.",
+      "choices": [
+        { "label": "Windowed", "set": { "display_mode": "windowed" } },
+        { "label": "Borderless", "set": { "display_mode": "borderless" } },
+        { "label": "Fullscreen", "set": { "display_mode": "fullscreen" } }
+      ],
+      "defaults": { "display_mode": "windowed" }
+    },
+    {
+      "id": "render_resolution",
+      "label": "Render resolution",
+      "help": "What the game draws at. Native is the PS4's own 1080p; higher sizes need a stronger graphics card.",
+      "choices": [
+        { "label": "720p", "set": { "render_resolution": "720p" } },
+        { "label": "Native (1080p)", "set": { "render_resolution": "native" } },
+        { "label": "1440p", "set": { "render_resolution": "1440p" } },
+        { "label": "1800p", "set": { "render_resolution": "1800p" } },
+        { "label": "4K", "set": { "render_resolution": "4K" } }
+      ],
+      "defaults": { "render_resolution": "native" }
+    },
+    {
+      "id": "vsync",
+      "label": "VSync",
+      "help": "Waits for the display, so there is no tearing.",
+      "choices": [
+        { "label": "On", "set": { "vsync": "1" } },
+        { "label": "Off", "set": { "vsync": "0" } }
+      ],
+      "defaults": { "vsync": "1" }
+    },
+    {
+      "id": "fps_limit",
+      "label": "Frame rate limit",
+      "help": "60 is the game's own rate.",
+      "choices": [
+        { "label": "60", "set": { "fps_limit": "60" } },
+        { "label": "30", "set": { "fps_limit": "30" } },
+        { "label": "Unlimited", "set": { "fps_limit": "0" } }
+      ],
+      "defaults": { "fps_limit": "60" }
+    }
+  ],
+  "saves": [
+    "{install}/user/savedata",
+    "{install}/user/trophies.dat",
+    "{local}/minustwo/user/savedata",
+    "{local}/minustwo/user/trophies.dat"
+  ],
+  "folders": {
+    "saves": [
+      { "path": "{install}/user/savedata", "if": "{install}/MinusTwo.exe" },
+      { "path": "{local}/minustwo/user/savedata" }
+    ],
+    "logs": [
+      { "path": "{install}/user", "if": "{install}/MinusTwo.exe" },
+      { "path": "{local}/minustwo/user" }
+    ]
+  },
+  "exit_codes": {
+    "20": "This processor lacks an instruction set the game needs. The log says which one."
+  },
+  "actions": [
+    { "id": "saves", "label": "Open saves folder", "open": "saves" }
+  ]
+}

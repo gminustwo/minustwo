@@ -41,6 +41,8 @@ cp -r out/pyi-dist/minustwo-launcher/. "$share/"
 find "$share" -name __pycache__ -prune -exec rm -r {} +
 install -m755 packaging/linux/AppRun "$appdir/AppRun"
 install -m644 packaging/linux/minustwo.desktop "$appdir/minustwo.desktop"
+# RecompLauncher reads this from the AppImage's root.
+install -m644 recomplauncher.json "$appdir/recomplauncher.json"
 install -m644 launcher/minustwo.png "$appdir/minustwo.png"
 
 # Host-provided libraries: bundling any of these breaks drivers or the display connection.
