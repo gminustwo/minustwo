@@ -12,6 +12,12 @@
     "program": ["MinusTwo.exe", "minustwo-x86_64.AppImage"],
     "args": ["--play", "--game", "{game}"]
   },
+  "prepare": {
+    "program": ["MinusTwo.exe", "minustwo-x86_64.AppImage"],
+    "args": ["--prepare", "--game", "{game}"],
+    "label": "Preparing the game image",
+    "timeout": 600
+  },
   "config": [
     {
       "id": "main",
