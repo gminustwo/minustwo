@@ -1,5 +1,6 @@
 from paths import ROOT
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(ROOT))
@@ -20,6 +21,13 @@ class RunIsaTests(unittest.TestCase):
 
     def test_rewrite_disabled(self):
         self.assertFalse(run.isa_rewrite_wanted(['MOVBE', 'BMI1'], {'MT_ISA_REWRITE': '0'}))
+
+    def test_prepare_stops_when_the_folder_has_no_eboot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {'MT_GAME_DIR': folder, 'MT_DATA_DIR': folder}
+            with self.assertRaises(SystemExit) as stopped:
+                run.prepare_only(env)
+        self.assertEqual(stopped.exception.code, 1)
 
 
 if __name__ == '__main__':
