@@ -4,6 +4,8 @@
 
     python launcher/minustwo_launcher.py            the window
     python launcher/minustwo_launcher.py --play     the game with the saved settings, no window
+    python launcher/minustwo_launcher.py --play --game <folder>   the same, with this GODZILLA folder
+    python launcher/minustwo_launcher.py --prepare [--game <folder>]   only the game image steps, with progress lines
 
 Frozen into MinusTwo.exe (packaging/windows/package.sh), the same program also runs run.py
 (--run) and the preparation scripts (--script <path> ...), so players need no Python.
@@ -202,8 +204,34 @@ def start_game(values, log_file):
                             stdout=log_file, stderr=subprocess.STDOUT, creationflags=no_window)
 
 
-def play_without_window():
+def game_option(args):
+    """The folder after --game in the command line, or None when the option is not given."""
+    if '--game' not in args:
+        return None
+    index = args.index('--game') + 1
+    return args[index] if index < len(args) else None
+
+
+def prepare_without_window(game_dir=None):
+    """The game image steps only (run.py --prepare), for a launcher's setup screen: its progress lines go to
+    this process's output."""
     values = load_settings()
+    if game_dir:
+        values['game_dir'] = game_dir
+    problem = game_problem(values['game_dir'])
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
+    no_window = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+    return subprocess.run([*game_command(), '--prepare'], cwd=PORT, env=game_environment(values),
+                          stdin=subprocess.DEVNULL, creationflags=no_window).returncode
+
+
+def play_without_window(game_dir=None):
+    values = load_settings()
+    # --game is for this start only: settings.json keeps the player's own choice.
+    if game_dir:
+        values['game_dir'] = game_dir
     problem = game_problem(values['game_dir'])
     if problem:
         print(problem, file=sys.stderr)
@@ -1851,7 +1879,9 @@ def main():
         runpy.run_path(str(PORT / 'run.py'), run_name='__main__')
         return 0
     if args and args[0] == '--play':
-        return play_without_window()
+        return play_without_window(game_option(args[1:]))
+    if args and args[0] == '--prepare':
+        return prepare_without_window(game_option(args[1:]))
     if sys.platform == 'win32':
         try:
             import ctypes

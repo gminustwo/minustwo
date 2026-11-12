@@ -114,6 +114,24 @@ def find_executable(name):
     return None
 
 
+def prepare_only(env):
+    """--prepare: the game image steps of a start, with `progress <0-1> <text>` lines and no game, so a
+    launcher's setup screen can show them and report a bad dump early. A normal start still runs them itself."""
+    data = Path(env.get('MT_DATA_DIR', PORT))
+    out = data / 'out'
+    out.mkdir(parents=True, exist_ok=True)
+    game = Path(env.get('MT_GAME_DIR', PORT.parent / 'CUSA02046'))
+    if not (game / 'eboot.bin').is_file():
+        fail(f'No eboot.bin in {game} (set MT_GAME_DIR).')
+    steps = (('prepare.py', 'Reading the game'), ('link_libc.py', 'Linking its C library'),
+             ('link_modules.py', 'Linking its modules'))
+    for number, (script, label) in enumerate(steps):
+        print(f'progress {number / len(steps):.2f} {label}', flush=True)
+        run_script(script, game, '--out', out)
+    print('progress 1.00 The game image is ready', flush=True)
+    return 0
+
+
 def main():
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == '--after':
@@ -122,6 +140,8 @@ def main():
     # As run.sh: relative paths (MT_GAME_DIR, MT_DATA_DIR, fsr4_shaders/) are from the port.
     os.chdir(PORT)
     env = os.environ
+    if args == ['--prepare']:
+        return prepare_only(env)
     sys.path.insert(0, str(PORT / 'scripts'))
     data = Path(env.get('MT_DATA_DIR', PORT))
     out = data / 'out'

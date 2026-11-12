@@ -117,6 +117,13 @@ class LauncherTest(unittest.TestCase):
         write_sfo(folder / 'sce_sys' / 'param.sfo', {'TITLE': title, 'TITLE_ID': title_id, 'APP_VER': '01.01'})
         return folder
 
+    def test_game_option_is_the_folder_after_it(self):
+        self.assertEqual(self.launcher.game_option(['--game', 'D:/CUSA02046']), 'D:/CUSA02046')
+
+    def test_game_option_is_none_without_it_or_without_a_folder(self):
+        self.assertIsNone(self.launcher.game_option([]))
+        self.assertIsNone(self.launcher.game_option(['--game']))
+
     def test_game_folder_check(self):
         self.assertIn('No game folder', self.launcher.game_problem(''))
         self.assertIn('not GODZILLA', self.launcher.game_problem(str(self.dump('CUSA01623', 'God of War III'))))
