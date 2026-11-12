@@ -34,6 +34,7 @@ int main(void) {
     unsigned char *image = calloc(SIZE, 1);
     assert(image);
     runtime_cheats_configure(image, SIZE); /* code unlike the game's: no cheats, no thread */
+    runtime_cheats_start();
     assert(found_reported == 0 && !player);
 
     /* The table reset as 01.01 and 01.00 have it (the store goes to another offset): both match. */
@@ -141,11 +142,13 @@ int main(void) {
     assert(find_data(big, BIG, &save_ref, kaiju_reads_100, 2, RECORDS) == big + SAVE);
 
     /* Both found (the records through 01.00's code): all three cheats. The thread started here
-     * reads big until the test ends. */
+     * (once the loader has protected the image) reads big until the test ends. */
     save = player = NULL;
     runtime_cheats_configure(big, BIG);
     assert(found_reported == (MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU));
     assert(player == big + TABLE && save == big + SAVE);
+    runtime_cheats_start();
+    assert(found_reported == (MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU));
     free(image);
     puts("PASS: cheats");
     return 0;

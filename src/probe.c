@@ -951,6 +951,7 @@ int main(int argc, char **argv) {
             executable_entry = 1;
     }
     if (!executable_entry) fail("entry is not executable");
+    runtime_cheats_start();
     printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments at %p; applied %" PRIu64 " relocations\n", size, ns, (void *)image, nr);
     GuestStart start={native_libc,ns,nb,procparam,entry,{main_tls[0],main_tls[1],main_tls[2],main_tls[3]},segments};
 #ifdef __APPLE__

@@ -136,18 +136,22 @@ void runtime_cheats_configure(unsigned char *image, uint64_t size) {
                       (save ? MTGPU_CHEAT_ALL_KAIJU : 0);
     if (!player) puts("Cheats: the player table was not found in this game build: no health or breath cheats");
     if (!save) puts("Cheats: the kaiju records were not found in this game build: no kaiju unlock");
-    if (!found) {
-        mtgpu_cheats_found(0);
-        return;
-    }
+    mtgpu_cheats_found(found);
+    if (player) printf("Cheats: player table at image offset 0x%" PRIx64 "\n", (uint64_t)(player - image));
+    if (save) printf("Cheats: save data at image offset 0x%" PRIx64 "\n", (uint64_t)(save - image));
+}
+
+/* The thread that holds the cheats reads and writes the image every 10 ms while one is on: it starts
+ * once the loader has set the image's final protections. The loader first makes the whole image
+ * inaccessible and then opens each segment, and a read in between was an access fault at start. */
+void runtime_cheats_start(void) {
+    if (!player && !save) return;
     pthread_t thread;
     if (pthread_create(&thread, NULL, hold, NULL)) {
+        player = save = NULL;
         mtgpu_cheats_found(0);
         puts("Cheats: cannot start their thread: no cheats");
         return;
     }
     pthread_detach(thread);
-    mtgpu_cheats_found(found);
-    if (player) printf("Cheats: player table at image offset 0x%" PRIx64 "\n", (uint64_t)(player - image));
-    if (save) printf("Cheats: save data at image offset 0x%" PRIx64 "\n", (uint64_t)(save - image));
 }

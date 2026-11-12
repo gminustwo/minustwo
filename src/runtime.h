@@ -91,9 +91,11 @@ void *runtime_low_map(size_t size, int prot);
 void runtime_memory_reserve(void);
 uintptr_t runtime_ajm_resolve(const char *name);
 void runtime_ajm_report(void);
-/* The menu's cheats (runtime_cheats.c): finds the game's player table in the loaded image and
- * keeps the cheats the menu turns on applied. */
+/* The menu's cheats (runtime_cheats.c): configure finds the game's player table and kaiju records
+ * in the loaded image; start, called once the image has its final protections, starts the thread
+ * that keeps the cheats the menu turns on applied. */
 void runtime_cheats_configure(unsigned char *image, uint64_t size);
+void runtime_cheats_start(void);
 /* The render thread's waits for the GPU (runtime_label_wait.c): its spin loops on the GPU's label
  * in the loaded image become calls to stubs written to `stubs` (within rel32 of the image) that
  * sleep until the GPU writes the label. Returns the number of loops replaced. */
