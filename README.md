@@ -65,6 +65,11 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - The add-ons (the pre-order early unlocks and the diorama figure sets, whose content is in the base game) are
   reported as owned. Turn it off in the launcher, or with `MT_UNLOCK_ADDONS=0`.
 - Keyboard and mouse defaults for GODZILLA's controls, mouse camera.
+- **Japanese voices** (the launcher's *Game* page, or the in-game menu's *Game* tab, live from the next line
+  spoken): the original Japanese voice acting with the subtitles and text in the game language. Every voice line
+  ships in both languages (`sound/<folder>/VOICE_<line>.at9` and `VOICE_<line>_EN.at9`); the game asks for the
+  English one whenever its language is not Japanese, and the port opens the Japanese recording instead
+  (`src/runtime_file.c`, `japanese_voices=1` in `minustwo.ini`).
 - **Startup options** (the launcher's *Game* page, built-in patches in `patches/CUSA02046.xml`): skip the publisher
   and studio logos, skip the opening movie (it still plays as the title screen's attract movie), and skip the 1954
   tutorial stage. With *Skip tutorial*, a new game opens the main menu and *God of Destruction* starts at its first

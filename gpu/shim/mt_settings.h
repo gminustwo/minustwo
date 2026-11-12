@@ -88,6 +88,9 @@ struct Values {
     std::atomic<int> cheats_found{0};
     /// Off: the game unlocks no trophies and shows no notices (runtime_services.c). Live.
     std::atomic<bool> achievements{true};
+    /// The original Japanese voice lines in place of the English ones; text keeps the game language
+    /// (runtime_file.c opens VOICE_*.at9 for VOICE_*_EN.at9). Live: from the next line spoken.
+    std::atomic<bool> japanese_voices{false};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
     std::atomic<int> engine_fps{60};

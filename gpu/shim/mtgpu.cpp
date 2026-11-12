@@ -380,6 +380,10 @@ extern "C" int mtgpu_achievements_enabled(void) {
     return MtSettings::Get().achievements.load(std::memory_order_relaxed);
 }
 
+extern "C" int mtgpu_japanese_voices(void) {
+    return MtSettings::Get().japanese_voices.load(std::memory_order_relaxed);
+}
+
 extern "C" void mtgpu_cheats_found(int found) {
     MtSettings::Get().cheats_found = found;
 }

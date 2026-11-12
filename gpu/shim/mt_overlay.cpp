@@ -484,10 +484,17 @@ void ControlsTab() {
     ImGui::PopTextWrapPos();
 }
 
-// The cheats (src/runtime_cheats.c) and achievements on or off, applied at once; the launcher's
+// The voices, the cheats (src/runtime_cheats.c) and achievements, applied at once; the launcher's
 // Game and Achievements pages set the same.
 void GameTab() {
     auto& s = MtSettings::Get();
+    Separator("Voices");
+    if (BeginRows("##voices")) {
+        CheckRow("Japanese voices", s.japanese_voices,
+                 "The original Japanese voice acting, with subtitles and text in the game language. "
+                 "Changes from the next line spoken.");
+        ImGui::EndTable();
+    }
     const int found = s.cheats_found;
     constexpr int all = MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH | MTGPU_CHEAT_ALL_KAIJU;
     Separator("Cheats");

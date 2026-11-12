@@ -8,6 +8,52 @@ uintptr_t runtime_lookup(const RuntimeExport *table,size_t n,const char *name) {
     for (size_t i=0;i<n;++i) if (!strcmp(table[i].name,name)) return (uintptr_t)table[i].function;
     return 0;
 }
+static int japanese_voices;
+int mtgpu_japanese_voices(void) { return japanese_voices; }
+static void write_file(const char *dir,const char *name,const char *text) {
+    char path[600]; snprintf(path,sizeof(path),"%s/%s",dir,name);
+    FILE *f=fopen(path,"w"); assert(f); assert(fputs(text,f)>=0); assert(!fclose(f));
+}
+static void remove_file(const char *dir,const char *name) {
+    char path[600]; snprintf(path,sizeof(path),"%s/%s",dir,name);
+    assert(!unlink(path));
+}
+/* What the game reads from guest path `path`, with its stat size. */
+static void expect(const char *path,const char *text) {
+    int fd=(int)do_open(path,0,0); assert(fd>=3);
+    char content[32]={0}; assert(do_read(fd,content,sizeof(content)-1)==(int64_t)strlen(text) && !strcmp(content,text));
+    assert(!do_close(fd));
+    GuestStat info; assert(!do_stat(path,&info) && info.size==(int64_t)strlen(text));
+}
+/* Japanese voices: VOICE_*_EN.at9 under sound/ opens the Japanese recording when there is one. */
+static void japanese_voice_files(const char *game) {
+    char sound[520],st[530];
+    snprintf(sound,sizeof(sound),"%.511s/sound",game);
+    snprintf(st,sizeof(st),"%s/st",sound);
+    assert(!mkdir(sound,0755) && !mkdir(st,0755));
+    write_file(st,"VOICE_TUT_01_00.at9","japanese");
+    write_file(st,"VOICE_TUT_01_00_EN.at9","english line");
+    write_file(st,"VOICE_ONLY_EN.at9","english only");
+    write_file(st,"SE_ROAR_EN.at9","effect en");
+    write_file(st,"SE_ROAR.at9","effect");
+    write_file(game,"VOICE_TOP_EN.at9","not sound");
+    write_file(game,"VOICE_TOP.at9","top");
+    japanese_voices=0;
+    expect("sound/st/VOICE_TUT_01_00_EN.at9","english line");
+    japanese_voices=1;
+    expect("sound/st/VOICE_TUT_01_00_EN.at9","japanese");
+    expect("/app0/sound/st/VOICE_TUT_01_00_EN.at9","japanese");
+    expect("sound/st/VOICE_TUT_01_00.at9","japanese");
+    expect("sound/st/VOICE_ONLY_EN.at9","english only");  /* no Japanese recording: the English one */
+    expect("sound/st/SE_ROAR_EN.at9","effect en");        /* not a voice line */
+    expect("VOICE_TOP_EN.at9","not sound");               /* not under sound/ */
+    japanese_voices=0;
+    expect("sound/st/VOICE_TUT_01_00_EN.at9","english line");
+    remove_file(st,"VOICE_TUT_01_00.at9"); remove_file(st,"VOICE_TUT_01_00_EN.at9"); remove_file(st,"VOICE_ONLY_EN.at9");
+    remove_file(st,"SE_ROAR_EN.at9"); remove_file(st,"SE_ROAR.at9");
+    remove_file(game,"VOICE_TOP_EN.at9"); remove_file(game,"VOICE_TOP.at9");
+    assert(!rmdir(st) && !rmdir(sound));
+}
 int main(void) {
     char root[]="/tmp/minustwo-mod-files-XXXXXX";
     assert(mkdtemp(root));
@@ -48,6 +94,7 @@ int main(void) {
     char sibling_content[8]={0}; assert(do_read(sibling,sibling_content,5)==5 && !strcmp(sibling_content,"plain"));
     assert(!do_close(sibling));
     runtime_file_unmount("/app0/asset.dcx");
+    japanese_voice_files(game);
     int dir=(int)do_open("/app0",0x20000,0); assert(dir>=3);
     char entries[1024]; int64_t count=do_getdents(dir,entries,sizeof(entries),NULL); assert(count>0);
     int found=0;
@@ -65,5 +112,5 @@ int main(void) {
     const char *dirs[]={"temp0","download0","data"};
     for (int i=0;i<3;++i) { char p[1024]; snprintf(p,sizeof(p),"%s/%s",user,dirs[i]); assert(!rmdir(p)); }
     assert(!rmdir(user) && !rmdir(root));
-    puts("Guest mod files: reads, stat, merged listing, readonly assets and writable saves PASS");
+    puts("Guest mod files: reads, stat, merged listing, readonly assets, writable saves and Japanese voices PASS");
 }

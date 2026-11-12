@@ -1063,10 +1063,13 @@ class Launcher:
 
     def build_game(self):
         tk = self.tk
-        page = self.page('game', 'Game', 'Language, add-ons, startup, cheats and the controller.')
+        page = self.page('game', 'Game', 'Language, voices, add-ons, startup, cheats and the controller.')
         self.section(page, 'Game')
         self.language_var, box = self.choice(page, LANGUAGES, self.values['language'], width=26)
         self.row(page, 'Game language', box)
+        self.japanese_voices_var = tk.BooleanVar(value=self.ini.get('japanese_voices', '0') == '1')
+        self.row(page, 'Japanese voices', self.check(page, self.japanese_voices_var),
+                 'The original Japanese voice acting, with subtitles and text in the game language.')
         self.addons_var = tk.BooleanVar(value=bool(self.values['unlock_addons']))
         self.addons_var.trace_add('write', lambda *_a: self.refresh_checks())
         self.row(page, 'Unlock the add-ons', self.check(page, self.addons_var),
@@ -1638,6 +1641,7 @@ class Launcher:
                    'fps_limit': dict(FPS_LIMITS)[self.fps_var.get()], 'show_fps': int(self.show_fps_var.get()),
                    'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get(),
                    'achievements': int(self.achievements_var.get()),
+                   'japanese_voices': int(self.japanese_voices_var.get()),
                    **{key: int(var.get()) for key, var in self.cheat_vars.items()}})
         if announce:
             self.summary.configure(text='Settings saved.', fg=ACCENT_HI)

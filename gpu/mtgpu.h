@@ -52,6 +52,9 @@ int mtgpu_cheats(void);
 void mtgpu_cheats_found(int found);
 /* Achievements on in the menu (the default): 0 and the runtime unlocks no trophy. Read live. */
 int mtgpu_achievements_enabled(void);
+/* Japanese voices on (minustwo.ini japanese_voices, the menu's Game tab): the runtime opens the
+ * Japanese recording of each voice line the game asks for in English. Read live. */
+int mtgpu_japanese_voices(void);
 /* The video decoder handed the game a picture: a cutscene is on screen (the presenter draws
  * black bars outside its 16:9 picture when the render resolution is not 16:9). */
 void mtgpu_movie_picture(void);

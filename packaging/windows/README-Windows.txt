@@ -30,9 +30,11 @@ kept): no new zip to download or unpack. Advanced -> "Check for updates" checks 
 While playing
 - Insert on the keyboard, or R3 + L2 on a controller, opens the port's menu (display mode,
   VSync, frame rate limit, controller vibration, mouse camera, overlay, and the Game tab's
-  cheats: No damage, Infinite atomic breath, Unlock all kaiju; and achievements on or off).
-  Quit to desktop at its bottom ends the game (it asks first: what the game has not saved
-  yet is lost).
+  Japanese voices, cheats: No damage, Infinite atomic breath, Unlock all kaiju; and
+  achievements on or off). Quit to desktop at its bottom ends the game (it asks first: what
+  the game has not saved yet is lost).
+- Japanese voices (Settings -> Game, or the menu's Game tab): the original Japanese voice
+  acting, with subtitles and text in the game language.
 - Settings -> Game: skip the startup logos, the opening movie or the 1954 tutorial stage, and
   the same cheats. Unlock all kaiju is kept in your save: the kaiju stay unlocked when it is
   turned off.

@@ -73,6 +73,16 @@
         { "label": "Unlimited", "set": { "fps_limit": "0" } }
       ],
       "defaults": { "fps_limit": "60" }
+    },
+    {
+      "id": "japanese_voices",
+      "label": "Voices",
+      "help": "Japanese is the original voice acting; subtitles and text stay in the game language.",
+      "choices": [
+        { "label": "English", "set": { "japanese_voices": "0" } },
+        { "label": "Japanese", "set": { "japanese_voices": "1" } }
+      ],
+      "defaults": { "japanese_voices": "0" }
     }
   ],
   "saves": [

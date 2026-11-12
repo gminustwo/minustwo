@@ -5,6 +5,7 @@
  * Paths containing ".." components are rejected rather than normalized. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "gpu/mtgpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,26 @@ void runtime_file_configure(const char *app0,const char *user) {
         runtime_file_mount(guest,path);
     }
 }
+static int audio_trace(void);
+static int mount_path(const char *buffer,char *out,size_t size);
+/* Japanese voices (minustwo.ini japanese_voices): every voice line ships twice, in Japanese as
+ * sound/<folder>/VOICE_<line>.at9 and in English as VOICE_<line>_EN.at9. The game asks for the English
+ * one whenever its language is not Japanese, and in this release it never is (there is no Japanese
+ * text); its subtitles follow the language. Its voice banks (system.pac sound_voice_ja/en.snd) give
+ * both recordings the same settings, and the line's length comes from the file opened, so the Japanese
+ * line plays whole and its subtitle closes after it. Fills japanese with the Japanese line's guest
+ * path, or returns 0. */
+static int japanese_voice(const char *path,char *japanese,size_t size) {
+    static const char english[]="_EN.at9";
+    const size_t n=strlen(path), suffix=sizeof(english)-1;
+    const char *name=strrchr(path,'/');
+    if (n<suffix || strcmp(path+n-suffix,english) || n>=size || !name || strncmp(name+1,"VOICE_",6) ||
+        !strstr(path,"/sound/") || !mtgpu_japanese_voices())
+        return 0;
+    memcpy(japanese,path,n-suffix);
+    memcpy(japanese+n-suffix,".at9",5);
+    return 1;
+}
 /* Resolve a guest path to a host path; returns 0 or a host errno. */
 static int translate(const char *guest,char *out,size_t size) {
     if (!guest || !*guest) return ENOENT;
@@ -99,6 +120,21 @@ static int translate(const char *guest,char *out,size_t size) {
     else snprintf(buffer,sizeof(buffer),"%s",guest);
     for (const char *p=buffer;(p=strstr(p,".."));p+=2)
         if ((p==buffer || p[-1]=='/') && (p[2]==0 || p[2]=='/')) return EACCES;
+    char japanese[sizeof(buffer)];
+    HostStat s;
+    if (japanese_voice(buffer,japanese,sizeof(japanese)) && !mount_path(japanese,out,size) && !host_stat(out,&s)) {
+        static int told;
+        if (!__atomic_exchange_n(&told,1,__ATOMIC_RELAXED))
+            printf("Voices: Japanese (%s for %s)\n",strrchr(japanese,'/')+1,strrchr(buffer,'/')+1);
+        if (audio_trace()) printf("Audio trace: Japanese voice %s\n",japanese);
+        return 0;
+    }
+    int result=mount_path(buffer,out,size);
+    if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
+    return result;
+}
+/* The host path of an absolute guest path under the longest mount that holds it. */
+static int mount_path(const char *buffer,char *out,size_t size) {
     pthread_mutex_lock(&lock);
     size_t best=0; const Mount *m=NULL;
     for (size_t i=0;i<mount_count;++i) {
@@ -109,7 +145,6 @@ static int translate(const char *guest,char *out,size_t size) {
     if (!m) result=ENOENT;
     else if ((size_t)snprintf(out,size,"%s%s",m->host,buffer+best)>=size) result=ENAMETOOLONG;
     pthread_mutex_unlock(&lock);
-    if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
     return result;
 }
 static int host_flags(int flags) {
