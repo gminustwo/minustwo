@@ -10,6 +10,14 @@ services:
       - "31315:31315/tcp"
     volumes:
       - shadnet-data:/data
+  relay:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/relay.py"]
+    ports:
+      - "31316:31316/udp"
+    volumes:
+      - ./relay.py:/relay.py:ro
 
 volumes:
   shadnet-data:

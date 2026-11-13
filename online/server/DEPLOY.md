@@ -25,20 +25,26 @@ gcloud compute instances create godzilla-shadnet --zone=us-central1-a --machine-
 ```
 
 ```bash
-gcloud compute firewall-rules create shadnet --target-tags=shadnet --allow=tcp:31313,udp:31314
+gcloud compute firewall-rules create shadnet --target-tags=shadnet --allow=tcp:31313,udp:31314,udp:31316
 ```
 
 ## 3. Copy the image and start it
 
 ```bash
-gcloud compute scp godzilla-shadnet.tar.gz godzilla-shadnet:. --zone=us-central1-a --strict-host-key-checking=no
+gcloud compute scp godzilla-shadnet.tar.gz relay.py godzilla-shadnet:. --zone=us-central1-a --strict-host-key-checking=no
 ```
 
 ```bash
 gcloud compute ssh godzilla-shadnet --zone=us-central1-a --command="sudo apt-get update && sudo apt-get install -y docker.io && gunzip -c godzilla-shadnet.tar.gz | sudo docker load && sudo docker run -d --name shadnet --restart always --network host -v shadnet-data:/data --log-opt max-size=10m --log-opt max-file=3 godzilla-shadnet:local"
 ```
 
-The container restarts by itself after a crash or a reboot of the machine. Host networking lets the
+Then the relay, for players who cannot reach each other directly:
+
+```bash
+gcloud compute ssh godzilla-shadnet --zone=us-central1-a --command="sudo docker run -d --name relay --restart always --network host -v \$HOME/relay.py:/relay.py:ro python:3.12-slim python -u /relay.py"
+```
+
+Both containers restart by themselves after a crash or a reboot of the machine. Host networking lets the
 server see players' real addresses, which hole punching needs. (`docker-compose.cloud.yml` describes
 the same container for machines with a current Docker Compose; Debian's packaged one is too old for it.)
 

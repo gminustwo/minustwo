@@ -47,7 +47,9 @@ python smoke_test.py
 ```
 
 The smoke test registers two throwaway accounts and checks sign-in, room creation, search and the
-peer address lookup. Players need TCP 31313 and UDP 31314. On a Linux cloud machine run it with host
+peer address lookup. The compose file also starts `relay.py` (Python standard library only), which
+carries the matches of players who cannot reach each other directly. Players need TCP 31313 and
+UDP 31314 and 31316. On a Linux cloud machine run it with host
 networking (the server must see players' real addresses): `server/DEPLOY.md` walks through Google
 Cloud's free e2-micro. Leaderboard boards are created with default settings by their first score;
 `scoreboards.cfg` can set their rank limits and sort orders.
@@ -64,6 +66,8 @@ Cloud's free e2-micro. Leaderboard boards are created with default settings by t
 | `MT_SHADNET_UDP_PORT` | the server's signaling port (31314) |
 | `MT_SHADNET_COMID` | the NP communication ID for leaderboards (`NPWR08361_00`) |
 | `MT_P2P_PORT` | this player's UDP port for matches (any free one by default) |
+| `MT_SHADNET_RELAY_PORT` | the relay's UDP port on the server (31316) |
+| `MT_P2P_FORCE_RELAY=1` | send every match through the relay (testing) |
 | `MT_ONLINE_DEBUG=1` | detailed log: room data, events handed to the game, first Rudp traffic |
 
 ## How it works
@@ -78,7 +82,10 @@ Cloud's free e2-micro. Leaderboard boards are created with default settings by t
   and the game never sees it.
 - `src/runtime_p2p.c`: the P2P sockets and Rudp. One real UDP socket per player; it learns its public
   address from the server's STUN service, players announce their local addresses in shadNet room
-  messages, and probes punch through home routers (or go straight across a shared LAN). The game
+  messages, and probes punch through home routers (or go straight across a shared LAN). An opponent
+  that has not answered after 5 seconds (strict NAT on both sides) is reached through the server's
+  relay instead (`server/relay.py`): both players register a token derived from their room and member
+  numbers, and the relay passes their packets to each other, a pair at a time. The game
   sees member N at 10.77.0.N. Rudp contexts are reliable ordered message streams (sequence numbers,
   acknowledgements, resends) with the context events and the SOCKET_RELEASED event the game uses.
 - `src/runtime_score.c`: NpScore (leaderboards) through shadNet's score commands.
@@ -101,12 +108,14 @@ What GODZILLA needed beyond a plain shadNet client:
 
 Two copies on one PC, against a local server and against a Google Cloud e2-micro: sign-in and
 registration, Random VS Play for 2 players, the lobby in either ready order, matches to the result
-screen and back, the leaderboard screen. Not tested yet: 3-player rooms, players behind routers that
-need a relay (strict NAT on both sides; there is no relay), Friend VS Play.
+screen and back, the leaderboard screen. The relay was tested on its own over the internet (two
+players' packets passed both ways, a third party refused). Not tested yet: a full match through the
+relay, 3-player rooms, Friend VS Play.
 
 ## Limits
 
 - The connection to the server is not encrypted (shadNet's own port): players should use a
   password unique to the server.
-- No relay: two players who both sit behind strict NAT cannot reach each other.
+- Relayed matches (strict NAT on both sides) add the round trip to the relay: with one relay, players
+  far from it feel it. Direct matches are unaffected. Relays in more regions are a later step.
 - Every player runs this port: PS4 players and shadPS4 users are not matched.

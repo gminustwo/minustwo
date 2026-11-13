@@ -12,6 +12,13 @@ services:
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
+  relay:
+    image: python:3.12-slim
+    restart: always
+    network_mode: host
+    command: ["python", "-u", "/relay.py"]
+    volumes:
+      - ./relay.py:/relay.py:ro
 
 volumes:
   shadnet-data:

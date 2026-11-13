@@ -79,6 +79,8 @@ typedef struct {
     uint32_t ip; uint16_t port;                           /* the endpoint that answered */
     int heard, acknowledged, established;
     int gone; /* closed all its match sockets (T_BYE): reported dead, not probed again */
+    int relayed, relay_ok; /* no direct path: traffic goes through the relay (registered there) */
+    uint64_t added_ms;
 } Peer;
 
 typedef struct {
@@ -180,17 +182,58 @@ static void send_to(uint32_t ip, uint16_t port, const void *data, size_t size) {
     sendto(udp, (const char *)data, (int)size, 0, (struct sockaddr *)&to, sizeof(to));
 }
 
+/* ---- the relay ----------------------------------------------------------------------------------
+ * Players who cannot reach each other directly (strict NAT on both sides) send their packets through
+ * the relay next to the shadNet server (online/server/relay.py): "MTRL", a type, a 16-byte token both
+ * players derive from their room and member numbers, then the packet. A member that has not answered
+ * direct probes after RELAY_AFTER_MS, or that reached us through the relay, is relayed from then on. */
+enum { RELAY_AFTER_MS = 5000, RELAY_DEFAULT_PORT = 31316, RELAY_HEADER = 21,
+       RELAY_REGISTER = 1, RELAY_REGISTERED = 2, RELAY_DATA = 3 };
+
+static uint16_t relay_port(void) { /* network order */
+    const char *env = getenv("MT_SHADNET_RELAY_PORT");
+    int value = env ? atoi(env) : 0;
+    return htons((uint16_t)(value > 0 && value < 65536 ? value : RELAY_DEFAULT_PORT));
+}
+
+static int force_relay(void) { /* MT_P2P_FORCE_RELAY=1: every member through the relay (tests) */
+    const char *env = getenv("MT_P2P_FORCE_RELAY");
+    return env && *env == '1';
+}
+
+static void relay_token(const Peer *p, uint8_t token[16]) {
+    uint16_t low = my_member < p->member ? my_member : p->member, high = my_member < p->member ? p->member : my_member;
+    uint64_t h[2] = {1469598103934665603ull, 1099511628211ull ^ (uint64_t)MT_ONLINE_PROTOCOL};
+    const uint64_t parts[3] = {room_id, low, high};
+    for (int k = 0; k < 2; ++k)
+        for (int i = 0; i < 3; ++i)
+            for (int b = 0; b < 8; ++b) h[k] = (h[k] ^ ((parts[i] >> (8 * b)) & 0xFF)) * (1099511628211ull + 2 * (uint64_t)k);
+    memcpy(token, h, 16);
+}
+
+static void relay_register(const Peer *p) {
+    uint8_t packet[RELAY_HEADER] = {'M', 'T', 'R', 'L', RELAY_REGISTER};
+    relay_token(p, packet + 5);
+    send_to(shadnet_server_ip(), relay_port(), packet, sizeof(packet));
+}
+
 static void send_packet(const Peer *p, uint8_t type, uint16_t src_vport, uint16_t dst_vport, uint32_t seq, uint32_t ack,
                         const void *payload, size_t size) {
-    uint8_t buffer[sizeof(Header) + MAX_DATAGRAM];
+    uint8_t buffer[RELAY_HEADER + sizeof(Header) + MAX_DATAGRAM];
+    uint8_t *packet = buffer + RELAY_HEADER; /* room before it for the relay's header */
     if (size > MAX_DATAGRAM) return;
     Header h = {{'M', 'T'}, P2P_VERSION, type, my_member, src_vport, dst_vport, seq, ack, (uint16_t)size};
-    memcpy(buffer, &h, sizeof(h));
-    if (size) memcpy(buffer + sizeof(h), payload, size);
-    if (p->ip) {
-        send_to(p->ip, p->port, buffer, sizeof(h) + size);
+    memcpy(packet, &h, sizeof(h));
+    if (size) memcpy(packet + sizeof(h), payload, size);
+    if (p->relayed) {
+        memcpy(buffer, "MTRL", 4);
+        buffer[4] = RELAY_DATA;
+        relay_token(p, buffer + 5);
+        send_to(shadnet_server_ip(), relay_port(), buffer, RELAY_HEADER + sizeof(h) + size);
+    } else if (p->ip) {
+        send_to(p->ip, p->port, packet, sizeof(h) + size);
     } else if (type == T_PROBE) {
-        for (int i = 0; i < 2; ++i) send_to(p->candidate_ip[i], p->candidate_port[i], buffer, sizeof(h) + size);
+        for (int i = 0; i < 2; ++i) send_to(p->candidate_ip[i], p->candidate_port[i], packet, sizeof(h) + size);
     }
 }
 
@@ -406,6 +449,28 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
         }
         return;
     }
+    int via_relay = 0;
+    if (ip == shadnet_server_ip() && port == relay_port()) {
+        if (size < RELAY_HEADER || memcmp(data, "MTRL", 4)) return;
+        if (data[4] == RELAY_REGISTERED) {
+            pthread_mutex_lock(&lock);
+            for (int i = 0; i < MAX_PEERS; ++i) {
+                uint8_t token[16];
+                if (!peers[i].used) continue;
+                relay_token(&peers[i], token);
+                if (!memcmp(token, data + 5, 16) && !peers[i].relay_ok) {
+                    peers[i].relay_ok = 1;
+                    printf("P2P: the relay is ready for member %u\n", peers[i].member);
+                }
+            }
+            pthread_mutex_unlock(&lock);
+            return;
+        }
+        if (data[4] != RELAY_DATA) return;
+        data += RELAY_HEADER;
+        size -= RELAY_HEADER;
+        via_relay = 1;
+    }
     if (size < sizeof(Header)) return;
     Header h;
     memcpy(&h, data, sizeof(h));
@@ -414,7 +479,13 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
     pthread_mutex_lock(&lock);
     Peer *p = peer_by_member(h.member);
     if (!p) { pthread_mutex_unlock(&lock); return; }
-    peer_heard(p, ip, port);
+    if (via_relay) {
+        if (!p->relayed) printf("P2P: member %u (%s) reached through the relay\n", p->member, p->npid);
+        p->relayed = 1;
+        p->heard = 1;
+    } else {
+        peer_heard(p, ip, port);
+    }
     switch (h.type) {
     case T_PROBE:
         send_packet(p, T_PROBE_ACK, 0, 0, 0, 0, NULL, 0);
@@ -478,8 +549,16 @@ static void *io_main(void *unused) {
         pthread_mutex_lock(&lock);
         if (now - last_probe >= PROBE_MS) {
             last_probe = now;
-            for (int i = 0; i < MAX_PEERS; ++i)
-                if (peers[i].used && !peers[i].established) send_packet(&peers[i], T_PROBE, 0, 0, 0, 0, NULL, 0);
+            for (int i = 0; i < MAX_PEERS; ++i) {
+                Peer *q = &peers[i];
+                if (!q->used || q->established || q->gone) continue;
+                if (!q->relayed && (force_relay() || now - q->added_ms > RELAY_AFTER_MS)) {
+                    q->relayed = 1;
+                    printf("P2P: no direct path to member %u (%s): using the relay\n", q->member, q->npid);
+                }
+                if (q->relayed && !q->relay_ok) relay_register(q);
+                send_packet(q, T_PROBE, 0, 0, 0, 0, NULL, 0);
+            }
         }
         if (now - last_resend >= RESEND_MS) {
             last_resend = now;
@@ -602,7 +681,7 @@ void p2p_member(uint16_t member, const char *npid, uint32_t public_address, uint
     pthread_mutex_lock(&lock);
     Peer *p = peer_by_member(member);
     for (int i = 0; i < MAX_PEERS && !p; ++i)
-        if (!peers[i].used) { p = &peers[i]; memset(p, 0, sizeof(*p)); p->used = 1; p->member = member; }
+        if (!peers[i].used) { p = &peers[i]; memset(p, 0, sizeof(*p)); p->used = 1; p->member = member; p->added_ms = now_ms(); }
     if (p) {
         snprintf(p->npid, sizeof(p->npid), "%.16s", npid);
         if (public_address) { p->candidate_ip[1] = public_address; p->candidate_port[1] = port; }
