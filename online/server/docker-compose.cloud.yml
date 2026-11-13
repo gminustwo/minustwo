@@ -1,0 +1,17 @@
+# The shadNet server on a Linux cloud machine (Google Cloud e2-micro, Oracle, a home server).
+# Host networking: the server sees players' real public addresses, which P2P hole punching needs.
+# The image is built on a PC (docker compose build) and copied over: see DEPLOY.md.
+name: godzilla-shadnet
+services:
+  shadnet:
+    image: godzilla-shadnet:local
+    restart: always
+    network_mode: host
+    volumes:
+      - shadnet-data:/data
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  shadnet-data:
