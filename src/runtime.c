@@ -252,6 +252,10 @@ static uintptr_t resolve_import(const char *name, int is_data) {
     if (kernel) return kernel;
     uintptr_t np = runtime_np_resolve(name); /* MT_ONLINE: before the offline answers */
     if (np) return np;
+    uintptr_t p2p = runtime_p2p_resolve(name); /* MT_SHADNET_SERVER: P2P sockets and Rudp */
+    if (p2p) return p2p;
+    uintptr_t score = runtime_score_resolve(name); /* MT_SHADNET_SERVER: leaderboards */
+    if (score) return score;
     uintptr_t services = runtime_services_resolve(name);
     if (services) return services;
     uintptr_t ajm = runtime_ajm_resolve(name);
