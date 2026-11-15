@@ -43,14 +43,17 @@ static int online(void) {
     static int value = -1;
     if (value < 0) {
         const char *env = getenv("MT_ONLINE");
-        value = env && *env == '1';
+        value = (env && *env == '1') || shadnet_enabled();
     }
     return value;
 }
 
+/* Matchmaking through a shadNet server (MT_SHADNET_SERVER) instead of the direct connection. */
+static int via_shadnet(void) { return shadnet_enabled(); }
+
 /* The Online ID: MT_ONLINE_NAME, as PSN allows it (letters, digits, - and _, at most 16). */
 static void online_id(NpOnlineId *id) {
-    const char *name = getenv("MT_ONLINE_NAME");
+    const char *name = shadnet_enabled() ? shadnet_npid() : getenv("MT_ONLINE_NAME");
     memset(id, 0, sizeof(*id));
     size_t n = 0;
     for (const char *c = name && *name ? name : "MinusTwo"; *c && n < NP_ONLINE_ID_MAX; ++c) {
@@ -226,7 +229,10 @@ typedef struct {
 
 /* A binary attribute's value as the room keeps it. */
 typedef struct { uint16_t id; uint32_t size; uint64_t updated; uint16_t by; uint8_t data[M2_MAX_BIN]; } StoredBin;
-typedef struct { int used; uint16_t member_id; NpId np_id; uint8_t team; uint32_t flags; uint64_t joined; StoredBin bin[2]; } RoomMember;
+typedef struct {
+    int used; uint16_t member_id; NpId np_id; uint8_t team; uint32_t flags; uint64_t joined; StoredBin bin[2];
+    uint32_t ip; uint16_t port; /* shadNet: where the member's P2P traffic goes (network order) */
+} RoomMember;
 typedef struct {
     int active; uint64_t room_id; uint16_t max_slot, owner, next_member; uint32_t flags;
     RoomMember members[M2_MAX_MEMBERS];
@@ -527,6 +533,7 @@ static uint16_t room_context;
 static void post_room_event(uint16_t event, void *data) {
     M2Context *c = find_context(room_context);
     if (!c || !c->room_cb) { free(data); return; }
+    if (via_shadnet() && runtime_online_debug()) printf("Online: -> game: room event %#x\n", event);
     post((Event){.kind = EVENT_ROOM, .ctx = c->id, .room = room.room_id, .event = event, .data = data,
                  .callback = (void *)c->room_cb, .arg = c->room_arg});
 }
@@ -534,6 +541,7 @@ static void post_room_event(uint16_t event, void *data) {
 static void post_signaling(uint16_t member, uint16_t event) {
     M2Context *c = find_context(room_context);
     if (!c || !c->signaling_cb) return;
+    if (via_shadnet() && runtime_online_debug()) printf("Online: -> game: signaling event %#x for member %u\n", event, member);
     post((Event){.kind = EVENT_SIGNALING, .ctx = c->id, .room = room.room_id, .member = member, .event = event,
                  .callback = (void *)c->signaling_cb, .arg = c->signaling_arg});
 }
@@ -1086,6 +1094,864 @@ static void run_job(void *(*main)(void *), LinkJob *job) {
     pthread_detach(thread);
 }
 
+/* ---- shadNet matchmaking --------------------------------------------------------------------------
+ * The game's Matching2 calls become shadNet commands (shadNet documentation/matching.md). A request is
+ * turned into its proto while the call runs (the game's request memory is its own again afterwards);
+ * a thread sends it and answers through the game's callback. The room this player is in is mirrored in
+ * `room`, filled from the server's replies and room events, so its PS4 layouts come from the builders
+ * above. */
+enum {
+    SN_CONTEXT_START = 100, SN_CREATE_ROOM = 101, SN_JOIN_ROOM = 102, SN_LEAVE_ROOM = 103, SN_SEARCH_ROOM = 104,
+    SN_CONTEXT_STOP = 106, SN_SET_ROOM_DATA_INTERNAL = 108, SN_SET_ROOM_DATA_EXTERNAL = 109,
+    SN_GET_WORLD_INFO_LIST = 111, SN_SET_ROOM_MEMBER_DATA_INTERNAL = 116,
+    SN_NOTIFY_ROOM_EVENT = 10, SN_NOTIFY_ROOM_MESSAGE = 11,
+    SN_ERR_ROOM_MISSING = 14, SN_ERR_ROOM_FULL = 16,
+    M2_CONTEXT_EVENT_START_OVER = 0x6F01, M2_ROOM_EVENT_KICKEDOUT = 0x1103, M2_CAUSE_SERVER_OPERATION = 4,
+    EXT_ROOM_INTS = 8, EXT_ROOM_BINS = 4,
+};
+#define M2_ROOM_FULL ((int32_t)0x80550C31)
+#define M2_SERVER_NOT_AVAILABLE ((int32_t)0x80550C0D)
+typedef struct { uint8_t op; uint8_t padding[7]; M2BinAttr attr; } M2BinSearchFilter;
+typedef struct { uint8_t type, flag; uint16_t main_member; uint8_t reserved[4]; } M2SignalingOptParam;
+
+static void np_id_from(NpId *id, const uint8_t *text, size_t size) {
+    memset(id, 0, sizeof(*id));
+    memcpy(id->handle.data, text, size > NP_ONLINE_ID_MAX ? NP_ONLINE_ID_MAX : size);
+}
+
+static void pb_bin_attrs(PbOut *out, unsigned field, const M2BinAttr *attrs, uint64_t count) {
+    for (uint64_t i = 0; attrs && i < count; ++i) {
+        PbOut a = {0};
+        pb_uint(&a, 1, attrs[i].id);
+        if (attrs[i].data) pb_bytes(&a, 2, attrs[i].data, attrs[i].size > M2_MAX_BIN ? M2_MAX_BIN : attrs[i].size);
+        pb_msg(out, field, &a);
+        pb_free(&a);
+    }
+}
+
+static void pb_int_attrs(PbOut *out, unsigned field, const M2IntAttr *attrs, uint64_t count) {
+    for (uint64_t i = 0; attrs && i < count; ++i) {
+        PbOut a = {0};
+        pb_uint(&a, 1, attrs[i].id);
+        pb_uint(&a, 2, attrs[i].num);
+        pb_msg(out, field, &a);
+        pb_free(&a);
+    }
+}
+
+/* A MatchingBinAttr into the slot that has its id, or the first free one. */
+static void read_bin(StoredBin *slots, int count, const uint8_t *data, size_t size) {
+    PbIn in = {data, data + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes, *payload = NULL;
+    size_t length, payload_size = 0;
+    uint16_t id = 0, by = 0;
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        if (field == 1) id = (uint16_t)value;
+        else if (field == 2) { payload = bytes; payload_size = length; }
+        else if (field == 4) by = (uint16_t)value;
+    }
+    if (!id) return;
+    StoredBin *slot = NULL;
+    for (int i = 0; i < count && !slot; ++i) if (slots[i].id == id) slot = &slots[i];
+    for (int i = 0; i < count && !slot; ++i) if (!slots[i].id) slot = &slots[i];
+    if (!slot) return;
+    slot->id = id;
+    slot->size = payload_size > M2_MAX_BIN ? M2_MAX_BIN : (uint32_t)payload_size;
+    if (slot->size) memcpy(slot->data, payload, slot->size);
+    slot->updated = ticks_now();
+    slot->by = by;
+}
+
+/* A MatchingRoomMemberData into the room (lock held): the member's slot, or NULL. */
+static RoomMember *read_member(Room *r, const uint8_t *data, size_t size, int *is_owner) {
+    RoomMember m;
+    memset(&m, 0, sizeof(m));
+    int owner = 0;
+    PbIn in = {data, data + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        switch (field) {
+        case 1: np_id_from(&m.np_id, bytes, length); break;
+        case 2: m.member_id = (uint16_t)value; break;
+        case 3: m.team = (uint8_t)value; break;
+        case 4: owner = value != 0; break;
+        case 6: read_bin(m.bin, 2, bytes, length); break;
+        case 7: m.joined = value; break;
+        case 9: m.flags = (uint32_t)value; break;
+        case 10: {
+            char text[64];
+            snprintf(text, sizeof(text), "%.*s", (int)(length < 63 ? length : 63), (const char *)bytes);
+            inet_pton(AF_INET, text, &m.ip);
+            break;
+        }
+        case 11: m.port = htons((uint16_t)value); break;
+        }
+    }
+    if (is_owner) *is_owner = owner;
+    if (!m.member_id) return NULL;
+    RoomMember *slot = find_member(r, m.member_id);
+    for (int i = 0; i < M2_MAX_MEMBERS && !slot; ++i)
+        if (!r->members[i].used) slot = &r->members[i];
+    if (!slot) return NULL;
+    if (slot->used) { /* an update: keep what the event did not carry */
+        if (!m.np_id.handle.data[0]) m.np_id = slot->np_id;
+        if (!m.joined) m.joined = slot->joined;
+        if (!m.ip) { m.ip = slot->ip; m.port = slot->port; }
+        for (int k = 0; k < 2; ++k) if (!m.bin[k].id) m.bin[k] = slot->bin[k];
+    }
+    if (!m.joined) m.joined = ticks_now();
+    m.used = 1;
+    *slot = m;
+    if (owner) r->owner = m.member_id;
+    return slot;
+}
+
+/* A CreateJoinRoomResponse into the room mirror (lock held). */
+static void read_room(const uint8_t *data, size_t size, uint16_t *me) {
+    memset(&room, 0, sizeof(room));
+    room.active = 1;
+    PbIn in = {data, data + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        if (field == 1) {
+            PbIn r = {bytes, bytes + length};
+            unsigned f;
+            uint64_t v;
+            const uint8_t *b;
+            size_t n;
+            while (pb_next(&r, &f, &v, &b, &n)) {
+                if (f == 5) room.max_slot = (uint16_t)v;
+                else if (f == 9) room.room_id = v;
+                else if (f == 13) room.flags = (uint32_t)v;
+                else if (f == 14) read_bin(room.internal, 2, b, n);
+            }
+        } else if (field == 2) {
+            read_member(&room, bytes, length, NULL);
+        } else if (field == 3) {
+            *me = (uint16_t)value;
+        } else if (field == 4) {
+            room.owner = (uint16_t)value;
+        }
+    }
+}
+
+/* The CreateJoinRoomResponse inside a CreateRoomReply (field 9) or a JoinRoomReply (field 6). */
+static int reply_details(const uint8_t *reply, uint32_t size, unsigned details_field, const uint8_t **data, size_t *length) {
+    PbIn in = {reply, reply + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t n;
+    while (pb_next(&in, &field, &value, &bytes, &n))
+        if (field == details_field) { *data = bytes; *length = n; return 1; }
+    return 0;
+}
+
+static M2WorldListResponse *world_list_from(const uint8_t *reply, uint32_t size) {
+    int count = 0;
+    PbIn in = {reply, reply + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) count += field == 1;
+    M2WorldListResponse *response = calloc(1, sizeof(M2WorldListResponse) + (size_t)count * sizeof(M2World));
+    if (!response) return NULL;
+    M2World *worlds = (M2World *)(response + 1), *previous = NULL;
+    in = (PbIn){reply, reply + size};
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        if (field != 1) continue;
+        M2World *w = &worlds[response->count++];
+        PbIn r = {bytes, bytes + length};
+        unsigned f;
+        uint64_t v;
+        const uint8_t *b;
+        size_t n;
+        while (pb_next(&r, &f, &v, &b, &n)) {
+            switch (f) {
+            case 1: w->world_id = (uint32_t)v; break;
+            case 2: w->lobbies = (uint32_t)v; break;
+            case 3: w->max_lobby_members = (uint32_t)v; break;
+            case 4: w->lobby_members = (uint32_t)v; break;
+            case 5: w->rooms = (uint32_t)v; break;
+            case 6: w->room_members = (uint32_t)v; break;
+            }
+        }
+        if (previous) previous->next = w;
+        previous = w;
+    }
+    response->world = response->count ? worlds : NULL;
+    return response;
+}
+
+/* A SearchRoomReply as the PS4 SearchRoom answer: its rooms in one block, each with its owner, up to
+ * EXT_ROOM_INTS search ints and EXT_ROOM_BINS binary attributes. */
+#define EXT_ROOM_SIZE (sizeof(M2RoomDataExternal) + sizeof(NpId) + EXT_ROOM_INTS * sizeof(M2IntAttr) + \
+                       EXT_ROOM_BINS * (sizeof(M2BinAttr) + M2_MAX_BIN))
+static M2SearchRoomResponse *search_response_from(const uint8_t *reply, uint32_t size) {
+    int count = 0;
+    PbIn in = {reply, reply + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) count += field == 1;
+    uint8_t *block = calloc(1, sizeof(M2SearchRoomResponse) + (size_t)count * EXT_ROOM_SIZE);
+    if (!block) return NULL;
+    M2SearchRoomResponse *response = (M2SearchRoomResponse *)block;
+    response->range.start = 1;
+    M2RoomDataExternal *previous = NULL;
+    uint8_t *p = block + sizeof(M2SearchRoomResponse);
+    in = (PbIn){reply, reply + size};
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        if (field == 2) { response->range.start = (uint32_t)value; continue; }
+        if (field == 3) { response->range.total = (uint32_t)value; continue; }
+        if (field != 1) continue;
+        M2RoomDataExternal *ext = (M2RoomDataExternal *)p;
+        NpId *owner = (NpId *)(ext + 1);
+        M2IntAttr *ints = (M2IntAttr *)(owner + 1);
+        M2BinAttr *bins = (M2BinAttr *)(ints + EXT_ROOM_INTS);
+        uint8_t *data = (uint8_t *)(bins + EXT_ROOM_BINS);
+        p += EXT_ROOM_SIZE;
+        /* search bins first in `bins`, then the external ones (each list contiguous) */
+        const uint8_t *search_bin[EXT_ROOM_BINS], *ext_bin[EXT_ROOM_BINS];
+        size_t search_bin_size[EXT_ROOM_BINS], ext_bin_size[EXT_ROOM_BINS];
+        int search_bins = 0, ext_bins = 0;
+        PbIn r = {bytes, bytes + length};
+        unsigned f;
+        uint64_t v;
+        const uint8_t *b;
+        size_t n;
+        while (pb_next(&r, &f, &v, &b, &n)) {
+            switch (f) {
+            case 1: ext->max_slot = (uint16_t)v; break;
+            case 2: ext->cur_members = (uint16_t)v; break;
+            case 3: ext->flags = (uint32_t)v; break;
+            case 4: ext->server_id = (uint16_t)v; break;
+            case 5: ext->world_id = (uint32_t)v; break;
+            case 6: ext->lobby_id = v; break;
+            case 7: ext->room_id = v; break;
+            case 8: ext->password_slot_mask = v; break;
+            case 9: ext->joined_slot_mask = v; break;
+            case 10: ext->public_slots = (uint16_t)v; break;
+            case 11: ext->private_slots = (uint16_t)v; break;
+            case 12: ext->open_public_slots = (uint16_t)v; break;
+            case 13: ext->open_private_slots = (uint16_t)v; break;
+            case 15:
+                if (ext->search_int_attrs < EXT_ROOM_INTS) {
+                    M2IntAttr *a = &ints[ext->search_int_attrs++];
+                    PbIn ai = {b, b + n};
+                    unsigned af;
+                    uint64_t av;
+                    const uint8_t *ab;
+                    size_t an;
+                    while (pb_next(&ai, &af, &av, &ab, &an)) {
+                        if (af == 1) a->id = (uint16_t)av;
+                        else if (af == 2) a->num = (uint32_t)av;
+                    }
+                    if (a->id == 0x53) { /* the port's match key (match_key): not the game's */
+                        memset(a, 0, sizeof(*a));
+                        ext->search_int_attrs--;
+                    }
+                }
+                break;
+            case 16: if (search_bins + ext_bins < EXT_ROOM_BINS) { search_bin[search_bins] = b; search_bin_size[search_bins++] = n; } break;
+            case 17: if (search_bins + ext_bins < EXT_ROOM_BINS) { ext_bin[ext_bins] = b; ext_bin_size[ext_bins++] = n; } break;
+            case 18: np_id_from(owner, b, n); break;
+            }
+        }
+        int used = 0;
+        for (int pass = 0; pass < 2; ++pass) {
+            int total = pass ? ext_bins : search_bins;
+            for (int i = 0; i < total; ++i) {
+                StoredBin stored;
+                memset(&stored, 0, sizeof(stored));
+                read_bin(&stored, 1, pass ? ext_bin[i] : search_bin[i], pass ? ext_bin_size[i] : search_bin_size[i]);
+                M2BinAttr *a = &bins[used];
+                a->id = stored.id;
+                a->size = stored.size;
+                a->data = data + used * M2_MAX_BIN;
+                memcpy(a->data, stored.data, stored.size);
+                ++used;
+            }
+        }
+        if (search_bins) { ext->search_bin_attr = bins; ext->search_bin_attrs = (uint64_t)search_bins; }
+        if (ext_bins) { ext->bin_attr = bins + search_bins; ext->bin_attrs = (uint64_t)ext_bins; }
+        if (!ext->search_int_attrs) ext->search_int_attr = NULL; else ext->search_int_attr = ints;
+        ext->owner = owner;
+        if (previous) previous->next = ext;
+        else response->rooms = ext;
+        previous = ext;
+        response->range.results++;
+    }
+    if (!response->range.total) response->range.total = response->range.results;
+    return response;
+}
+
+/* The match key: rooms carry it in the last searchable int attribute, which GODZILLA leaves free (it
+ * uses 0x4C and 0x4D), and searches filter on it. It hashes the online protocol and the match group
+ * (MT_SHADNET_GROUP, empty for the public pool), so copies that could not play together, and players
+ * in different groups (friends, or a set of gameplay mods), never meet. */
+enum { MATCH_KEY_ATTR = 0x53 };
+static uint32_t match_key(void) {
+    static uint32_t key;
+    if (!key) {
+        char text[160];
+        const char *group = getenv("MT_SHADNET_GROUP");
+        snprintf(text, sizeof(text), "minustwo-online/%d/%s", MT_ONLINE_PROTOCOL, group ? group : "");
+        uint32_t h = 2166136261u; /* FNV-1a */
+        for (const char *p = text; *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
+        key = (h & 0x7FFFFFFF) | 1; /* never 0, which a proto field would leave out */
+        printf("Online: match group '%s' (protocol %d)\n", group && *group ? group : "public", MT_ONLINE_PROTOCOL);
+    }
+    return key;
+}
+
+static int32_t m2_error_from(uint8_t error) {
+    if (error == SN_ERR_ROOM_FULL) return M2_ROOM_FULL;
+    if (error == SN_ERR_ROOM_MISSING) return M2_ROOM_NOT_FOUND;
+    return M2_SERVER_NOT_AVAILABLE;
+}
+
+/* A room event from the server (on the shadNet reader thread). */
+static void shadnet_room_event(uint16_t type, const uint8_t *payload, uint32_t size) {
+    if (type != SN_NOTIFY_ROOM_EVENT || !payload) return;
+    uint64_t room_id = 0;
+    uint32_t event = 0, cause = 0, flags = 0;
+    int32_t error = 0;
+    int has_flags = 0;
+    const uint8_t *member = NULL;
+    size_t member_size = 0;
+    const uint8_t *bins[4];
+    size_t bin_sizes[4];
+    int bin_count = 0;
+    PbIn in = {payload, payload + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        switch (field) {
+        case 2: room_id = value; break;
+        case 3: event = (uint32_t)value; break;
+        case 4: cause = (uint32_t)value; break;
+        case 5: error = (int32_t)value; break;
+        case 6: member = bytes; member_size = length; break;
+        case 7: if (bin_count < 4) { bins[bin_count] = bytes; bin_sizes[bin_count++] = length; } break;
+        case 8: flags = (uint32_t)value; has_flags = 1; break;
+        }
+    }
+    RoomMember joined;
+    memset(&joined, 0, sizeof(joined));
+    uint16_t left = 0;
+    int kicked = 0;
+    pthread_mutex_lock(&m2_lock);
+    if (!room.active || room.room_id != room_id) { pthread_mutex_unlock(&m2_lock); return; }
+    switch (event) {
+    case M2_ROOM_EVENT_MEMBER_JOINED: {
+        RoomMember *m = read_member(&room, member, member_size, NULL);
+        if (!m) break;
+        printf("Online: %.16s joined the room as member %u\n", m->np_id.handle.data, m->member_id);
+        post_room_event(M2_ROOM_EVENT_MEMBER_JOINED, member_event(&room, m->member_id, (uint8_t)(cause ? cause : M2_CAUSE_SERVER_OPERATION)));
+        joined = *m; /* reachable (signaling ESTABLISHED) once P2P gets through */
+        break;
+    }
+    case M2_ROOM_EVENT_MEMBER_LEFT: {
+        uint16_t id = 0;
+        PbIn r = {member, member + member_size};
+        unsigned f;
+        uint64_t v;
+        const uint8_t *b;
+        size_t n;
+        while (member && pb_next(&r, &f, &v, &b, &n)) if (f == 2) id = (uint16_t)v;
+        if (id) member_left(id, (uint8_t)(cause ? cause : M2_CAUSE_LEAVE_ACTION));
+        left = id;
+        break;
+    }
+    case M2_ROOM_EVENT_KICKEDOUT: {
+        M2RoomUpdate *update = calloc(1, sizeof(*update));
+        if (update) { update->cause = (uint8_t)cause; update->error = error; }
+        post_room_event(M2_ROOM_EVENT_KICKEDOUT, update);
+        memset(&room, 0, sizeof(room));
+        my_member = 0;
+        kicked = 1;
+        break;
+    }
+    case M2_ROOM_EVENT_UPDATED_ROOM_DATA_INTERNAL: {
+        uint32_t previous = room.flags;
+        if (has_flags) room.flags = flags;
+        for (int i = 0; i < bin_count; ++i) read_bin(room.internal, 2, bins[i], bin_sizes[i]);
+        post_room_event(M2_ROOM_EVENT_UPDATED_ROOM_DATA_INTERNAL, room_data_event(&room, previous));
+        break;
+    }
+    case M2_ROOM_EVENT_UPDATED_ROOM_MEMBER_DATA_INTERNAL: {
+        uint16_t id = 0;
+        PbIn r = {member, member + member_size};
+        unsigned f;
+        uint64_t v;
+        const uint8_t *b;
+        size_t n;
+        while (member && pb_next(&r, &f, &v, &b, &n)) if (f == 2) id = (uint16_t)v;
+        RoomMember *before = find_member(&room, id);
+        uint32_t previous = before ? before->flags : 0;
+        RoomMember *m = read_member(&room, member, member_size, NULL);
+        if (m) {
+            if (runtime_online_debug()) {
+                printf("Online: member %u updated its data: flags %#x, bin %#x:", m->member_id, m->flags, m->bin[0].id);
+                for (uint32_t i = 0; i < m->bin[0].size && i < 24; ++i) printf(" %02x", m->bin[0].data[i]);
+                printf("\n");
+            }
+            post_room_event(M2_ROOM_EVENT_UPDATED_ROOM_MEMBER_DATA_INTERNAL, member_data_event(&room, m->member_id, previous));
+        }
+        break;
+    }
+    default:
+        printf("Online: room event %#x not handled\n", event);
+        break;
+    }
+    pthread_mutex_unlock(&m2_lock);
+    /* P2P outside the matching lock: its calls may run the game's Rudp handlers */
+    if (joined.used) p2p_member(joined.member_id, joined.np_id.handle.data, joined.ip, joined.port);
+    if (left) p2p_member_left(left);
+    if (kicked) p2p_room_left();
+}
+
+/* A shadNet room message: the P2P layer's address announcements (the game sends none). */
+static void shadnet_room_message(const uint8_t *payload, uint32_t size) {
+    uint64_t room_id = 0;
+    uint16_t from = 0;
+    const uint8_t *message = NULL;
+    size_t message_size = 0;
+    PbIn in = {payload, payload + size};
+    unsigned field;
+    uint64_t value;
+    const uint8_t *bytes;
+    size_t length;
+    while (pb_next(&in, &field, &value, &bytes, &length)) {
+        if (field == 2) room_id = value;
+        else if (field == 3) from = (uint16_t)value;
+        else if (field == 10) { message = bytes; message_size = length; }
+    }
+    pthread_mutex_lock(&m2_lock);
+    int ours = room.active && room.room_id == room_id;
+    pthread_mutex_unlock(&m2_lock);
+    if (ours && message) p2p_room_message(message, message_size, from);
+}
+
+static void shadnet_notify(uint16_t type, const uint8_t *payload, uint32_t size) {
+    if (type == SN_NOTIFY_ROOM_EVENT) shadnet_room_event(type, payload, size);
+    else if (type == SN_NOTIFY_ROOM_MESSAGE && payload) shadnet_room_message(payload, size);
+}
+
+/* P2P reached a member, or lost it: the game's signaling callback hears it. */
+static void shadnet_established(uint16_t member, int up) {
+    pthread_mutex_lock(&m2_lock);
+    if (room.active && find_member(&room, member) && member != my_member)
+        post_signaling(member, up ? M2_SIGNALING_EVENT_ESTABLISHED : M2_SIGNALING_EVENT_DEAD);
+    pthread_mutex_unlock(&m2_lock);
+}
+
+/* After creating or joining a room (lock not held): P2P announces this player and reaches the others. */
+static void p2p_enter_room(void) {
+    RoomMember others[M2_MAX_MEMBERS];
+    int count = 0;
+    pthread_mutex_lock(&m2_lock);
+    uint64_t id = room.room_id;
+    uint16_t me = my_member;
+    for (int i = 0; i < M2_MAX_MEMBERS; ++i)
+        if (room.members[i].used && room.members[i].member_id != me) others[count++] = room.members[i];
+    pthread_mutex_unlock(&m2_lock);
+    if (!id) return;
+    p2p_room_joined(id, me);
+    for (int i = 0; i < count; ++i) p2p_member(others[i].member_id, others[i].np_id.handle.data, others[i].ip, others[i].port);
+}
+
+typedef struct {
+    uint16_t ctx, event, command; uint32_t request; RequestCallback cb; void *arg; PbOut proto; uint64_t room_id;
+    uint16_t member; uint32_t previous_flags; /* SetRoomMemberDataInternal: whose data, its flags before */
+} SnJob;
+
+static SnJob *sn_job(M2Context *c, const M2RequestOptParam *opt, uint32_t *request_id, uint16_t event, uint16_t command) {
+    SnJob *job = calloc(1, sizeof(*job));
+    if (!job) return NULL;
+    job->ctx = c->id;
+    job->event = event;
+    job->command = command;
+    job->cb = opt ? opt->callback : c->defaults.callback;
+    job->arg = opt ? opt->arg : c->defaults.arg;
+    pthread_mutex_lock(&m2_lock);
+    job->request = next_request++;
+    pthread_mutex_unlock(&m2_lock);
+    if (request_id) *request_id = job->request;
+    return job;
+}
+
+static void *sn_job_main(void *arg) {
+    SnJob *job = arg;
+    runtime_thread_attach_host("NpMatching2Job");
+    uint8_t error = 0xFF;
+    uint8_t *reply = NULL;
+    uint32_t reply_size = 0;
+    int32_t result = 0;
+    void *data = NULL;
+    int entered = 0;
+    if (shadnet_request(job->command, &job->proto, &error, &reply, &reply_size)) result = M2_SERVER_NOT_AVAILABLE;
+    else if (error) result = m2_error_from(error);
+    if (result) printf("Online: request %#x refused (shadNet error %u)\n", job->event, error);
+    pthread_mutex_lock(&m2_lock);
+    if (!result) {
+        switch (job->event) {
+        case M2_REQUEST_GET_WORLD_INFO_LIST: data = world_list_from(reply, reply_size); break;
+        case M2_REQUEST_SEARCH_ROOM:
+            data = search_response_from(reply, reply_size);
+            printf("Online: room search found %u room(s)\n", data ? ((M2SearchRoomResponse *)data)->range.results : 0);
+            break;
+        case M2_REQUEST_CREATE_JOIN_ROOM: case M2_REQUEST_JOIN_ROOM: {
+            const uint8_t *details;
+            size_t length;
+            uint16_t me = 0;
+            if (reply_details(reply, reply_size, job->event == M2_REQUEST_CREATE_JOIN_ROOM ? 9 : 6, &details, &length)) {
+                read_room(details, length, &me);
+                room_context = job->ctx;
+                my_member = me;
+                data = room_snapshot(&room, me);
+                printf("Online: %s room %#llx as member %u (%u slots)\n",
+                       job->event == M2_REQUEST_CREATE_JOIN_ROOM ? "created" : "joined", (unsigned long long)room.room_id,
+                       me, room.max_slot);
+            }
+            if (!data) result = M2_INVALID_ARGUMENT;
+            entered = data != NULL;
+            break;
+        }
+        case M2_REQUEST_LEAVE_ROOM: {
+            uint64_t *left = malloc(sizeof(uint64_t));
+            if (left) *left = job->room_id;
+            data = left;
+            break;
+        }
+        default: break;
+        }
+    }
+    pthread_mutex_unlock(&m2_lock);
+    free(reply);
+    if (job->cb) post((Event){.kind = EVENT_REQUEST, .ctx = job->ctx, .request = job->request, .event = job->event,
+                              .error = result, .data = data, .callback = (void *)job->cb, .arg = job->arg});
+    else free(data);
+    /* shadNet tells the other members of a member data update; the player who made it hears it too,
+     * as the lobby shows each player's state from these events (GODZILLA's VS lobby waits on it). */
+    if (!result && job->event == M2_REQUEST_SET_ROOM_MEMBER_DATA_INTERNAL) {
+        pthread_mutex_lock(&m2_lock);
+        if (room.active && room.room_id == job->room_id && find_member(&room, job->member)) {
+            post_room_event(M2_ROOM_EVENT_UPDATED_ROOM_MEMBER_DATA_INTERNAL,
+                            member_data_event(&room, job->member, job->previous_flags));
+            /* GODZILLA's host starts a VS match when another player's update arrives while it is ready
+             * itself. A player who got ready before the host would not be seen until it changed its data
+             * again (Back, then OK): when the host updates its own data, it hears again the data the other
+             * players have actually sent. Only the host, and only data that came from those players. */
+            if (job->member == room.owner) {
+                for (int i = 0; i < M2_MAX_MEMBERS; ++i) {
+                    const RoomMember *other = &room.members[i];
+                    if (!other->used || other->member_id == job->member || !other->bin[0].id) continue;
+                    post_room_event(M2_ROOM_EVENT_UPDATED_ROOM_MEMBER_DATA_INTERNAL,
+                                    member_data_event(&room, other->member_id, other->flags));
+                }
+            }
+        }
+        pthread_mutex_unlock(&m2_lock);
+    }
+    /* The same for the room's own data: the host starts the match from its own update event. */
+    if (!result && job->event == M2_REQUEST_SET_ROOM_DATA_INTERNAL) {
+        pthread_mutex_lock(&m2_lock);
+        if (room.active && room.room_id == job->room_id)
+            post_room_event(M2_ROOM_EVENT_UPDATED_ROOM_DATA_INTERNAL, room_data_event(&room, job->previous_flags));
+        pthread_mutex_unlock(&m2_lock);
+    }
+    if (entered) p2p_enter_room();
+    pb_free(&job->proto);
+    free(job);
+    return NULL;
+}
+
+static int32_t sn_run(SnJob *job) {
+    if (!job) return M2_INVALID_ARGUMENT;
+    pthread_t thread;
+    pthread_create(&thread, NULL, sn_job_main, job);
+    pthread_detach(thread);
+    return 0;
+}
+
+typedef struct { uint16_t ctx; } SnContextJob;
+static void *sn_context_start_main(void *arg) {
+    SnContextJob *job = arg;
+    runtime_thread_attach_host("NpMatching2Start");
+    shadnet_set_notify(shadnet_notify);
+    p2p_set_established(shadnet_established);
+    PbOut out = {0};
+    pb_uint(&out, 1, job->ctx);
+    uint8_t error = 0xFF;
+    int failed = shadnet_request(SN_CONTEXT_START, &out, &error, NULL, NULL);
+    pb_free(&out);
+    int32_t result = failed ? M2_SERVER_NOT_AVAILABLE : error ? m2_error_from(error) : 0;
+    if (!result && p2p_start()) printf("Online: P2P could not start; matches will not connect\n");
+    printf("Online: matching context %u %s on shadNet as %s\n", job->ctx, result ? "could not start" : "started",
+           shadnet_npid());
+    if (context_cb)
+        post((Event){.kind = EVENT_CONTEXT, .ctx = job->ctx,
+                     .event = result ? M2_CONTEXT_EVENT_START_OVER : M2_CONTEXT_EVENT_STARTED,
+                     .cause = M2_CAUSE_CONTEXT_ACTION, .error = result, .callback = (void *)context_cb, .arg = context_arg});
+    free(job);
+    return NULL;
+}
+
+static int32_t sn_context_start(M2Context *c) {
+    SnContextJob *job = malloc(sizeof(*job));
+    if (!job) return M2_INVALID_ARGUMENT;
+    job->ctx = c->id;
+    c->started = 1;
+    pthread_t thread;
+    pthread_create(&thread, NULL, sn_context_start_main, job);
+    pthread_detach(thread);
+    return 0;
+}
+
+static void *sn_fire_and_forget(void *arg) {
+    SnJob *job = arg;
+    runtime_thread_attach_host("NpMatching2Job");
+    shadnet_request(job->command, &job->proto, NULL, NULL, NULL);
+    pb_free(&job->proto);
+    free(job);
+    return NULL;
+}
+
+static int32_t sn_context_stop(M2Context *c) {
+    SnJob *job = calloc(1, sizeof(*job));
+    if (job) {
+        job->command = SN_CONTEXT_STOP;
+        pb_uint(&job->proto, 1, c->id);
+        pthread_t thread;
+        pthread_create(&thread, NULL, sn_fire_and_forget, job);
+        pthread_detach(thread);
+    }
+    c->started = 0;
+    if (context_cb)
+        post((Event){.kind = EVENT_CONTEXT, .ctx = c->id, .event = M2_CONTEXT_EVENT_STOPPED, .cause = M2_CAUSE_CONTEXT_ACTION,
+                     .callback = (void *)context_cb, .arg = context_arg});
+    return 0;
+}
+
+static int32_t sn_get_world_info_list(M2Context *c, const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_GET_WORLD_INFO_LIST, SN_GET_WORLD_INFO_LIST);
+    if (job) pb_uint(&job->proto, 1, M2_SERVER_ID);
+    return sn_run(job);
+}
+
+static int32_t sn_search_room(M2Context *c, const M2SearchRoomRequest *request, const M2RequestOptParam *opt,
+                              uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_SEARCH_ROOM, SN_SEARCH_ROOM);
+    if (!job) return M2_INVALID_ARGUMENT;
+    PbOut *out = &job->proto;
+    pb_uint(out, 1, request->world_id);
+    pb_uint(out, 2, request->lobby_id);
+    pb_uint(out, 3, request->range_start ? request->range_start : 1);
+    pb_uint(out, 4, request->range_max ? request->range_max : 20);
+    pb_uint(out, 5, request->flags1);
+    pb_uint(out, 6, request->flags2);
+    { /* only rooms of the same online protocol and match group */
+        PbOut f = {0};
+        pb_uint(&f, 1, 1); /* == */
+        pb_uint(&f, 2, MATCH_KEY_ATTR);
+        pb_uint(&f, 3, match_key());
+        pb_msg(out, 7, &f);
+        pb_free(&f);
+    }
+    const M2IntSearchFilter *ints = request->int_filter;
+    for (uint64_t i = 0; ints && i < request->int_filters; ++i) {
+        PbOut f = {0};
+        pb_uint(&f, 1, ints[i].op);
+        pb_uint(&f, 2, ints[i].attr.id);
+        pb_uint(&f, 3, ints[i].attr.num);
+        pb_msg(out, 7, &f);
+        pb_free(&f);
+        if (runtime_online_debug()) printf("Online:   filter %#x op %u value %u\n", ints[i].attr.id, ints[i].op, ints[i].attr.num);
+    }
+    const M2BinSearchFilter *bins = request->bin_filter;
+    for (uint64_t i = 0; bins && i < request->bin_filters; ++i) {
+        PbOut f = {0};
+        pb_uint(&f, 1, bins[i].op);
+        pb_uint(&f, 2, bins[i].attr.id);
+        if (bins[i].attr.data) pb_bytes(&f, 3, bins[i].attr.data, bins[i].attr.size > M2_MAX_BIN ? M2_MAX_BIN : bins[i].attr.size);
+        pb_msg(out, 8, &f);
+        pb_free(&f);
+    }
+    for (uint64_t i = 0; request->attr && i < request->attrs; ++i) pb_uint(out, 9, request->attr[i]); /* ids are never 0 */
+    return sn_run(job);
+}
+
+static int32_t sn_create_join_room(M2Context *c, const M2CreateJoinRoomRequest *request, const M2RequestOptParam *opt,
+                                   uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_CREATE_JOIN_ROOM, SN_CREATE_ROOM);
+    if (!job) return M2_INVALID_ARGUMENT;
+    PbOut *out = &job->proto;
+    pb_uint(out, 1, job->request);
+    pb_uint(out, 2, request->max_slot ? request->max_slot : 2);
+    pb_uint(out, 3, request->team_id);
+    pb_uint(out, 4, request->world_id ? request->world_id : M2_WORLD_ID);
+    pb_uint(out, 5, request->lobby_id);
+    pb_uint(out, 6, request->flags);
+    pb_uint(out, 7, request->group_configs);
+    pb_uint(out, 8, request->alloweds);
+    pb_uint(out, 9, request->blockeds);
+    pb_uint(out, 10, request->internal_bins);
+    pb_int_attrs(out, 11, request->search_int, request->search_ints);
+    { /* the room's match key, searched for by the others (see match_key) */
+        PbOut a = {0};
+        pb_uint(&a, 1, MATCH_KEY_ATTR);
+        pb_uint(&a, 2, match_key());
+        pb_msg(out, 11, &a);
+        pb_free(&a);
+    }
+    pb_bin_attrs(out, 12, request->search_bin, request->search_bins);
+    pb_bin_attrs(out, 13, request->external_bin, request->external_bins);
+    pb_bin_attrs(out, 14, request->member_bin, request->member_bins);
+    pb_bool(out, 15, request->join_group_label != NULL);
+    pb_bool(out, 16, request->password != NULL);
+    if (request->signaling) {
+        const M2SignalingOptParam *sig = request->signaling;
+        pb_uint(out, 17, sig->type);
+        pb_uint(out, 18, sig->flag);
+        pb_uint(out, 19, sig->main_member);
+    }
+    pb_bin_attrs(out, 20, request->internal_bin, request->internal_bins);
+    for (uint64_t i = 0; request->allowed && i < request->alloweds; ++i)
+        pb_bytes(out, 22, request->allowed[i].data, strnlen(request->allowed[i].data, NP_ONLINE_ID_MAX));
+    for (uint64_t i = 0; request->blocked && i < request->blockeds; ++i)
+        pb_bytes(out, 23, request->blocked[i].data, strnlen(request->blocked[i].data, NP_ONLINE_ID_MAX));
+    printf("Online: creating a room (%u slots, flags %#x, %llu searchable ints)\n", request->max_slot, request->flags,
+           (unsigned long long)request->search_ints);
+    for (uint64_t i = 0; request->search_int && i < request->search_ints; ++i)
+        if (runtime_online_debug()) printf("Online:   searchable %#x = %u\n", request->search_int[i].id, request->search_int[i].num);
+    return sn_run(job);
+}
+
+static int32_t sn_join_room(M2Context *c, const M2JoinRoomRequest *request, const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_JOIN_ROOM, SN_JOIN_ROOM);
+    if (!job) return M2_INVALID_ARGUMENT;
+    PbOut *out = &job->proto;
+    pb_uint(out, 1, request->room_id);
+    pb_uint(out, 2, job->request);
+    pb_uint(out, 3, request->team_id);
+    pb_uint(out, 4, request->flags);
+    pb_uint(out, 5, request->blockeds);
+    pb_bin_attrs(out, 6, request->member_bin, request->member_bins);
+    pb_bool(out, 7, request->password != NULL);
+    pb_bool(out, 8, request->join_group_label != NULL);
+    for (uint64_t i = 0; request->blocked && i < request->blockeds; ++i)
+        pb_bytes(out, 10, request->blocked[i].data, strnlen(request->blocked[i].data, NP_ONLINE_ID_MAX));
+    printf("Online: joining the room %#llx\n", (unsigned long long)request->room_id);
+    return sn_run(job);
+}
+
+static int32_t sn_leave_room(M2Context *c, const M2LeaveRoomRequest *request, const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_LEAVE_ROOM, SN_LEAVE_ROOM);
+    if (!job) return M2_INVALID_ARGUMENT;
+    job->room_id = request->room_id;
+    pb_uint(&job->proto, 1, request->room_id);
+    pb_uint(&job->proto, 2, job->request);
+    pthread_mutex_lock(&m2_lock);
+    if (room.room_id == request->room_id) {
+        memset(&room, 0, sizeof(room));
+        my_member = 0;
+    }
+    pthread_mutex_unlock(&m2_lock);
+    p2p_room_left();
+    printf("Online: leaving room %#llx\n", (unsigned long long)request->room_id);
+    return sn_run(job);
+}
+
+static int32_t sn_set_room_data_external(M2Context *c, const M2SetRoomDataExternalRequest *request,
+                                         const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_SET_ROOM_DATA_EXTERNAL, SN_SET_ROOM_DATA_EXTERNAL);
+    if (!job) return M2_INVALID_ARGUMENT;
+    pb_uint(&job->proto, 1, job->request);
+    pb_uint(&job->proto, 2, request->room_id);
+    pb_int_attrs(&job->proto, 3, request->search_int, request->search_ints);
+    pb_bin_attrs(&job->proto, 4, request->search_bin, request->search_bins);
+    pb_bin_attrs(&job->proto, 5, request->bin, request->bins);
+    return sn_run(job);
+}
+
+static int32_t sn_set_room_data_internal(M2Context *c, const M2SetRoomDataInternalRequest *request,
+                                         const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_SET_ROOM_DATA_INTERNAL, SN_SET_ROOM_DATA_INTERNAL);
+    if (!job) return M2_INVALID_ARGUMENT;
+    pb_uint(&job->proto, 1, job->request);
+    pb_uint(&job->proto, 2, request->room_id);
+    pb_uint(&job->proto, 3, request->flag_filter);
+    pb_uint(&job->proto, 4, request->flag_attr);
+    pb_bin_attrs(&job->proto, 5, request->bin, request->bins);
+    pthread_mutex_lock(&m2_lock);
+    job->room_id = request->room_id;
+    job->previous_flags = room.flags;
+    if (room.room_id == request->room_id) {
+        room.flags = (room.flags & ~request->flag_filter) | (request->flag_attr & request->flag_filter);
+        for (uint64_t i = 0; request->bin && i < request->bins; ++i) {
+            StoredBin *slot = NULL;
+            for (int k = 0; k < 2 && !slot; ++k) if (room.internal[k].id == request->bin[i].id) slot = &room.internal[k];
+            for (int k = 0; k < 2 && !slot; ++k) if (!room.internal[k].id) slot = &room.internal[k];
+            if (slot) store_bin(slot, &request->bin[i], my_member);
+        }
+    }
+    pthread_mutex_unlock(&m2_lock);
+    return sn_run(job);
+}
+
+static int32_t sn_set_room_member_data_internal(M2Context *c, const M2SetRoomMemberDataInternalRequest *request,
+                                                const M2RequestOptParam *opt, uint32_t *request_id) {
+    SnJob *job = sn_job(c, opt, request_id, M2_REQUEST_SET_ROOM_MEMBER_DATA_INTERNAL, SN_SET_ROOM_MEMBER_DATA_INTERNAL);
+    if (!job) return M2_INVALID_ARGUMENT;
+    pthread_mutex_lock(&m2_lock);
+    uint16_t member = request->member_id ? request->member_id : my_member;
+    RoomMember *m = find_member(&room, member);
+    job->room_id = request->room_id;
+    job->member = member;
+    job->previous_flags = m ? m->flags : 0;
+    if (m && room.room_id == request->room_id) {
+        if (request->team_id) m->team = request->team_id;
+        m->flags = (m->flags & ~request->flag_filter) | (request->flag_attr & request->flag_filter);
+        for (uint64_t k = 0; request->bin && k < request->bins; ++k) {
+            StoredBin *slot = NULL;
+            for (int i = 0; i < 2 && !slot; ++i) if (m->bin[i].id == request->bin[k].id) slot = &m->bin[i];
+            for (int i = 0; i < 2 && !slot; ++i) if (!m->bin[i].id) slot = &m->bin[i];
+            if (slot) store_bin(slot, &request->bin[k], m->member_id);
+        }
+    }
+    pthread_mutex_unlock(&m2_lock);
+    pb_uint(&job->proto, 1, job->request);
+    pb_uint(&job->proto, 2, request->room_id);
+    pb_uint(&job->proto, 3, member);
+    pb_uint(&job->proto, 4, request->team_id);
+    pb_uint(&job->proto, 5, request->flag_filter);
+    pb_uint(&job->proto, 6, request->flag_attr);
+    pb_bin_attrs(&job->proto, 7, request->bin, request->bins);
+    if (runtime_online_debug()) {
+        printf("Online: member %u data: team %u, flags %#x/%#x", member, request->team_id, request->flag_filter, request->flag_attr);
+        for (uint64_t k = 0; request->bin && k < request->bins; ++k) {
+            printf(", bin %#x:", request->bin[k].id);
+            for (uint64_t i = 0; request->bin[k].data && i < request->bin[k].size && i < 24; ++i) printf(" %02x", request->bin[k].data[i]);
+        }
+        printf("\n");
+    }
+    return sn_run(job);
+}
+
 /* ---- the calls ---- */
 static ABI int32_t m2_initialize(const void *param) {
     (void)param;
@@ -1174,6 +2040,7 @@ static ABI int32_t m2_context_start(uint16_t id, uint64_t timeout) {
     (void)timeout;
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
+    if (via_shadnet()) return sn_context_start(c);
     c->started = 1;
     if (context_cb)
         post((Event){.kind = EVENT_CONTEXT, .ctx = id, .event = M2_CONTEXT_EVENT_STARTED, .cause = M2_CAUSE_CONTEXT_ACTION,
@@ -1186,6 +2053,7 @@ static ABI int32_t m2_context_start(uint16_t id, uint64_t timeout) {
 static ABI int32_t m2_context_stop(uint16_t id) {
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
+    if (via_shadnet()) return sn_context_stop(c);
     c->started = 0;
     if (context_cb)
         post((Event){.kind = EVENT_CONTEXT, .ctx = id, .event = M2_CONTEXT_EVENT_STOPPED, .cause = M2_CAUSE_CONTEXT_ACTION,
@@ -1204,6 +2072,7 @@ static ABI int32_t m2_get_world_info_list(uint16_t id, const void *request, cons
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_get_world_info_list(c, opt, request_id);
     M2WorldListResponse *response = calloc(1, sizeof(M2WorldListResponse) + sizeof(M2World));
     if (!response) return M2_INVALID_ARGUMENT;
     M2World *world = (M2World *)(response + 1);
@@ -1220,6 +2089,7 @@ static ABI int32_t m2_search_room(uint16_t id, const M2SearchRoomRequest *reques
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_search_room(c, request, opt, request_id);
     printf("Online: room search (world %u, %llu int filters, %llu bin filters)\n", request->world_id,
            (unsigned long long)request->int_filters, (unsigned long long)request->bin_filters);
     const M2IntSearchFilter *filters = request->int_filter;
@@ -1239,6 +2109,7 @@ static ABI int32_t m2_create_join_room(uint16_t id, const M2CreateJoinRoomReques
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_create_join_room(c, request, opt, request_id);
     pthread_mutex_lock(&m2_lock);
     memset(&room, 0, sizeof(room));
     room.active = 1;
@@ -1273,6 +2144,7 @@ static ABI int32_t m2_join_room(uint16_t id, const M2JoinRoomRequest *request, c
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_join_room(c, request, opt, request_id);
     LinkJob *job = new_job(c, opt, request_id);
     if (!job) return M2_INVALID_ARGUMENT;
     job->join.room_id = request->room_id;
@@ -1288,6 +2160,7 @@ static ABI int32_t m2_leave_room(uint16_t id, const M2LeaveRoomRequest *request,
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_leave_room(c, request, opt, request_id);
     uint64_t *response = malloc(sizeof(uint64_t));
     if (response) *response = request->room_id;
     pthread_mutex_lock(&m2_lock);
@@ -1307,6 +2180,7 @@ static ABI int32_t m2_set_room_data_external(uint16_t id, const M2SetRoomDataExt
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_set_room_data_external(c, request, opt, request_id);
     pthread_mutex_lock(&m2_lock);
     for (uint64_t i = 0; i < request->search_ints && i < 8; ++i) {
         int k = 0;
@@ -1325,6 +2199,7 @@ static ABI int32_t m2_set_room_data_internal(uint16_t id, const M2SetRoomDataInt
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_set_room_data_internal(c, request, opt, request_id);
     pthread_mutex_lock(&m2_lock);
     uint32_t previous = room.flags;
     room.flags = (room.flags & ~request->flag_filter) | (request->flag_attr & request->flag_filter);
@@ -1342,6 +2217,7 @@ static ABI int32_t m2_set_room_member_data_internal(uint16_t id, const M2SetRoom
     M2Context *c = find_context(id);
     if (!c) return M2_CONTEXT_NOT_FOUND;
     if (!request) return M2_INVALID_ARGUMENT;
+    if (via_shadnet()) return sn_set_room_member_data_internal(c, request, opt, request_id);
     pthread_mutex_lock(&m2_lock);
     RoomMember *m = find_member(&room, request->member_id ? request->member_id : my_member);
     if (m) {
@@ -1371,10 +2247,17 @@ static ABI int32_t m2_set_room_member_data_internal(uint16_t id, const M2SetRoom
 typedef struct { uint32_t address; uint16_t port; uint8_t pad[2]; } M2SignalingAddress;
 
 static uint32_t member_address(uint16_t member) {
+    if (via_shadnet()) return p2p_virtual_address(member); /* runtime_p2p.c maps it to the member */
     if (join_address()) return peers[0].address; /* every other member is behind the host */
     for (int i = 0; i < MAX_PEERS; ++i)
         if (peers[i].used && peers[i].member_id == member) return peers[i].address;
     return htonl(INADDR_LOOPBACK);
+}
+
+static uint16_t member_port(uint16_t member) {
+    (void)member;
+    if (via_shadnet()) return p2p_game_port();
+    return htons((uint16_t)(link_port() + 1));
 }
 
 static ABI int32_t m2_signaling_status(uint16_t id, uint64_t room_id, uint16_t member, int32_t *status, uint32_t *address,
@@ -1382,10 +2265,10 @@ static ABI int32_t m2_signaling_status(uint16_t id, uint64_t room_id, uint16_t m
     (void)room_id;
     if (!find_context(id)) return M2_CONTEXT_NOT_FOUND;
     pthread_mutex_lock(&m2_lock);
-    int present = find_member(&room, member) && member != my_member;
+    int present = find_member(&room, member) && member != my_member && (!via_shadnet() || p2p_member_established(member));
     if (status) *status = present ? 2 : 0; /* ACTIVE, or INACTIVE */
     if (address) *address = present ? member_address(member) : 0;
-    if (port) *port = htons((uint16_t)(link_port() + 1));
+    if (port) *port = present ? member_port(member) : 0;
     pthread_mutex_unlock(&m2_lock);
     return 0;
 }
@@ -1402,7 +2285,7 @@ static ABI int32_t m2_signaling_info(uint16_t id, uint64_t room_id, uint16_t mem
     case 2: *(uint32_t *)info = 10000000; break;    /* bandwidth */
     case 3: case 7: if (m) memcpy(info, &m->np_id, sizeof(NpId)); break;
     case 4: case 5: ((M2SignalingAddress *)info)->address = member_address(member);
-        ((M2SignalingAddress *)info)->port = htons((uint16_t)(link_port() + 1)); break;
+        ((M2SignalingAddress *)info)->port = member_port(member); break;
     default: break;                                   /* packet loss 0 */
     }
     pthread_mutex_unlock(&m2_lock);
@@ -1604,3 +2487,5 @@ static const RuntimeExport exports[] = {
 
 /* Asked before runtime_services.c, so these replace its offline answers when MT_ONLINE is on. */
 uintptr_t runtime_np_resolve(const char *name) { return online() ? RUNTIME_LOOKUP(exports, name) : 0; }
+
+int runtime_online_in_room(void) { return __atomic_load_n(&room.active, __ATOMIC_RELAXED) != 0; }

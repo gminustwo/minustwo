@@ -68,6 +68,57 @@ uintptr_t runtime_kernel_resolve(const char *name);
 uintptr_t runtime_file_resolve(const char *name);
 uintptr_t runtime_services_resolve(const char *name);
 uintptr_t runtime_np_resolve(const char *name);
+int runtime_online_in_room(void); /* in an online VS room (lobby or match): runtime_cheats.c pauses fight cheats */
+
+/* shadNet (runtime_shadnet.c): the community PSN server, when MT_SHADNET_SERVER is set. */
+typedef struct { uint8_t *data; size_t size, capacity; int failed; } PbOut; /* protobuf writer */
+typedef struct { const uint8_t *at, *end; } PbIn;                             /* protobuf reader */
+void pb_uint(PbOut *out, unsigned field, uint64_t value);   /* varint field (skipped when 0) */
+void pb_bool(PbOut *out, unsigned field, int value);
+void pb_bytes(PbOut *out, unsigned field, const void *data, size_t size); /* skipped when empty */
+void pb_str(PbOut *out, unsigned field, const char *text);
+void pb_msg(PbOut *out, unsigned field, const PbOut *inner); /* nested message, written even when empty */
+void pb_free(PbOut *out);
+/* The next field: 1 with its number, and its value (varint or fixed) or its bytes (length-delimited);
+ * 0 at the end or on malformed input. */
+int pb_next(PbIn *in, unsigned *field, uint64_t *value, const uint8_t **data, size_t *size);
+typedef void (*ShadnetNotify)(uint16_t type, const uint8_t *payload, uint32_t size);
+int shadnet_enabled(void);
+int runtime_online_debug(void); /* MT_ONLINE_DEBUG=1: the online code's detailed log */
+/* Connects and signs in (once; again after a lost connection): 0, or -1 with the reason logged. */
+int shadnet_sign_in(void);
+const char *shadnet_npid(void);
+uint64_t shadnet_user_id(void);
+/* Server address (dotted IPv4, network order) and UDP signaling port, after a successful sign-in. */
+uint32_t shadnet_server_ip(void);
+uint16_t shadnet_signaling_port(void);
+void shadnet_set_notify(ShadnetNotify notify);
+/* One command: its proto `request` (may be NULL), the server's error byte in *error, the reply's proto blob in
+ * *reply (malloc'ed, may be NULL) and *reply_size. 0, or -1 when there was no answer. */
+int shadnet_request(uint16_t command, const PbOut *request, uint8_t *error, uint8_t **reply, uint32_t *reply_size);
+/* The same with raw bytes before the proto (score commands: the communication ID), answering with everything
+ * after the reply's error byte in *raw. */
+int shadnet_request_raw(uint16_t command, const void *prefix, uint32_t prefix_size, const PbOut *request, uint8_t *error,
+                        uint8_t **raw, uint32_t *raw_size);
+uintptr_t runtime_score_resolve(const char *name); /* NpScore leaderboards through shadNet (runtime_score.c) */
+
+/* The port's online protocol: copies that differ never match each other (runtime_np.c's match key) and
+ * ignore each other's P2P datagrams (runtime_p2p.c). Raise it with any incompatible change. */
+#define MT_ONLINE_PROTOCOL 1
+
+/* P2P sockets and Rudp between copies of the port (runtime_p2p.c), with shadNet. */
+uintptr_t runtime_p2p_resolve(const char *name);
+int p2p_start(void);
+void p2p_set_established(void (*cb)(uint16_t member, int up));
+void p2p_room_joined(uint64_t room, uint16_t member);
+void p2p_member(uint16_t member, const char *npid, uint32_t public_address, uint16_t port);
+void p2p_member_left(uint16_t member);
+void p2p_room_left(void);
+void p2p_room_message(const uint8_t *message, size_t size, uint16_t from);
+int p2p_member_established(uint16_t member);
+uint32_t p2p_virtual_address(uint16_t member); /* network order */
+uint16_t p2p_game_port(void);                  /* network order */
+
 void runtime_file_report(void);
 void runtime_file_configure(const char *app0, const char *user);
 int runtime_file_mount(const char *guest, const char *host);

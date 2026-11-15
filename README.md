@@ -62,6 +62,9 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   and the PS4 system font set is stood in for by Windows' fonts (`src/runtime_font.c`).
 - Kernel event flags, the offline PSN, matchmaking, Rudp, friend list, error dialog, broadcasting, screenshot and
   Share Play contracts the game needs to start, and message dialogs shown over the game for you to answer.
+- **Online VS Mode** through a self-hosted [shadNet](https://github.com/shadps4-emu/shadNet) server: matchmaking,
+  the lobby, matches run directly between the players' PCs, and the leaderboards. The launcher's *Online* page
+  points the game at a server; [online/README.md](online/README.md) covers playing and hosting one.
 - The add-ons (the pre-order early unlocks and the diorama figure sets, whose content is in the base game) are
   reported as owned. Turn it off in the launcher, or with `MT_UNLOCK_ADDONS=0`.
 - Keyboard and mouse defaults for GODZILLA's controls, mouse camera.
@@ -98,6 +101,8 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
 - Music, voices and sound effects through Ngs2, movie audio through AudioOut.
 - 4K rendering (Render resolution 4K) at 60 FPS on an RTX 5090.
 - Controller (any SDL3 gamepad as the PS4 pad) and keyboard with mouse.
+- Online VS Mode (Random VS Play, 2 players) between two copies, through a local and a cloud shadNet server: the
+  lobby, matches to the result screen, and the leaderboard screen.
 
 ### Known limits
 
@@ -109,8 +114,8 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
   only the volumes, routing and a limiter are applied.
 - The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MT_SYSTEM_FONT` to other font
   files (separated by `;`) if you prefer.
-- Online play (VS Mode) is not supported yet: the game sees a console that is not signed in to PSN. Playing VS
-  between two copies of the port by direct connection is being looked at.
+- Online VS Mode needs a shadNet server (see [online/README.md](online/README.md)); without one the game sees a
+  console that is not signed in to PSN, as before.
 - Only the US release (CUSA02046) has been tested: version 01.01, and 01.00 for the startup options and cheats.
 
 ## Playing

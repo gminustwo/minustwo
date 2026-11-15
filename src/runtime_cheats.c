@@ -116,8 +116,22 @@ static void apply(unsigned on) {
 
 static void *hold(void *unused) {
     (void)unused;
+    /* No damage and Infinite atomic breath change the fight, and the opponent's copy does not know
+     * about them: they pause while this player is in an online room (lobby and match), and the game's
+     * own values come back (apply restores them). Unlock all kaiju only changes the save: it stays. */
+    const unsigned fight = MTGPU_CHEAT_NO_DAMAGE | MTGPU_CHEAT_INFINITE_BREATH;
+    int paused = 0;
     for (;;) {
-        const unsigned on = (unsigned)mtgpu_cheats();
+        unsigned on = (unsigned)mtgpu_cheats();
+        const int online = runtime_online_in_room();
+        if (online && (on & fight)) {
+            if (!paused) puts("Cheats: No damage and Infinite atomic breath pause during online play");
+            paused = 1;
+            on &= ~fight;
+        } else if (!online && paused) {
+            puts("Cheats: back on after online play");
+            paused = 0;
+        }
         apply(on);
         const struct timespec pause = {0, (on ? 10 : 100) * 1000 * 1000};
         nanosleep(&pause, NULL);

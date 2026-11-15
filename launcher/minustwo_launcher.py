@@ -78,7 +78,9 @@ KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('mov
         ('left', 'D-pad left', 'J'), ('right', 'D-pad right', 'L'), ('look_up', 'Camera up', 'Up'),
         ('look_down', 'Camera down', 'Down'), ('look_left', 'Camera left', 'Left'), ('look_right', 'Camera right', 'Right'))
 DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True,
-            'check_updates': True, 'skip_logos': False, 'skip_movie': False, 'skip_tutorial': False}
+            'check_updates': True, 'skip_logos': False, 'skip_movie': False, 'skip_tutorial': False,
+            'online_server': '', 'online_user': '', 'online_password': '', 'online_email': '',
+            'online_group': '', 'online_secret': ''}
 # The Game page's startup options: a setting, its built-in patch (patches/CUSA02046.xml), the label and the hint.
 STARTUP_PATCHES = (
     ('skip_logos', 'Skip startup logos', 'Skip the logos',
@@ -156,6 +158,17 @@ def game_environment(values):
     chosen += [patch for key, patch, _, _ in STARTUP_PATCHES if values.get(key) and patch not in chosen]
     if chosen:
         env['MT_PATCHES'] = ';'.join(chosen)
+    # Online play through a shadNet server (src/runtime_shadnet.c): VS Mode signs in when it opens.
+    if values.get('online_server', '').strip() and values.get('online_user', '').strip():
+        env['MT_SHADNET_SERVER'] = values['online_server'].strip()
+        env['MT_SHADNET_USER'] = values['online_user'].strip()
+        env['MT_SHADNET_PASSWORD'] = values.get('online_password', '')
+        if values.get('online_email', '').strip():
+            env['MT_SHADNET_EMAIL'] = values['online_email'].strip()
+        if values.get('online_group', '').strip():
+            env['MT_SHADNET_GROUP'] = values['online_group'].strip()
+        if values.get('online_secret', '').strip():
+            env['MT_SHADNET_SECRET'] = values['online_secret'].strip()
     changed = {k: v for k, v in values['keys'].items() if v and v != dict((a, d) for a, _, d in KEYS).get(k)}
     if changed:
         # ',' and '=' separate the entries: the runtime knows those two keys as Comma and Equals.
@@ -242,7 +255,7 @@ def play_without_window(game_dir=None):
 
 
 PAGES = (('play', 'Play'), ('graphics', 'Graphics'), ('display', 'Display & FPS'), ('game', 'Game'),
-         ('controls', 'Controls'), ('mods', 'Mods & patches'), ('achievements', 'Achievements'),
+         ('online', 'Online'), ('controls', 'Controls'), ('mods', 'Mods & patches'), ('achievements', 'Achievements'),
          ('advanced', 'Advanced'))
 ANISOTROPY = (('Game default', '0'), ('2x', '2'), ('4x', '4'), ('8x', '8'), ('16x', '16'))
 # GODZILLA's look: near black, the atomic blue of its menus and HUD, the red of the ゴジラ in its logo.
@@ -765,6 +778,7 @@ class Launcher:
         self.build_graphics()
         self.build_display()
         self.build_game()
+        self.build_online()
         self.build_controls()
         self.build_mods()
         self.build_achievements()
@@ -1093,6 +1107,39 @@ class Launcher:
         self.row(page, 'Controller vibration (%)', self.slider(page, self.vibration_var, 0, 100))
         self.sensitivity_var = tk.IntVar(value=int(self.ini.get('mouse_aim_sensitivity', '100') or 100))
         self.row(page, 'Mouse camera speed (%)', self.slider(page, self.sensitivity_var, 10, 200))
+
+    def build_online(self):
+        tk = self.tk
+        page = self.page('online', 'Online', 'VS Mode against other players, through a community server.')
+        self.section(page, 'Server')
+        self.online_server_var = tk.StringVar(value=self.values.get('online_server', ''))
+        self.row(page, 'Server address', self.ttk.Entry(page, textvariable=self.online_server_var, width=34),
+                 'The community server everyone plays on, as name or address, with :port when it is not 31313. '
+                 'Empty: VS Mode stays offline.')
+        self.section(page, 'Account')
+        self.online_user_var = tk.StringVar(value=self.values.get('online_user', ''))
+        self.row(page, 'Player name', self.ttk.Entry(page, textvariable=self.online_user_var, width=20),
+                 '3 to 16 letters, digits, - and _. Other players see it.')
+        self.online_password_var = tk.StringVar(value=self.values.get('online_password', ''))
+        self.row(page, 'Password', self.ttk.Entry(page, textvariable=self.online_password_var, width=20, show='•'),
+                 'Use one you use nowhere else: the server connection is not encrypted, and the password is '
+                 'kept in settings.json.')
+        self.online_email_var = tk.StringVar(value=self.values.get('online_email', ''))
+        self.row(page, 'Email (first time only)', self.ttk.Entry(page, textvariable=self.online_email_var, width=30),
+                 'With an email, the first sign-in creates the account when the name is free. '
+                 'Leave it empty once the account exists.')
+        self.online_secret_var = tk.StringVar(value=self.values.get('online_secret', ''))
+        self.row(page, 'Registration key', self.ttk.Entry(page, textvariable=self.online_secret_var, width=20),
+                 'Only for a private server whose host gave you one, to create your account.')
+        self.section(page, 'Matches')
+        self.online_group_var = tk.StringVar(value=self.values.get('online_group', ''))
+        self.row(page, 'Match group', self.ttk.Entry(page, textvariable=self.online_group_var, width=20),
+                 'Empty: play anyone on the server. With a group name, Random VS Play only matches players who '
+                 'entered the same name: friends, or everyone with the same gameplay mods.')
+        self.ttk.Label(page, text='The game signs in when VS Mode opens; matches run directly between the players.',
+                       style='Muted.TLabel').grid(row=page.next_row, column=0, columnspan=2, sticky='w',
+                                                  pady=(self.px(6), 0))
+        page.next_row += 1
 
     def build_controls(self):
         tk, ttk = self.tk, self.ttk
@@ -1627,6 +1674,12 @@ class Launcher:
         self.values['check_updates'] = bool(self.check_updates_var.get())
         for key, var in self.startup_vars.items():
             self.values[key] = bool(var.get())
+        self.values['online_server'] = self.online_server_var.get().strip()
+        self.values['online_user'] = self.online_user_var.get().strip()
+        self.values['online_password'] = self.online_password_var.get()
+        self.values['online_email'] = self.online_email_var.get().strip()
+        self.values['online_group'] = self.online_group_var.get().strip()
+        self.values['online_secret'] = self.online_secret_var.get().strip()
         defaults = {a: d for a, _, d in KEYS}
         self.values['keys'] = {a: v.get().strip() for a, v in self.key_vars.items() if v.get().strip() != defaults[a]}
 
