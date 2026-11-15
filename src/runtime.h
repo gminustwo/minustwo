@@ -93,6 +93,10 @@ uint64_t shadnet_user_id(void);
 uint32_t shadnet_server_ip(void);
 uint16_t shadnet_signaling_port(void);
 void shadnet_set_notify(ShadnetNotify notify);
+/* The session: 0 when a signed-in connection ended (the server closed it, or stopped answering the
+ * keep-alive), 1 after each sign-in. Called without the client's locks, from the thread that saw it. */
+typedef void (*ShadnetSession)(int signed_in);
+void shadnet_set_session(ShadnetSession session);
 /* One command: its proto `request` (may be NULL), the server's error byte in *error, the reply's proto blob in
  * *reply (malloc'ed, may be NULL) and *reply_size. 0, or -1 when there was no answer. */
 int shadnet_request(uint16_t command, const PbOut *request, uint8_t *error, uint8_t **reply, uint32_t *reply_size);

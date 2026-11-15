@@ -12,8 +12,13 @@
  *    reachable (signaling ESTABLISHED) once a probe got through both ways.
  *  - The game sees member N at the virtual address 10.77.0.N; its packets to that address go to the
  *    endpoint that answered.
+ *  - A reached member keeps getting a probe every P2P_KEEPALIVE_MS, which also keeps the routers' port
+ *    mappings open while the game sends nothing (the lobby). One silent for P2P_PEER_TIMEOUT_MS is gone: its
+ *    signaling goes dead and its Rudp contexts fail, as on a PS4 when the other console drops.
  *  - Rudp contexts are reliable, ordered message streams: sequence numbers, acknowledgements and resends.
- *    Both players call sceRudpInitiate (simultaneous open), as the game does.
+ *    Both players call sceRudpInitiate (simultaneous open), as the game does. A receiver keeps at most
+ *    RUDP_WINDOW messages ahead of the next one it expects, and RUDP_MAX_READY the game has not read yet;
+ *    anything beyond waits for the sender's resend.
  *
  * Datagram header (little-endian): "MT", version, type, sender's room member id, source and destination
  * virtual port, sequence, acknowledgement, payload length. */
@@ -49,7 +54,15 @@ enum {
     SOCKET_ID_BASE = 0x7000, RESEND_MS = 120, CONNECT_TIMEOUT_MS = 20000, PROBE_MS = 200, STUN_MS = 15000,
     PS4_AF_INET = 2, PS4_SOCK_DGRAM_P2P = 6, PS4_SOCK_STREAM_P2P = 10, PS4_SOL_SOCKET = 0xFFFF, PS4_SO_NBIO = 0x1200,
     PS4_MSG_DONTWAIT = 0x80, ROOM_MESSAGE_COMMAND = 115, CAST_BROADCAST = 1,
+    RUDP_WINDOW = 256, RUDP_MAX_READY = 1024,
 };
+/* Liveness of a reached member (tests/test_p2p.c shortens it). */
+#ifndef P2P_KEEPALIVE_MS
+#define P2P_KEEPALIVE_MS 1000
+#endif
+#ifndef P2P_PEER_TIMEOUT_MS
+#define P2P_PEER_TIMEOUT_MS 10000
+#endif
 #define NET_ERROR(e) ((int32_t)(0x80410100u | (uint32_t)(e)))
 enum { NET_EBADF = 9, NET_EINVAL = 22, NET_EWOULDBLOCK = 35, NET_EADDRINUSE = 48, NET_ENETUNREACH = 51, NET_EPROTONOSUPPORT = 43 };
 #define RUDP_ERROR(e) ((int32_t)(0x80770000u | (uint32_t)(e)))
@@ -78,9 +91,9 @@ typedef struct {
     uint32_t candidate_ip[2]; uint16_t candidate_port[2]; /* 0: announced local, 1: public (network order) */
     uint32_t ip; uint16_t port;                           /* the endpoint that answered */
     int heard, acknowledged, established;
-    int gone; /* closed all its match sockets (T_BYE): reported dead, not probed again */
+    int gone; /* closed all its match sockets (T_BYE) or stopped answering: reported dead, not probed again */
     int relayed, relay_ok; /* no direct path: traffic goes through the relay (registered there) */
-    uint64_t added_ms;
+    uint64_t added_ms, heard_ms, keepalive_ms; /* last packet from it, last keep-alive probe to it */
 } Peer;
 
 typedef struct {
@@ -387,7 +400,10 @@ static void rudp_packet(Peer *p, const Header *h, const uint8_t *payload, size_t
     }
     case T_DATA: {
         if (c->state == 1 && c->syn_heard) context_established(c);
-        if (h->seq >= c->expected) {
+        /* Kept only within RUDP_WINDOW of the next expected message, and while fewer than RUDP_MAX_READY wait
+         * for the game: anything else is resent later. Unbounded, a peer (or a packet claiming to be one) could
+         * fill memory with messages that are never delivered. */
+        if (h->seq >= c->expected && h->seq - c->expected < RUDP_WINDOW && c->ready_count < RUDP_MAX_READY) {
             int duplicate = 0;
             for (Packet *q = c->ahead; q; q = q->next) duplicate |= q->seq == h->seq;
             Packet *q = duplicate ? NULL : malloc(sizeof(Packet) + size);
@@ -479,6 +495,7 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
     pthread_mutex_lock(&lock);
     Peer *p = peer_by_member(h.member);
     if (!p) { pthread_mutex_unlock(&lock); return; }
+    p->heard_ms = now_ms();
     if (via_relay) {
         if (!p->relayed) printf("P2P: member %u (%s) reached through the relay\n", p->member, p->npid);
         p->relayed = 1;
@@ -528,6 +545,25 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
     deliver_events();
 }
 
+/* A reached member (lock held): a probe every P2P_KEEPALIVE_MS, which it answers; silent for
+ * P2P_PEER_TIMEOUT_MS (its game, PC or network went away without a word), it is gone. Without this, nothing
+ * would notice: the game would wait on the member until the server dropped it, a minute or more later. */
+static void keep_alive(Peer *p, uint64_t now) {
+    if (now > p->heard_ms && now - p->heard_ms > P2P_PEER_TIMEOUT_MS) {
+        printf("P2P: member %u (%s) stopped answering: connection lost\n", p->member, p->npid);
+        p->established = 0;
+        p->gone = 1;
+        if (pending_down_count < MAX_PEERS) pending_down[pending_down_count++] = p->member;
+        for (int i = 0; i < MAX_CONTEXTS; ++i)
+            if (contexts[i].used && contexts[i].member == p->member) context_failed(&contexts[i], RUDP_ERROR(RUDP_CONN_TIMEOUT));
+        return;
+    }
+    if (now - p->keepalive_ms >= P2P_KEEPALIVE_MS) {
+        send_packet(p, T_PROBE, 0, 0, 0, 0, NULL, 0);
+        p->keepalive_ms = now;
+    }
+}
+
 static void *io_main(void *unused) {
     (void)unused;
     runtime_thread_attach_host("P2P");
@@ -551,7 +587,8 @@ static void *io_main(void *unused) {
             last_probe = now;
             for (int i = 0; i < MAX_PEERS; ++i) {
                 Peer *q = &peers[i];
-                if (!q->used || q->established || q->gone) continue;
+                if (!q->used || q->gone) continue;
+                if (q->established) { keep_alive(q, now); continue; }
                 if (!q->relayed && (force_relay() || now - q->added_ms > RELAY_AFTER_MS)) {
                     q->relayed = 1;
                     printf("P2P: no direct path to member %u (%s): using the relay\n", q->member, q->npid);

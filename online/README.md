@@ -74,20 +74,30 @@ Cloud's free e2-micro. Leaderboard boards are created with default settings by t
 
 - `src/runtime_shadnet.c`: the client. One TCP connection (shadNet's framing, a small protobuf
   encoder/decoder), a reader thread matching replies to requests and handing room notifications on,
-  sign-in with first-time registration, a keep-alive every 20 s (idle connections are dropped).
+  sign-in with first-time registration, a keep-alive every 20 s (idle connections are dropped; a
+  server that does not answer it within 15 s counts as gone).
 - `src/runtime_np.c`: NpMatching2 calls become shadNet commands, sent from a job thread; the room the
   player is in is mirrored from replies and room events, and the existing builders lay it out in the
   PS4 structures. A match key (searchable int attribute 0x53, which GODZILLA leaves free) carries the
   online protocol (`MT_ONLINE_PROTOCOL`) and the match group: rooms carry it, searches filter on it,
-  and the game never sees it.
+  and the game never sees it. When the connection to the server is lost, the server has taken the
+  player out of the room: the game hears its room destroyed by a connection error and the other
+  players' signaling goes dead, as when the direct link to a host closes. The next request signs in
+  again, and the matching contexts the game still has are started again on the server (shadNet takes
+  a player out of a room on a disconnect only for a session that started one).
 - `src/runtime_p2p.c`: the P2P sockets and Rudp. One real UDP socket per player; it learns its public
   address from the server's STUN service, players announce their local addresses in shadNet room
   messages, and probes punch through home routers (or go straight across a shared LAN). An opponent
   that has not answered after 5 seconds (strict NAT on both sides) is reached through the server's
   relay instead (`server/relay.py`): both players register a token derived from their room and member
   numbers, and the relay passes their packets to each other, a pair at a time. The game
-  sees member N at 10.77.0.N. Rudp contexts are reliable ordered message streams (sequence numbers,
-  acknowledgements, resends) with the context events and the SOCKET_RELEASED event the game uses.
+  sees member N at 10.77.0.N. Once connected, players keep probing each other every second, which
+  also keeps home routers' port mappings open while the lobby sends nothing; one silent for 10 s
+  (game closed, PC or network gone) is reported gone: its signaling goes dead and its Rudp
+  connections fail, as on a PS4. Rudp contexts are reliable ordered message streams (sequence
+  numbers, acknowledgements, resends) with the context events and the SOCKET_RELEASED event the game
+  uses; a receiver keeps at most 256 messages ahead of the next one it expects and 1024 the game has
+  not read yet, and anything beyond waits for the sender's resend.
 - `src/runtime_score.c`: NpScore (leaderboards) through shadNet's score commands.
 
 What GODZILLA needed beyond a plain shadNet client:
@@ -111,6 +121,12 @@ registration, Random VS Play for 2 players, the lobby in either ready order, mat
 screen and back, the leaderboard screen. The relay was tested on its own over the internet (two
 players' packets passed both ways, a third party refused). Not tested yet: a full match through the
 relay, 3-player rooms, Friend VS Play.
+
+Unit tests (`ninja -C out/gpu shadnet-test p2p-test np-shadnet-test` on Windows and macOS,
+`build.sh --test` on Linux): the client against a scripted server (a server that closes the
+connection or stops answering, signing in again, a refused sign-in), P2P against a scripted player
+(keep-alive, a player going silent, the Rudp receive limits) and the matchmaking side of a lost
+server. Losing an opponent or the server has not been tried with the game yet.
 
 ## Limits
 

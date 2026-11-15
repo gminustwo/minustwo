@@ -1559,6 +1559,60 @@ static void shadnet_established(uint16_t member, int up) {
     pthread_mutex_unlock(&m2_lock);
 }
 
+/* The shadNet session (runtime_shadnet.c). When it ends (the server closed the connection or stopped answering),
+ * the server has taken this player out of its room: the game hears what it hears when the direct link to the
+ * host closes, the room destroyed by a connection error, and each member's signaling dead (their Rudp contexts
+ * fail). Otherwise the lobby would wait for players who can no longer reach it. The next request signs in
+ * again; after that sign-in, the contexts the game still has started are started again on the server, which
+ * takes a player out of its room on a disconnect only for a session that started a matching context. */
+static int contexts_to_restart;
+
+static void shadnet_session(int signed_in) {
+    if (signed_in) {
+        uint16_t ids[sizeof(contexts) / sizeof(*contexts)];
+        int count = 0;
+        pthread_mutex_lock(&m2_lock);
+        if (contexts_to_restart)
+            for (size_t i = 0; i < sizeof(contexts) / sizeof(*contexts); ++i)
+                if (contexts[i].used && contexts[i].started) ids[count++] = contexts[i].id;
+        contexts_to_restart = 0;
+        pthread_mutex_unlock(&m2_lock);
+        for (int i = 0; i < count; ++i) {
+            PbOut out = {0};
+            pb_uint(&out, 1, ids[i]);
+            uint8_t error = 0xFF;
+            int failed = shadnet_request(SN_CONTEXT_START, &out, &error, NULL, NULL);
+            pb_free(&out);
+            printf("Online: matching context %u %s on shadNet after signing in again\n", ids[i],
+                   failed || error ? "could not start" : "started");
+        }
+        return;
+    }
+    uint16_t others[M2_MAX_MEMBERS];
+    int count = 0, was_in_room = 0;
+    pthread_mutex_lock(&m2_lock);
+    contexts_to_restart = 1;
+    if (room.active) {
+        printf("Online: lost the server: room %#llx is gone\n", (unsigned long long)room.room_id);
+        M2RoomUpdate *update = calloc(1, sizeof(*update));
+        if (update) update->cause = M2_CAUSE_CONNECTION_ERROR;
+        post_room_event(M2_ROOM_EVENT_ROOM_DESTROYED, update);
+        for (int i = 0; i < M2_MAX_MEMBERS; ++i) {
+            const RoomMember *m = &room.members[i];
+            if (!m->used || m->member_id == my_member) continue;
+            post_signaling(m->member_id, M2_SIGNALING_EVENT_DEAD);
+            others[count++] = m->member_id;
+        }
+        memset(&room, 0, sizeof(room));
+        my_member = 0;
+        was_in_room = 1;
+    }
+    pthread_mutex_unlock(&m2_lock);
+    /* P2P outside the matching lock, as in shadnet_room_event */
+    for (int i = 0; i < count; ++i) p2p_member_left(others[i]);
+    if (was_in_room) p2p_room_left();
+}
+
 /* After creating or joining a room (lock not held): P2P announces this player and reaches the others. */
 static void p2p_enter_room(void) {
     RoomMember others[M2_MAX_MEMBERS];
@@ -1693,6 +1747,7 @@ static void *sn_context_start_main(void *arg) {
     SnContextJob *job = arg;
     runtime_thread_attach_host("NpMatching2Start");
     shadnet_set_notify(shadnet_notify);
+    shadnet_set_session(shadnet_session);
     p2p_set_established(shadnet_established);
     PbOut out = {0};
     pb_uint(&out, 1, job->ctx);

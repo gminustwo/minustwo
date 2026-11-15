@@ -9,6 +9,7 @@
 static int found_reported = -1;
 int mtgpu_cheats(void) { return 0; }
 void mtgpu_cheats_found(int found) { found_reported = found; }
+int runtime_online_in_room(void) { return 0; } /* runtime_np.c; hold(), which asks it, does not run here */
 
 /* A signature's bytes at `at` ("??" as 0); the site. */
 static uint64_t place(unsigned char *image, uint64_t at, const MtSignature *sig) {

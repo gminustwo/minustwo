@@ -28,6 +28,7 @@
 typedef SOCKET NetSocket;
 #define close_socket closesocket
 #define SEND_FLAGS 0
+#define SHUTDOWN_BOTH SD_BOTH
 #else
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -39,19 +40,26 @@ typedef int NetSocket;
 #define INVALID_SOCKET (-1)
 #define close_socket close
 #define SEND_FLAGS MSG_NOSIGNAL
+#define SHUTDOWN_BOTH SHUT_RDWR
 #endif
 
 #ifndef MT_VERSION_TEXT
 #define MT_VERSION_TEXT "MinusTwo GODZILLA"
 #endif
 
+/* Timings (tests/test_shadnet.c shortens them). */
+#ifndef SHADNET_KEEPALIVE_MS
+#define SHADNET_KEEPALIVE_MS 20000 /* idle connections are dropped by the server and by routers */
+#endif
+#ifndef SHADNET_REPLY_TIMEOUT_MS
+#define SHADNET_REPLY_TIMEOUT_MS 15000
+#endif
+
 enum {
     HEADER_SIZE = 15, MAX_PACKET = 0x800000, DEFAULT_PORT = 31313, DEFAULT_UDP_PORT = 31314,
     TYPE_REQUEST = 0, TYPE_REPLY = 1, TYPE_NOTIFICATION = 2, TYPE_SERVER_INFO = 3,
     CMD_LOGIN = 0, CMD_CREATE = 2, CMD_GET_SERVER_FEATURES = 12, CMD_SET_CLIENT_VERSION = 13,
-    KEEPALIVE_SECONDS = 20, /* idle connections are dropped by the server and by routers */
     ERR_LOGIN_INVALID_PASSWORD = 8, ERR_CREATION_EXISTING_USERNAME = 11,
-    REPLY_TIMEOUT_MS = 15000,
 };
 
 /* ---- protobuf ---------------------------------------------------------------------------------- */
@@ -166,10 +174,12 @@ static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sign_in_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t replied = PTHREAD_COND_INITIALIZER;
 static NetSocket connection = INVALID_SOCKET;
+static uint64_t generation; /* counts the connections opened: tells a replaced connection from its successor */
 static int signed_in;
 static uint64_t next_packet = 1;
 static Waiter *waiters;
 static ShadnetNotify notify_cb;
+static ShadnetSession session_cb;
 static char npid[17];
 static uint64_t user_id;
 static uint32_t server_ip;
@@ -208,6 +218,16 @@ uint16_t shadnet_signaling_port(void) {
 }
 
 void shadnet_set_notify(ShadnetNotify notify) { notify_cb = notify; }
+void shadnet_set_session(ShadnetSession session) { session_cb = session; }
+
+static void sleep_ms(unsigned ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec t = {ms / 1000, (long)(ms % 1000) * 1000000L};
+    nanosleep(&t, NULL);
+#endif
+}
 
 static void sockets_init(void) {
 #ifdef _WIN32
@@ -249,16 +269,22 @@ static uint16_t get_u16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8);
 static uint32_t get_u32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint64_t get_u64(const uint8_t *p) { return (uint64_t)get_u32(p) | (uint64_t)get_u32(p + 4) << 32; }
 
-/* The connection is gone (lock held): every waiting request ends without an answer. */
-static void connection_lost(void) {
+/* The connection is gone (lock held): every waiting request ends without an answer. The socket is only shut
+ * down here, which wakes its reader thread; that thread closes it. Closed here instead, its number could go to
+ * the next connection while the reader still uses it (POSIX does not wake a recv() on a closed descriptor),
+ * and the old reader would then read, or close, the new connection. 1 when this ended a signed-in session:
+ * the caller tells session_cb, after releasing the lock. */
+static int connection_lost(void) {
+    int ended = signed_in;
     if (connection != INVALID_SOCKET) {
-        close_socket(connection);
+        shutdown(connection, SHUTDOWN_BOTH);
         connection = INVALID_SOCKET;
         printf("shadNet: the connection to the server closed\n");
     }
     signed_in = 0;
     for (Waiter *w = waiters; w; w = w->next) w->done = -1;
     pthread_cond_broadcast(&replied);
+    return ended;
 }
 
 static void *reader_main(void *arg) {
@@ -305,8 +331,10 @@ static void *reader_main(void *arg) {
         free(payload);
     }
     pthread_mutex_lock(&lock);
-    if (connection == s) connection_lost();
+    int ended = connection == s && connection_lost(); /* s is still open: no other connection has its number */
     pthread_mutex_unlock(&lock);
+    close_socket(s);
+    if (ended && session_cb) session_cb(0);
     return NULL;
 }
 
@@ -347,7 +375,9 @@ static int request_ex(uint16_t command, const void *prefix, uint32_t prefix_size
     free(packet);
     struct timespec until;
     clock_gettime(CLOCK_REALTIME, &until);
-    until.tv_sec += REPLY_TIMEOUT_MS / 1000;
+    until.tv_sec += SHADNET_REPLY_TIMEOUT_MS / 1000;
+    until.tv_nsec += (long)(SHADNET_REPLY_TIMEOUT_MS % 1000) * 1000000L;
+    if (until.tv_nsec >= 1000000000L) { until.tv_sec++; until.tv_nsec -= 1000000000L; }
     pthread_mutex_lock(&lock);
     while (!failed && !w.done)
         if (pthread_cond_timedwait(&replied, &lock, &until)) break;
@@ -434,10 +464,17 @@ static int open_connection(void) {
     printf("shadNet: connected to %s:%s (protocol %u)\n", host, port, get_u32(version));
     pthread_mutex_lock(&lock);
     connection = s;
+    ++generation;
     server_ip = ip;
     pthread_mutex_unlock(&lock);
     pthread_t thread;
-    pthread_create(&thread, NULL, reader_main, (void *)(uintptr_t)s);
+    if (pthread_create(&thread, NULL, reader_main, (void *)(uintptr_t)s)) {
+        pthread_mutex_lock(&lock);
+        connection = INVALID_SOCKET;
+        pthread_mutex_unlock(&lock);
+        close_socket(s);
+        return -1;
+    }
     pthread_detach(thread);
     return 0;
 }
@@ -479,20 +516,27 @@ static int create_account(uint8_t *error) {
     return failed;
 }
 
-/* While signed in, a small request every KEEPALIVE_SECONDS keeps the connection from looking idle. */
+/* While signed in, a small request every SHADNET_KEEPALIVE_MS keeps the connection from looking idle. A server
+ * that does not answer it is gone (stopped, or the network path died without closing the connection, which TCP
+ * alone would not notice for minutes): the connection is dropped, so the game hears it now (session_cb) rather
+ * than on its next request. */
 static void *keepalive_main(void *unused) {
     (void)unused;
     runtime_thread_attach_host("shadNetKeepalive");
     for (;;) {
-#ifdef _WIN32
-        Sleep(KEEPALIVE_SECONDS * 1000);
-#else
-        sleep(KEEPALIVE_SECONDS);
-#endif
+        sleep_ms(SHADNET_KEEPALIVE_MS);
         pthread_mutex_lock(&lock);
         int up = signed_in;
+        uint64_t asked = generation;
         pthread_mutex_unlock(&lock);
-        if (up) request(CMD_GET_SERVER_FEATURES, NULL, NULL, NULL, NULL);
+        if (!up || !request(CMD_GET_SERVER_FEATURES, NULL, NULL, NULL, NULL)) continue;
+        pthread_mutex_lock(&lock);
+        int ended = generation == asked && connection != INVALID_SOCKET && connection_lost();
+        pthread_mutex_unlock(&lock);
+        if (ended) {
+            printf("shadNet: the server stopped answering\n");
+            if (session_cb) session_cb(0);
+        }
     }
     return NULL;
 }
@@ -506,6 +550,9 @@ int shadnet_sign_in(void) {
     if (already) { pthread_mutex_unlock(&sign_in_lock); return 0; }
     int result = -1;
     if (open_connection()) goto done;
+    pthread_mutex_lock(&lock);
+    uint64_t opened = generation;
+    pthread_mutex_unlock(&lock);
     uint8_t error = 0xFF;
     if (login(&error)) goto done;
     const char *email = getenv("MT_SHADNET_EMAIL");
@@ -526,11 +573,14 @@ int shadnet_sign_in(void) {
     request(CMD_SET_CLIENT_VERSION, &version, &error, NULL, NULL);
     pb_free(&version);
     pthread_mutex_lock(&lock);
-    signed_in = 1;
+    /* the connection may have closed during the sign-in: then this is no session */
+    int up = generation == opened && connection != INVALID_SOCKET;
+    if (up) signed_in = 1;
     static int keepalive_started;
-    int start_keepalive = !keepalive_started;
-    keepalive_started = 1;
+    int start_keepalive = up && !keepalive_started;
+    if (start_keepalive) keepalive_started = 1;
     pthread_mutex_unlock(&lock);
+    if (!up) goto done;
     if (start_keepalive) {
         pthread_t thread;
         pthread_create(&thread, NULL, keepalive_main, NULL);
@@ -541,9 +591,11 @@ int shadnet_sign_in(void) {
 done:
     if (result) {
         pthread_mutex_lock(&lock);
-        connection_lost();
+        connection_lost(); /* not signed in yet: no session ended */
         pthread_mutex_unlock(&lock);
     }
     pthread_mutex_unlock(&sign_in_lock);
+    /* outside sign_in_lock: the callback may send requests (runtime_np.c starts its contexts again) */
+    if (!result && session_cb) session_cb(1);
     return result;
 }
