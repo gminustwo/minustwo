@@ -19,9 +19,18 @@
  *    Both players call sceRudpInitiate (simultaneous open), as the game does. A receiver keeps at most
  *    RUDP_WINDOW messages ahead of the next one it expects, and RUDP_MAX_READY the game has not read yet;
  *    anything beyond waits for the sender's resend.
+ *  - The game waits for the other player's input before it goes on, so a lost message holds the match up
+ *    until it is sent again. The keep-alive probes time the round trip to each member, and a message not
+ *    acknowledged within that round trip and a margin goes out again (resend_after), backing off when it
+ *    keeps getting lost. A member whose probes say it reads bundles (P2P_FEATURE_BUNDLE) gets each new
+ *    message together with copies of the last few it has not acknowledged: when one packet is lost, the
+ *    next one already brings what it carried. Older builds send probes without that byte and never get
+ *    a bundle, so they still play with this one.
  *
  * Datagram header (little-endian): "MT", version, type, sender's room member id, source and destination
- * virtual port, sequence, acknowledgement, payload length. */
+ * virtual port, sequence, acknowledgement, payload length. A probe and its answer carry one byte, the
+ * sender's P2P_FEATURE_* bits. A bundle's payload is messages one after another, each its sequence
+ * (4 bytes), length (2) and data, the oldest first. */
 #define _GNU_SOURCE
 #include "runtime.h"
 
@@ -49,9 +58,16 @@ typedef int UdpSocket;
 
 enum {
     P2P_VERSION = MT_ONLINE_PROTOCOL,
-    T_PROBE = 1, T_PROBE_ACK = 2, T_RAW = 3, T_SYN = 4, T_DATA = 5, T_ACK = 6, T_FIN = 7, T_BYE = 8,
+    T_PROBE = 1, T_PROBE_ACK = 2, T_RAW = 3, T_SYN = 4, T_DATA = 5, T_ACK = 6, T_FIN = 7, T_BYE = 8, T_BUNDLE = 9,
     MAX_PEERS = 8, MAX_SOCKETS = 16, MAX_CONTEXTS = 16, MAX_DATAGRAM = 9000, MAX_QUEUED = 256,
     SOCKET_ID_BASE = 0x7000, RESEND_MS = 120, CONNECT_TIMEOUT_MS = 20000, PROBE_MS = 200, STUN_MS = 15000,
+    /* resends: before the first round trip is timed, RESEND_MS; then the round trip plus a margin, within
+     * these bounds, doubled for each time the same message was sent again (at most RESEND_BACKOFF times) */
+    RESEND_MIN_MS = 30, RESEND_MAX_MS = 1000, RESEND_MARGIN_MS = 15, RESEND_BACKOFF = 3,
+    /* bundles: the new message and up to BUNDLE_COPIES earlier ones, in one datagram that stays under the
+     * usual internet packet size */
+    P2P_FEATURE_BUNDLE = 1, BUNDLE_COPIES = 3, BUNDLE_BYTES = 1200, BUNDLE_ENTRY = 6,
+    REPORT_MS = 30000, /* how often the log gets each connected member's round trip and resends */
     PS4_AF_INET = 2, PS4_SOCK_DGRAM_P2P = 6, PS4_SOCK_STREAM_P2P = 10, PS4_SOL_SOCKET = 0xFFFF, PS4_SO_NBIO = 0x1200,
     PS4_MSG_DONTWAIT = 0x80, ROOM_MESSAGE_COMMAND = 115, CAST_BROADCAST = 1,
     RUDP_WINDOW = 256, RUDP_MAX_READY = 1024,
@@ -84,7 +100,11 @@ _Static_assert(sizeof(Header) == 20, "P2P header");
 typedef struct { uint8_t len, family; uint16_t port; uint32_t addr; uint16_t vport; uint8_t zero[6]; } Ps4SockaddrIn;
 _Static_assert(sizeof(Ps4SockaddrIn) == 16, "SceNetSockaddrIn");
 
-typedef struct Packet { struct Packet *next; uint32_t seq; uint16_t size, vport; uint32_t from; uint64_t sent_ms; uint8_t data[]; } Packet;
+typedef struct Packet {
+    struct Packet *next; uint32_t seq; uint16_t size, vport; uint32_t from; uint64_t sent_ms;
+    uint32_t resent; /* times it went out again after no acknowledgement came */
+    uint8_t data[];
+} Packet;
 
 typedef struct {
     int used; uint16_t member; char npid[17];
@@ -94,6 +114,11 @@ typedef struct {
     int gone; /* closed all its match sockets (T_BYE) or stopped answering: reported dead, not probed again */
     int relayed, relay_ok; /* no direct path: traffic goes through the relay (registered there) */
     uint64_t added_ms, heard_ms, keepalive_ms; /* last packet from it, last keep-alive probe to it */
+    uint8_t features;      /* P2P_FEATURE_* its build understands (the byte in its probes) */
+    int probe_open;        /* the last keep-alive probe is not answered yet: its answer times the round trip */
+    uint32_t srtt, rttvar, rtt_low, rtt_high, rtt_count; /* round trip in ms: smoothed, variation, extremes */
+    uint32_t messages, resent; /* Rudp messages sent to it, and sent again for want of an acknowledgement */
+    uint64_t report_ms;
 } Peer;
 
 typedef struct {
@@ -156,7 +181,12 @@ static void (*established_cb)(uint16_t member, int up);
 
 static uint64_t now_ms(void) {
 #ifdef _WIN32
-    return GetTickCount64();
+    /* Not GetTickCount64: it moves in ~16 ms steps, coarser than the round trips and resends timed here. */
+    static LARGE_INTEGER frequency;
+    LARGE_INTEGER count;
+    if (!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&count);
+    return (uint64_t)(count.QuadPart / (frequency.QuadPart / 1000));
 #else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
@@ -259,6 +289,56 @@ static void stun_ping(void) {
     send_to(shadnet_server_ip(), htons(shadnet_signaling_port()), packet, sizeof(packet));
 }
 
+/* ---- round trips and resends (lock held) ------------------------------------------------------- */
+static const uint8_t my_features = P2P_FEATURE_BUNDLE; /* the byte in this build's probes */
+
+static void send_probe(const Peer *p, uint8_t type) { send_packet(p, type, 0, 0, 0, 0, &my_features, 1); }
+
+/* The member's link in the log: the round trip (smoothed, lowest, highest), how it goes, and how many
+ * messages had to go out again. */
+static void report(const Peer *p) {
+    if (!p->rtt_count) return;
+    printf("P2P: member %u (%s), %s: round trip %u ms (lowest %u, highest %u); %u messages sent, %u sent again\n",
+           p->member, p->npid, p->relayed ? "through the relay" : "direct", p->srtt, p->rtt_low, p->rtt_high,
+           p->messages, p->resent);
+}
+
+/* A keep-alive probe's answer came back after `ms`: the smoothed round trip and its variation, as TCP keeps
+ * them (RFC 6298). */
+static void round_trip(Peer *p, uint64_t ms) {
+    const uint32_t r = ms > 60000 ? 60000 : (uint32_t)ms;
+    if (!p->rtt_count) {
+        p->srtt = r;
+        p->rttvar = r / 2;
+        p->rtt_low = p->rtt_high = r;
+    } else {
+        const uint32_t difference = p->srtt > r ? p->srtt - r : r - p->srtt;
+        p->rttvar = (3 * p->rttvar + difference) / 4;
+        p->srtt = (7 * p->srtt + r + 4) / 8;
+        if (r < p->rtt_low) p->rtt_low = r;
+        if (r > p->rtt_high) p->rtt_high = r;
+    }
+    if (!p->rtt_count++) {
+        printf("P2P: member %u (%s), %s: round trip %u ms\n", p->member, p->npid,
+               p->relayed ? "through the relay" : "direct", r);
+        p->report_ms = now_ms();
+    }
+}
+
+/* How long a message to the member waits for its acknowledgement before it goes out again, the time
+ * this message (`resent` times already) waits: the round trip and a margin for its variation, doubled for
+ * each resend so that a link that drops everything is not flooded. */
+static uint32_t resend_after(const Peer *p, uint32_t resent) {
+    uint32_t wait = RESEND_MS;
+    if (p->rtt_count) {
+        const uint32_t margin = 4 * p->rttvar > RESEND_MARGIN_MS ? 4 * p->rttvar : RESEND_MARGIN_MS;
+        wait = p->srtt + margin;
+        if (wait < RESEND_MIN_MS) wait = RESEND_MIN_MS;
+        if (wait > RESEND_MAX_MS) wait = RESEND_MAX_MS;
+    }
+    return wait << (resent < RESEND_BACKOFF ? resent : RESEND_BACKOFF);
+}
+
 /* ---- Rudp internals (lock held) ---------------------------------------------------------------- */
 static RudpContext *context_by_id(int id) {
     for (int i = 0; i < MAX_CONTEXTS; ++i) if (contexts[i].used && contexts[i].id == id) return &contexts[i];
@@ -359,6 +439,60 @@ static void deliver_in_order(RudpContext *c) {
     }
 }
 
+/* A message for the context, from a T_DATA or a bundle. Kept only within RUDP_WINDOW of the next expected
+ * message, and while fewer than RUDP_MAX_READY wait for the game: anything else is resent later.
+ * Unbounded, a peer (or a packet claiming to be one) could fill memory with messages that are never
+ * delivered. One already here (a copy in a bundle, a resend) is ignored. */
+static void take_message(RudpContext *c, uint32_t seq, const uint8_t *data, size_t size) {
+    if (seq < c->expected || seq - c->expected >= RUDP_WINDOW || c->ready_count >= RUDP_MAX_READY) return;
+    for (Packet *q = c->ahead; q; q = q->next) if (q->seq == seq) return;
+    Packet *q = malloc(sizeof(Packet) + size);
+    if (!q) return;
+    memset(q, 0, sizeof(*q));
+    q->seq = seq;
+    q->size = (uint16_t)size;
+    memcpy(q->data, data, size);
+    q->next = c->ahead;
+    c->ahead = q;
+    deliver_in_order(c);
+}
+
+/* A new message to the member: with copies of up to BUNDLE_COPIES earlier ones it has not acknowledged yet
+ * when its build reads bundles (one datagram, the oldest first, under BUNDLE_BYTES); else on its own. */
+static void send_message(RudpContext *c, const Peer *p, Packet *q) {
+    Packet *earlier[BUNDLE_COPIES];
+    int count = 0;
+    if (p->features & P2P_FEATURE_BUNDLE) {
+        for (Packet *e = c->unacked; e && e != q; e = e->next) { /* the last BUNDLE_COPIES before q */
+            if (count == BUNDLE_COPIES) {
+                memmove(earlier, earlier + 1, sizeof(*earlier) * (BUNDLE_COPIES - 1));
+                --count;
+            }
+            earlier[count++] = e;
+        }
+    }
+    size_t bytes = BUNDLE_ENTRY + q->size;
+    int first = count;
+    while (first > 0 && bytes + BUNDLE_ENTRY + earlier[first - 1]->size <= BUNDLE_BYTES)
+        bytes += BUNDLE_ENTRY + earlier[--first]->size;
+    if (first == count) {
+        send_packet(p, T_DATA, c->vport, c->remote_vport, q->seq, 0, q->data, q->size);
+        return;
+    }
+    uint8_t payload[BUNDLE_BYTES];
+    size_t at = 0;
+    const uint64_t now = now_ms();
+    for (int i = first; i <= count; ++i) {
+        Packet *e = i < count ? earlier[i] : q;
+        memcpy(payload + at, &e->seq, 4);
+        memcpy(payload + at + 4, &e->size, 2);
+        memcpy(payload + at + BUNDLE_ENTRY, e->data, e->size);
+        at += BUNDLE_ENTRY + e->size;
+        e->sent_ms = now; /* a copy just went out: its own resend waits from here */
+    }
+    send_packet(p, T_BUNDLE, c->vport, c->remote_vport, q->seq, 0, payload, at);
+}
+
 static void rudp_packet(Peer *p, const Header *h, const uint8_t *payload, size_t size) {
     RudpContext *c = context_for(h->dst_vport, p->member);
     if (runtime_online_debug() && h->type == T_DATA && debug_budget > 0) {
@@ -398,28 +532,24 @@ static void rudp_packet(Peer *p, const Header *h, const uint8_t *payload, size_t
         if (cleared && !c->unacked) queue_event(c, RUDP_EVENT_FLUSHED, 0);
         break;
     }
-    case T_DATA: {
+    case T_DATA:
         if (c->state == 1 && c->syn_heard) context_established(c);
-        /* Kept only within RUDP_WINDOW of the next expected message, and while fewer than RUDP_MAX_READY wait
-         * for the game: anything else is resent later. Unbounded, a peer (or a packet claiming to be one) could
-         * fill memory with messages that are never delivered. */
-        if (h->seq >= c->expected && h->seq - c->expected < RUDP_WINDOW && c->ready_count < RUDP_MAX_READY) {
-            int duplicate = 0;
-            for (Packet *q = c->ahead; q; q = q->next) duplicate |= q->seq == h->seq;
-            Packet *q = duplicate ? NULL : malloc(sizeof(Packet) + size);
-            if (q) {
-                memset(q, 0, sizeof(*q));
-                q->seq = h->seq;
-                q->size = (uint16_t)size;
-                memcpy(q->data, payload, size);
-                q->next = c->ahead;
-                c->ahead = q;
-                deliver_in_order(c);
-            }
-        }
+        take_message(c, h->seq, payload, size);
         send_packet(p, T_ACK, c->vport, c->remote_vport, 1, c->expected - 1, NULL, 0);
         break;
-    }
+    case T_BUNDLE:
+        if (c->state == 1 && c->syn_heard) context_established(c);
+        for (size_t at = 0; at + BUNDLE_ENTRY <= size;) {
+            uint32_t seq;
+            uint16_t length;
+            memcpy(&seq, payload + at, 4);
+            memcpy(&length, payload + at + 4, 2);
+            if (at + BUNDLE_ENTRY + length > size) break;
+            take_message(c, seq, payload + at + BUNDLE_ENTRY, length);
+            at += BUNDLE_ENTRY + length;
+        }
+        send_packet(p, T_ACK, c->vport, c->remote_vport, 1, c->expected - 1, NULL, 0); /* one for all of them */
+        break;
     case T_FIN:
         if (c->state != 3) {
             c->state = 3;
@@ -445,7 +575,7 @@ static void peer_heard(Peer *p, uint32_t ip, uint16_t port) {
 static void check_established(Peer *p) {
     if (p->established || p->gone || !p->heard || !p->acknowledged) return;
     p->established = 1;
-    printf("P2P: connected to member %u (%s)\n", p->member, p->npid);
+    printf("P2P: connected to member %u (%s), %s\n", p->member, p->npid, p->relayed ? "through the relay" : "directly");
     if (pending_up_count < MAX_PEERS) pending_up[pending_up_count++] = p->member;
 }
 
@@ -495,7 +625,8 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
     pthread_mutex_lock(&lock);
     Peer *p = peer_by_member(h.member);
     if (!p) { pthread_mutex_unlock(&lock); return; }
-    p->heard_ms = now_ms();
+    const uint64_t now = now_ms();
+    p->heard_ms = now;
     if (via_relay) {
         if (!p->relayed) printf("P2P: member %u (%s) reached through the relay\n", p->member, p->npid);
         p->relayed = 1;
@@ -505,10 +636,16 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
     }
     switch (h.type) {
     case T_PROBE:
-        send_packet(p, T_PROBE_ACK, 0, 0, 0, 0, NULL, 0);
+        if (h.length) p->features = payload[0]; /* older builds send none */
+        send_probe(p, T_PROBE_ACK);
         break;
     case T_PROBE_ACK:
+        if (h.length) p->features = payload[0];
         p->acknowledged = 1;
+        if (p->probe_open) { /* the answer to the last keep-alive probe */
+            p->probe_open = 0;
+            round_trip(p, now - p->keepalive_ms);
+        }
         break;
     case T_BYE: /* its game closed its match sockets: on a PS4 the signaling connection goes dead */
         if (!p->gone) {
@@ -516,6 +653,7 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
             if (p->established && pending_down_count < MAX_PEERS) pending_down[pending_down_count++] = p->member;
             p->established = 0;
             printf("P2P: member %u closed its match connection\n", p->member);
+            report(p);
         }
         break;
     case T_RAW:
@@ -551,6 +689,7 @@ static void receive(const uint8_t *data, size_t size, uint32_t ip, uint16_t port
 static void keep_alive(Peer *p, uint64_t now) {
     if (now > p->heard_ms && now - p->heard_ms > P2P_PEER_TIMEOUT_MS) {
         printf("P2P: member %u (%s) stopped answering: connection lost\n", p->member, p->npid);
+        report(p);
         p->established = 0;
         p->gone = 1;
         if (pending_down_count < MAX_PEERS) pending_down[pending_down_count++] = p->member;
@@ -559,8 +698,13 @@ static void keep_alive(Peer *p, uint64_t now) {
         return;
     }
     if (now - p->keepalive_ms >= P2P_KEEPALIVE_MS) {
-        send_packet(p, T_PROBE, 0, 0, 0, 0, NULL, 0);
+        send_probe(p, T_PROBE);
         p->keepalive_ms = now;
+        p->probe_open = 1;
+    }
+    if (p->rtt_count && now - p->report_ms >= REPORT_MS) {
+        report(p);
+        p->report_ms = now;
     }
 }
 
@@ -573,7 +717,7 @@ static void *io_main(void *unused) {
         fd_set read_set;
         FD_ZERO(&read_set);
         FD_SET(udp, &read_set);
-        struct timeval wait = {0, 20000};
+        struct timeval wait = {0, 10000}; /* the timers below (resends) run at least this often */
         if (select((int)udp + 1, &read_set, NULL, NULL, &wait) > 0) {
             struct sockaddr_in from;
             socklen_t length = sizeof(from);
@@ -594,26 +738,28 @@ static void *io_main(void *unused) {
                     printf("P2P: no direct path to member %u (%s): using the relay\n", q->member, q->npid);
                 }
                 if (q->relayed && !q->relay_ok) relay_register(q);
-                send_packet(q, T_PROBE, 0, 0, 0, 0, NULL, 0);
+                send_probe(q, T_PROBE);
             }
         }
-        if (now - last_resend >= RESEND_MS) {
-            last_resend = now;
-            for (int i = 0; i < MAX_CONTEXTS; ++i) {
-                RudpContext *c = &contexts[i];
-                if (!c->used || !c->member) continue;
-                Peer *p = peer_by_member(c->member);
-                if (!p || !p->established) continue;
-                if (c->state == 1) {
-                    send_packet(p, T_SYN, c->vport, c->remote_vport, 0, 0, NULL, 0);
-                    if (now - c->started_ms > (c->timeout_ms ? c->timeout_ms : CONNECT_TIMEOUT_MS))
-                        context_failed(c, RUDP_ERROR(RUDP_CONN_TIMEOUT));
-                } else if (c->state == 2) {
-                    for (Packet *q = c->unacked; q; q = q->next) {
-                        if (now - q->sent_ms < RESEND_MS) continue;
-                        send_packet(p, T_DATA, c->vport, c->remote_vport, q->seq, 0, q->data, q->size);
-                        q->sent_ms = now;
-                    }
+        /* Connection setup every RESEND_MS; a message as soon as its own wait is over (resend_after). */
+        const int syn_due = now - last_resend >= RESEND_MS;
+        if (syn_due) last_resend = now;
+        for (int i = 0; i < MAX_CONTEXTS; ++i) {
+            RudpContext *c = &contexts[i];
+            if (!c->used || !c->member) continue;
+            Peer *p = peer_by_member(c->member);
+            if (!p || !p->established) continue;
+            if (c->state == 1 && syn_due) {
+                send_packet(p, T_SYN, c->vport, c->remote_vport, 0, 0, NULL, 0);
+                if (now - c->started_ms > (c->timeout_ms ? c->timeout_ms : CONNECT_TIMEOUT_MS))
+                    context_failed(c, RUDP_ERROR(RUDP_CONN_TIMEOUT));
+            } else if (c->state == 2) {
+                for (Packet *q = c->unacked; q; q = q->next) {
+                    if (now - q->sent_ms < resend_after(p, q->resent)) continue;
+                    send_packet(p, T_DATA, c->vport, c->remote_vport, q->seq, 0, q->data, q->size);
+                    q->sent_ms = now;
+                    q->resent++;
+                    p->resent++;
                 }
             }
         }
@@ -750,6 +896,7 @@ void p2p_member_left(uint16_t member) {
     pthread_mutex_lock(&lock);
     Peer *p = peer_by_member(member);
     if (p) {
+        if (!p->gone) report(p); /* not reported yet (T_BYE and a lost connection report it) */
         for (int i = 0; i < MAX_CONTEXTS; ++i)
             if (contexts[i].used && contexts[i].member == member) context_failed(&contexts[i], RUDP_ERROR(RUDP_CONN_RESET));
         p->used = 0;
@@ -991,8 +1138,9 @@ static ABI int32_t rudp_write(int32_t id, const void *data, uint64_t size, uint8
     c->unacked_tail = q;
     Peer *p = peer_by_member(c->member);
     if (c->state == 2 && p) {
-        send_packet(p, T_DATA, c->vport, c->remote_vport, q->seq, 0, q->data, q->size);
+        send_message(c, p, q);
         q->sent_ms = now_ms();
+        p->messages++;
     }
     pthread_mutex_unlock(&lock);
     return (int32_t)size;

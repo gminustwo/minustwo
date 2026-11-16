@@ -216,6 +216,7 @@ def main():
     if not (game / 'eboot.bin').is_file():
         fail(f'No eboot.bin in {game} (set MT_GAME_DIR).')
     update_view = None
+    mapping = None
     if env.get('MT_PATCH_DIR'):
         import game_update
         try:
@@ -331,10 +332,21 @@ def main():
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),
                    '--user', str(user_dir),
                    '--timeout', env.get('MT_TIMEOUT', '0'), *isa_args, *args]
+        # Online through a shadNet server: the router is asked to open the game's UDP port (port_mapping.py) while
+        # the game starts, so other players reach this PC directly rather than through the server's relay.
+        if env.get('MT_SHADNET_SERVER', '').strip() and env.get('MT_PORT_MAPPING', '1') != '0':
+            import port_mapping
+            if not env.get('MT_P2P_PORT', '').isdigit():
+                env['MT_P2P_PORT'] = str(port_mapping.free_udp_port())
+            mapping = port_mapping.PortMapping(int(env['MT_P2P_PORT']),
+                                               port_mapping.server_address(env['MT_SHADNET_SERVER']),
+                                               log=lambda text: print(text, flush=True)).start()
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, creationflags=no_console())
         return process.wait()
     finally:
+        if mapping:
+            mapping.close()
         if mod_view:
             shutil.rmtree(mod_view, ignore_errors=True)
         if update_view:

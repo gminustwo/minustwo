@@ -71,10 +71,14 @@ static uint16_t fake_port; /* network order */
 static pthread_mutex_t fake_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fake_heard = PTHREAD_COND_INITIALIZER;
 static int answer_as, probes, data_acks;
+static int fake_features = -1; /* the byte in its probe answers: -1 none (a 1.3.0 build) */
+static int data_packets, bundles, last_bundle_entries; /* what it received from the game's Rudp writes */
+static uint32_t last_bundle_seqs[8];
 
-static void fake_send(uint16_t member, uint8_t type, uint16_t vport, uint32_t seq, const void *payload, uint16_t size) {
-    uint8_t packet[sizeof(Header) + 16];
-    Header h = {{'M', 'T'}, P2P_VERSION, type, member, vport, vport, seq, 0, size};
+static void fake_send_ack(uint16_t member, uint8_t type, uint16_t vport, uint32_t seq, uint32_t ack, const void *payload,
+                          uint16_t size) {
+    uint8_t packet[sizeof(Header) + 64];
+    Header h = {{'M', 'T'}, P2P_VERSION, type, member, vport, vport, seq, ack, size};
     memcpy(packet, &h, sizeof(h));
     if (size) memcpy(packet + sizeof(h), payload, size);
     struct sockaddr_in to;
@@ -83,6 +87,9 @@ static void fake_send(uint16_t member, uint8_t type, uint16_t vport, uint32_t se
     to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     to.sin_port = local_port;
     sendto(fake, (const char *)packet, (int)(sizeof(h) + size), 0, (struct sockaddr *)&to, sizeof(to));
+}
+static void fake_send(uint16_t member, uint8_t type, uint16_t vport, uint32_t seq, const void *payload, uint16_t size) {
+    fake_send_ack(member, type, vport, seq, 0, payload, size);
 }
 
 static void *fake_main(void *unused) {
@@ -94,12 +101,25 @@ static void *fake_main(void *unused) {
         Header h;
         memcpy(&h, buffer, sizeof(h));
         pthread_mutex_lock(&fake_lock);
-        int as = answer_as;
+        int as = answer_as, features = fake_features;
         if (h.type == T_PROBE) ++probes;
         if (h.type == T_ACK && h.seq == 1) ++data_acks; /* seq 0 is "SYN seen" */
+        if (h.type == T_DATA) ++data_packets;
+        if (h.type == T_BUNDLE) {
+            ++bundles;
+            int entries = 0;
+            for (size_t at = 0; at + BUNDLE_ENTRY <= h.length && entries < 8;) {
+                uint16_t length;
+                memcpy(&last_bundle_seqs[entries++], buffer + sizeof(Header) + at, 4);
+                memcpy(&length, buffer + sizeof(Header) + at + 4, 2);
+                at += BUNDLE_ENTRY + length;
+            }
+            last_bundle_entries = entries;
+        }
         pthread_cond_broadcast(&fake_heard);
         pthread_mutex_unlock(&fake_lock);
-        if (as && h.type == T_PROBE) fake_send((uint16_t)as, T_PROBE_ACK, 0, 0, NULL, 0);
+        uint8_t byte = (uint8_t)features;
+        if (as && h.type == T_PROBE) fake_send((uint16_t)as, T_PROBE_ACK, 0, 0, &byte, features < 0 ? 0 : 1);
         if (as && h.type == T_SYN) fake_send((uint16_t)as, T_ACK, h.dst_vport, 0, NULL, 0);
     }
     return NULL;
@@ -172,6 +192,25 @@ static uint32_t read_one(RudpContext *c) {
     uint32_t seq = 0;
     assert(rudp_read(c->id, &seq, sizeof(seq), RUDP_MSG_DONTWAIT, NULL) == (int32_t)sizeof(seq));
     return seq;
+}
+
+/* The game writes a message (its value as payload). */
+static void game_write(RudpContext *c, uint32_t value) { assert(rudp_write(c->id, &value, sizeof(value), 0) == 4); }
+
+static Peer peer_copy(uint16_t member) {
+    Peer copy;
+    memset(&copy, 0, sizeof(copy));
+    pthread_mutex_lock(&lock);
+    Peer *p = peer_by_member(member);
+    if (p) copy = *p;
+    pthread_mutex_unlock(&lock);
+    return copy;
+}
+
+static void fake_set_features(int features) {
+    pthread_mutex_lock(&fake_lock);
+    fake_features = features;
+    pthread_mutex_unlock(&fake_lock);
 }
 
 int main(void) {
@@ -278,6 +317,14 @@ int main(void) {
     /* member 3 stayed up all along: its probes were answered */
     assert(load(&downs[3]) == 0 && p2p_member_established(3));
 
+    /* its probe answers carry no feature byte (a 1.3.0 build): its messages never come as bundles */
+    int bundles_before = fake_get(&bundles), data_before = fake_get(&data_packets);
+    game_write(c, 1000);
+    game_write(c, 1001);
+    game_write(c, 1002);
+    sleep_ms(50);
+    assert(fake_get(&bundles) == bundles_before && fake_get(&data_packets) >= data_before + 3);
+
     /* a new room, without leaving this one (GODZILLA searches again when the host leaves as the match
      * loads): member ids repeat, so member 2, gone in the last room, is a newcomer here and is reached */
     fake_answer_as(2);
@@ -288,6 +335,82 @@ int main(void) {
     assert(p2p_member_established(2));
     /* and the last room's members are not carried over */
     assert(!p2p_member_established(3));
+
+    /* member 4 runs this build: its probe answers say it reads bundles, and they time the round trip */
+    fake_set_features(P2P_FEATURE_BUNDLE);
+    fake_answer_as(4);
+    p2p_member(4, "dave", 0, 0);
+    announce_fake(4);
+    assert(wait_for(&ups[4], 1, 3000));
+    for (unsigned waited = 0; peer_copy(4).rtt_count < 2 && waited < 3000; waited += 10) sleep_ms(10);
+    Peer d = peer_copy(4);
+    assert(d.rtt_count >= 2 && (d.features & P2P_FEATURE_BUNDLE));
+    printf("p2p-test: round trip on loopback %u ms\n", d.srtt);
+    /* the wait before a resend: RESEND_MS untimed; else the round trip and a margin, bounded, backing off */
+    Peer t;
+    memset(&t, 0, sizeof(t));
+    assert(resend_after(&t, 0) == RESEND_MS);
+    t.rtt_count = 5;
+    assert(resend_after(&t, 0) == RESEND_MIN_MS);                    /* ~0 ms (a LAN) */
+    t.srtt = 100, t.rttvar = 2;
+    assert(resend_after(&t, 0) == 100 + RESEND_MARGIN_MS);           /* a steady link: the least margin */
+    t.rttvar = 10;
+    assert(resend_after(&t, 0) == 140 && resend_after(&t, 1) == 280); /* a jittery one: 4x its variation */
+    assert(resend_after(&t, 9) == 140 << RESEND_BACKOFF);
+    t.srtt = 5000;
+    assert(resend_after(&t, 0) == RESEND_MAX_MS);
+    ContextEvents events_d;
+    memset(&events_d, 0, sizeof(events_d));
+    RudpContext *e = connect_context(&events_d, 4, 7);
+
+    /* it acknowledges nothing yet: the first message goes on its own, each later one carries those before it */
+    bundles_before = fake_get(&bundles);
+    data_before = fake_get(&data_packets);
+    game_write(e, 1);
+    game_write(e, 2);
+    game_write(e, 3);
+    assert(wait_for(&last_bundle_entries, 3, 1000));
+    pthread_mutex_lock(&fake_lock);
+    assert(last_bundle_seqs[0] == 1 && last_bundle_seqs[1] == 2 && last_bundle_seqs[2] == 3); /* the oldest first */
+    pthread_mutex_unlock(&fake_lock);
+    assert(fake_get(&bundles) - bundles_before == 2 && fake_get(&data_packets) - data_before >= 1);
+
+    /* unacknowledged, they go out again after the round trip and a margin, waiting longer each time */
+    int resends_before = fake_get(&data_packets);
+    sleep_ms(200);
+    int soon = fake_get(&data_packets) - resends_before;
+    sleep_ms(800);
+    int in_a_second = fake_get(&data_packets) - resends_before;
+    printf("p2p-test: 3 unacknowledged messages went out again %d times in 200 ms, %d in a second\n", soon, in_a_second);
+    assert(soon >= 3);                                   /* before: one resend after 120 to 240 ms */
+    assert(in_a_second < 3 * 1000 / RESEND_MIN_MS / 2);  /* backing off: far fewer than one every RESEND_MIN_MS */
+    /* acknowledged: flushed, and no more resends */
+    fake_send_ack(4, T_ACK, 7, 1, 3, NULL, 0);
+    assert(wait_event(&events_d, RUDP_EVENT_FLUSHED, 1000));
+    int after_ack = fake_get(&data_packets);
+    sleep_ms(300);
+    assert(fake_get(&data_packets) == after_ack);
+
+    /* a bundle from it: #1 (its own packet lost) and #2 arrive together, in order, with one acknowledgement */
+    uint8_t bundle[2 * (BUNDLE_ENTRY + 4)];
+    for (uint32_t s = 1; s <= 2; ++s) {
+        uint16_t length = 4;
+        memcpy(bundle + (s - 1) * (BUNDLE_ENTRY + 4), &s, 4);
+        memcpy(bundle + (s - 1) * (BUNDLE_ENTRY + 4) + 4, &length, 2);
+        memcpy(bundle + (s - 1) * (BUNDLE_ENTRY + 4) + BUNDLE_ENTRY, &s, 4);
+    }
+    int acks_before = fake_get(&data_acks);
+    fake_send(4, T_BUNDLE, 7, 2, bundle, sizeof(bundle));
+    for (unsigned waited = 0; fake_get(&data_acks) == acks_before && waited < 1000; waited += 10) sleep_ms(10);
+    assert(fake_get(&data_acks) == acks_before + 1);
+    context_state(e, &ahead, &ready, &expected);
+    assert(ready == 2 && expected == 3 && ahead == 0);
+    assert(read_one(e) == 1 && read_one(e) == 2);
+    /* the same bundle again (a resend): acknowledged, nothing new */
+    fake_send(4, T_BUNDLE, 7, 2, bundle, sizeof(bundle));
+    for (unsigned waited = 0; fake_get(&data_acks) == acks_before + 1 && waited < 1000; waited += 10) sleep_ms(10);
+    context_state(e, &ahead, &ready, &expected);
+    assert(ready == 0 && expected == 3 && ahead == 0);
     puts("p2p-test: ok");
     return 0;
 }

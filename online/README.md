@@ -74,6 +74,7 @@ The key in it is what lets them create an account, so send it only to people you
 | `MT_SHADNET_UDP_PORT` | the server's signaling port (31314) |
 | `MT_SHADNET_COMID` | the NP communication ID for leaderboards (`NPWR08361_00`) |
 | `MT_P2P_PORT` | this player's UDP port for matches (any free one by default) |
+| `MT_PORT_MAPPING=0` | do not ask the router to open that port (UPnP / NAT-PMP) |
 | `MT_SHADNET_RELAY_PORT` | the relay's UDP port on the server (31316) |
 | `MT_P2P_FORCE_RELAY=1` | send every match through the relay (testing) |
 | `MT_ONLINE_DEBUG=1` | detailed log: room data, events handed to the game, first Rudp traffic |
@@ -108,6 +109,20 @@ The key in it is what lets them create an account, so send it only to people you
   numbers, acknowledgements, resends) with the context events and the SOCKET_RELEASED event the game
   uses; a receiver keeps at most 256 messages ahead of the next one it expects and 1024 the game has
   not read yet, and anything beyond waits for the sender's resend.
+- Lag: the game waits for the other player's input before it goes on, so the round trip between
+  the players is felt on every move, and a lost message holds the match up until it arrives again.
+  The keep-alive probes time the round trip to each player, and the log says it with the path
+  (`P2P: member 17 (name), direct: round trip 42 ms`, again every 30 s and when the match ends, with
+  how many messages had to be sent again). A message not acknowledged within that round trip and a
+  margin goes out again (at least 30 ms, backing off when it keeps getting lost), and copies of this
+  build send each new message together with the last three the other has not acknowledged, so one
+  lost packet costs nothing: the next one brings what it carried. The byte that says so rides on
+  the probes, and 1.3.0 copies, which send none, still get plain messages.
+- The router: `run.py` asks it to open the game's UDP port while the game runs (`scripts/port_mapping.py`:
+  UPnP, else NAT-PMP; removed when the game ends), so other players can reach this PC directly instead
+  of through the relay. The log says what the router answered (`Online: UDP port ... opened on the
+  router`), and when the router is itself behind another router or the internet provider's NAT,
+  where an opened port may not help.
 - `src/runtime_score.c`: NpScore (leaderboards) through shadNet's score commands.
 - Exact math (`scripts/isa_rewrite.py`, `src/isa_rewrite.c`): each copy in a match computes the whole
   fight from both players' input, so both must compute it alike. The game normalizes its vectors with
