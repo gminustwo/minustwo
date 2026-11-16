@@ -14,12 +14,16 @@ connection between two copies) still works.
 
 ## Playing
 
+The launcher starts with a community server, `godzilla-ps4-online.duckdns.org` (Google Cloud's free tier,
+run by a player, with the relay), so filling in a player name, a password and an email is enough to play.
+Any other server works the same: enter its address, or paste its invite code.
+
 On the launcher's **Online** page:
 
 | Field | Meaning |
 |---|---|
 | Invite code | Paste the one line a server's host sent you (`minustwo:…`): it fills in the server address and the registration key |
-| Server address | The server everyone plays on (`host` or `host:port`, port 31313 by default) |
+| Server address | The server everyone plays on (`host` or `host:port`, port 31313 by default); it starts with the community server below |
 | Player name, Password | The account, also the name other players see (3-16 letters, digits, `-`, `_`) |
 | Email (first time only) | With it, the first sign-in creates the account when the name is free |
 | Registration key | Only for a private server whose host set one |

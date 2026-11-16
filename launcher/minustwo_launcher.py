@@ -77,9 +77,11 @@ KEYS = (('move_up', 'Walk forward', 'W'), ('move_down', 'Walk back', 'S'), ('mov
         ('touchpad', 'Touchpad', 'Tab'), ('up', 'D-pad up', 'I'), ('down', 'D-pad down', 'K'),
         ('left', 'D-pad left', 'J'), ('right', 'D-pad right', 'L'), ('look_up', 'Camera up', 'Up'),
         ('look_down', 'Camera down', 'Down'), ('look_left', 'Camera left', 'Left'), ('look_right', 'Camera right', 'Right'))
+# The community shadNet server the Online page starts with (online/README.md): players may enter another.
+COMMUNITY_SERVER = 'godzilla-ps4-online.duckdns.org'
 DEFAULTS = {'game_dir': '', 'language': '1', 'unlock_addons': True, 'keys': {}, 'mods_enabled': True,
             'check_updates': True, 'skip_logos': False, 'skip_movie': False, 'skip_tutorial': False,
-            'online_server': '', 'online_user': '', 'online_password': '', 'online_email': '',
+            'online_server': COMMUNITY_SERVER, 'online_user': '', 'online_password': '', 'online_email': '',
             'online_group': '', 'online_secret': ''}
 # The Game page's startup options: a setting, its built-in patch (patches/CUSA02046.xml), the label and the hint.
 STARTUP_PATCHES = (
@@ -1152,7 +1154,8 @@ class Launcher:
         self.online_server_var = tk.StringVar(value=self.values.get('online_server', ''))
         self.row(page, 'Server address', self.ttk.Entry(page, textvariable=self.online_server_var, width=34),
                  'The community server everyone plays on, as name or address, with :port when it is not 31313. '
-                 'Empty: VS Mode stays offline.')
+                 f'Starts with the community server ({COMMUNITY_SERVER}); online play begins once a player name '
+                 'is filled in. Empty: VS Mode stays offline.')
         self.section(page, 'Account')
         self.online_user_var = tk.StringVar(value=self.values.get('online_user', ''))
         self.row(page, 'Player name', self.ttk.Entry(page, textvariable=self.online_user_var, width=20),
