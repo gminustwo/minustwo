@@ -243,8 +243,8 @@ def main():
             if code == 0:
                 isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
             elif online_configured(env):
-                print('Online: without the rewrite table this copy only meets copies without it; install '
-                      'iced-x86 for the Python that runs the launcher: python3 -m pip install iced-x86==1.21.0',
+                print('Online: without the rewrite table this copy only meets copies without it; run bash build.sh '
+                      'again (it installs iced-x86 into out/pydeps) or: python3 -m pip install iced-x86==1.21.0',
                       flush=True)
         run_script('content_profile.py', game, '--out', out, '--sku', env.get('MT_CONTENT_SKU', 'full'))
 

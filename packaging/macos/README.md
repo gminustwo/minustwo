@@ -28,15 +28,14 @@ Homebrew's LLVM, then the x86-64 driver). It takes a few minutes once; each libr
 ## Run
 
 ```bash
-python3 -m pip install pillow iced-x86==1.21.0      # once, for the Python that runs the launcher
 python3 launcher/minustwo_launcher.py               # the launcher (python.org Python with Tk, Pillow)
 MT_GAME_DIR=~/Games/CUSA02046 python3 run.py        # or the game directly
 ```
 
 Online play needs `iced-x86`: with a server set, `scripts/isa_rewrite.py` finds the game's reciprocal
 estimates, which Apple silicon (through Rosetta) and PC CPUs compute differently, and the game computes them
-exactly instead (`online/README.md`). Without it the log says so, and the Mac is matched only with copies
-that lack it too.
+exactly instead (`online/README.md`). `build.sh` installs it into `out/pydeps` with `python3` (`MT_PYTHON`
+names another). Without it the log says so, and the Mac is matched only with copies that lack it too.
 
 `run.py` sets `ROSETTA_ADVERTISE_AVX=1`: Rosetta runs AVX, F16C, BMI and MOVBE code but reports them in
 CPUID only when asked, and `minustwo` starts itself again with it when started another way. In the

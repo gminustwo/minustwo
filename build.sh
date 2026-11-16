@@ -2,6 +2,23 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
 mkdir -p out
+# iced-x86 for a launcher started from this folder (macOS, Linux): scripts/isa_rewrite.py needs it for
+# online play, which rewrites the game's reciprocal estimates to exact math (online/README.md). It goes
+# into out/pydeps, where isa_rewrite.py looks, not into that Python; MT_PYTHON names another Python than
+# python3. A failed install only warns: offline play does not need it. Packaged builds bring their own.
+python_deps() {
+    local python=${MT_PYTHON:-python3}
+    if ! command -v "$python" >/dev/null; then
+        echo "No $python here: online play from this folder needs iced-x86 (online/README.md)" >&2
+        return 0
+    fi
+    PYTHONPATH=$PWD/out/pydeps "$python" -c 'import iced_x86' 2>/dev/null && return 0
+    if "$python" -m pip install -q --disable-pip-version-check --target out/pydeps iced-x86==1.21.0; then
+        echo "iced-x86 installed in out/pydeps (online play's exact math)"
+    else
+        echo "Could not install iced-x86 into out/pydeps: online play from this folder would only meet copies without exact math. Try: $python -m pip install iced-x86==1.21.0" >&2
+    fi
+}
 # Windows: MSYS2 CLANG64 (packages in packaging/windows/README.md). The GPU library is static
 # there and CMake links minustwo.exe as well; no PGO (GCC-only flags), LTO off by default.
 case $(uname -s) in
@@ -65,6 +82,7 @@ Darwin)
     # The Vulkan loader finds KosmicKrisp through the manifest beside the executable (vk_platform.cpp).
     sed 's#"library_path"[^,]*#"library_path": "macos-deps/lib/libvulkan_kosmickrisp.dylib"#' \
         "$deps/share/vulkan/icd.d/kosmickrisp_mesa_icd.json" > out/kosmickrisp_mesa_icd.json
+    python_deps
     echo "Built $PWD/out/minustwo"
     exit 0
     ;;
@@ -139,6 +157,7 @@ fi
 # isa_emulate runs inside guest code: no XMM/YMM.
 "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -mgeneral-regs-only -c src/isa_emulate.c -o out/isa_emulate.o
 "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/cpu_check.c src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/minustwo
+python_deps
 echo "Built $PWD/out/minustwo"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 -Isrc tools/gpu_capabilities.c "${libraries[@]}" -o out/minustwo-gpu-capabilities

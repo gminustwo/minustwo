@@ -114,9 +114,10 @@ The key in it is what lets them create an account, so send it only to people you
   makers and under Rosetta 2: every PS4 has the same CPU, but a Ryzen and a Mac drift apart until one
   copy ends the match while the other still shows both players' health. With a server set (or
   `MT_ONLINE=1`), the loader rewrites each one to the exact value (square root and division, correctly
-  rounded on every CPU) for the whole session, offline modes included. A copy that cannot (no
-  `iced-x86` for the launcher's Python, or a changed game) says so in its log and gets its own match
-  key, so it only meets copies like it.
+  rounded on every CPU) for the whole session, offline modes included. The scan needs `iced-x86`:
+  packaged builds bring it, and `build.sh` installs it into `out/pydeps` for a launcher started from
+  the repository. A copy that cannot rewrite (no `iced-x86`, or a changed game) says so in its log and
+  gets its own match key, so it only meets copies like it.
 
 What GODZILLA needed beyond a plain shadNet client:
 

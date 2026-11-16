@@ -26,6 +26,12 @@ import struct
 import sys
 from prepare import span, unpack
 
+# build.sh installs iced-x86 here for a launcher started from the repository (macOS, Linux); one the
+# Python already has comes first.
+PYDEPS = Path(__file__).resolve().parent.parent / 'out' / 'pydeps'
+if PYDEPS.is_dir() and str(PYDEPS) not in sys.path:
+    sys.path.append(str(PYDEPS))
+
 try:
     import iced_x86
     from iced_x86 import Code, Decoder, FlowControl, Mnemonic, OpKind, Register, RegisterExt

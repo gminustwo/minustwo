@@ -171,6 +171,9 @@ class ReadBootLinkedTests(unittest.TestCase):
     def test_records_are_sixty_four_bytes(self):
         self.assertEqual((isa_rewrite.HEADER.size, isa_rewrite.RECORD.size), (64, 64))
 
+    def test_looks_for_iced_x86_where_build_sh_installs_it(self):
+        self.assertEqual(isa_rewrite.PYDEPS, ROOT / 'out' / 'pydeps')
+
     def test_main_without_iced_x86(self):
         saved, isa_rewrite.iced_x86 = isa_rewrite.iced_x86, None
         try:
