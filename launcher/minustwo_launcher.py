@@ -147,6 +147,27 @@ def game_version(folder):
     return f'{sfo.get("TITLE_ID", "?")} · version {sfo.get("APP_VER", "?")}'
 
 
+# The game's version with its update. Online, copies only meet copies of the same version (the match key in
+# src/runtime_np.c): 01.01 changed the game's code and data and added a kaiju a 01.00 copy cannot load.
+LATEST_GAME_VERSION = '01.01'
+
+
+def online_version_note(folder, environ=os.environ):
+    """What the Online page says about the game's version (MT_PATCH_DIR's update when one is set)."""
+    from prepare import read_sfo
+    version = None
+    for candidate in (environ.get('MT_PATCH_DIR'), folder):
+        if candidate and not version:
+            version = (read_sfo(Path(candidate) / 'sce_sys' / 'param.sfo') or {}).get('APP_VER')
+    if not version:
+        return ''
+    if version == LATEST_GAME_VERSION:
+        return f'Your game is version {version}: you meet the players who have the same version.'
+    return (f'Your game is version {version}, without the {LATEST_GAME_VERSION} update: you only meet players who '
+            f'also have {version}. Most players have {LATEST_GAME_VERSION} (it adds Godzilla 1964), and copies of '
+            'different versions cannot play each other.')
+
+
 def game_environment(values):
     """The variables run.py and the game read, from the launcher's settings."""
     env = {**os.environ, 'MT_GAME_DIR': values['game_dir'], 'MT_LANGUAGE': values['language'],
@@ -1184,6 +1205,11 @@ class Launcher:
                        style='Muted.TLabel').grid(row=page.next_row, column=0, columnspan=2, sticky='w',
                                                   pady=(self.px(6), 0))
         page.next_row += 1
+        self.online_version_var = tk.StringVar(value=online_version_note(self.values['game_dir']))
+        self.ttk.Label(page, textvariable=self.online_version_var, style='Muted.TLabel',
+                       wraplength=self.px(760)).grid(row=page.next_row, column=0, columnspan=2, sticky='w',
+                                                     pady=(self.px(6), 0))
+        page.next_row += 1
 
     def read_invite(self):
         """The Invite code field changed: a code fills in the server address and the registration key."""
@@ -1782,6 +1808,8 @@ class Launcher:
         folder = self.values['game_dir']
         problem = game_problem(folder)
         self.version_label.configure(text='' if problem else f'GODZILLA  ·  {game_version(folder)}')
+        if hasattr(self, 'online_version_var'):
+            self.online_version_var.set('' if problem else online_version_note(folder))
         self.play_button.state(['disabled'] if problem else ['!disabled'])
         self.load_art(None if problem else folder)
         self.draw_banner()

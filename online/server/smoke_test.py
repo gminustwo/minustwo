@@ -26,7 +26,8 @@ import time
 
 TITLE_ID, TITLE_NAME = "CUSA02046", "GODZILLA"
 UDP_PORT, RELAY_PORT = 31314, 31316
-MT_ONLINE_PROTOCOL = 2  # src/runtime.h: the port's online protocol, part of the match key
+MT_ONLINE_PROTOCOL = 3  # src/runtime.h: the port's online protocol, part of the match key
+GAME_VERSION = "01.01"   # the game's APP_VER with its update, also part of the match key
 MATCH_KEY_ATTR = 0x53   # src/runtime_np.c: the searchable int attribute that carries the match key
 CMD = {"login": 0, "create_account": 2, "client_version": 13, "context_start": 100, "create_room": 101,
        "join_room": 102, "leave_room": 103, "search_room": 104, "signaling_info": 105, "context_stop": 106,
@@ -98,10 +99,11 @@ def read_varint(buf, i):
             return n, i
 
 
-def match_key(group=""):
-    """runtime_np.c match_key() of a copy with exact math: FNV-1a of "minustwo-online/<protocol>/<group>", never 0."""
+def match_key(group="", version=GAME_VERSION):
+    """runtime_np.c match_key() of a copy with exact math: FNV-1a of
+    "minustwo-online/<protocol>/<game version>/<group>", never 0."""
     h = 2166136261
-    for byte in f"minustwo-online/{MT_ONLINE_PROTOCOL}/{group}".encode():
+    for byte in f"minustwo-online/{MT_ONLINE_PROTOCOL}/{version}/{group}".encode():
         h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
     return (h & 0x7FFFFFFF) | 1
 

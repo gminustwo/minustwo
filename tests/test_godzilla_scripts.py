@@ -155,6 +155,19 @@ class LauncherTest(unittest.TestCase):
         available = patches.available_patches(patches.PATCHES_DIR / 'CUSA02046.xml', '01.01')
         self.assertTrue({patch for _, patch, _, _ in self.launcher.STARTUP_PATCHES} <= available)
 
+    def test_online_page_names_the_game_version(self):
+        folder = self.dump('CUSA02046', 'GODZILLA')
+        self.assertIn('version 01.01', self.launcher.online_version_note(str(folder), {}))
+        write_sfo(folder / 'sce_sys' / 'param.sfo', {'TITLE': 'GODZILLA', 'TITLE_ID': 'CUSA02046', 'APP_VER': '01.00'})
+        note = self.launcher.online_version_note(str(folder), {})
+        self.assertIn('without the 01.01 update', note)
+        # an update folder given to run.py is the version that plays
+        update = Path(self.data.name) / 'update'
+        (update / 'sce_sys').mkdir(parents=True)
+        write_sfo(update / 'sce_sys' / 'param.sfo', {'TITLE_ID': 'CUSA02046', 'APP_VER': '01.01'})
+        self.assertIn('version 01.01', self.launcher.online_version_note(str(folder), {'MT_PATCH_DIR': str(update)}))
+        self.assertEqual(self.launcher.online_version_note('', {}), '')
+
     def test_invite_code_round_trip(self):
         code = self.launcher.invite_code(' 34.66.199.179 ', 'iRdoanGTXagROw1SAK4u')
         self.assertEqual(code, 'minustwo:34.66.199.179/iRdoanGTXagROw1SAK4u')

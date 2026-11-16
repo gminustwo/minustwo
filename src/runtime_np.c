@@ -1397,25 +1397,37 @@ static M2SearchRoomResponse *search_response_from(const uint8_t *reply, uint32_t
 }
 
 /* The match key: rooms carry it in the last searchable int attribute, which GODZILLA leaves free (it
- * uses 0x4C and 0x4D), and searches filter on it. It hashes the online protocol and the match group
- * (MT_SHADNET_GROUP, empty for the public pool), so copies that could not play together, and players
- * in different groups (friends, or a set of gameplay mods), never meet. */
+ * uses 0x4C and 0x4D), and searches filter on it. It hashes the online protocol, the game's version and
+ * the match group (MT_SHADNET_GROUP, empty for the public pool), so copies that could not play
+ * together, and players in different groups (friends, or a set of gameplay mods), never meet. */
 enum { MATCH_KEY_ATTR = 0x53 };
 /* Copies in an online match each compute the whole fight, so they must compute it alike: without exact
  * math (runtime_np_set_exact_math) a copy gets its own key, "<protocol>-inexact". */
 static int exact_math;
 void runtime_np_set_exact_math(int exact) { exact_math = exact; }
+/* The same goes for the game itself: 01.01 changed the game's code and data and added kaiju 8,
+ * Godzilla (1964), whose data (ch08a_00.pac) a 01.00 copy does not have. */
+static char game_version[16];
+void runtime_np_set_game_version(const char *version) {
+    snprintf(game_version, sizeof(game_version), "%s", version ? version : "");
+}
+/* The version every player with the game's update has. */
+#define LATEST_GAME_VERSION "01.01"
 static uint32_t match_key(void) {
     static uint32_t key;
     if (!key) {
-        char text[160];
+        char text[192];
         const char *group = getenv("MT_SHADNET_GROUP");
-        snprintf(text, sizeof(text), "minustwo-online/%d%s/%s", MT_ONLINE_PROTOCOL, exact_math ? "" : "-inexact",
-                 group ? group : "");
+        snprintf(text, sizeof(text), "minustwo-online/%d%s/%s/%s", MT_ONLINE_PROTOCOL, exact_math ? "" : "-inexact",
+                 game_version, group ? group : "");
         uint32_t h = 2166136261u; /* FNV-1a */
         for (const char *p = text; *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
         key = (h & 0x7FFFFFFF) | 1; /* never 0, which a proto field would leave out */
-        printf("Online: match group '%s' (protocol %d)\n", group && *group ? group : "public", MT_ONLINE_PROTOCOL);
+        printf("Online: match group '%s' (protocol %d, game version %s)\n", group && *group ? group : "public",
+               MT_ONLINE_PROTOCOL, *game_version ? game_version : "unknown");
+        if (strcmp(game_version, LATEST_GAME_VERSION))
+            printf("Online: this game is not version " LATEST_GAME_VERSION " (the update): matched only with copies "
+                   "of the same version, as copies of different versions cannot play together\n");
         if (!exact_math)
             printf("Online: exact math is off (see the ISA lines at the start): matched only with copies where it "
                    "is off too\n");

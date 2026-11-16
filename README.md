@@ -115,7 +115,8 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
 - The PS4 system font (SST) is replaced by Windows' Segoe UI and Japanese fonts; set `MT_SYSTEM_FONT` to other font
   files (separated by `;`) if you prefer.
 - Online VS Mode needs a shadNet server (see [online/README.md](online/README.md)); without one the game sees a
-  console that is not signed in to PSN, as before.
+  console that is not signed in to PSN, as before. Players only meet players with the same game version: get the
+  01.01 update, which most players have (a 01.00 copy only meets 01.00 copies).
 - Only the US release (CUSA02046) has been tested: version 01.01, and 01.00 for the startup options and cheats.
 
 ## Playing

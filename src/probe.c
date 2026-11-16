@@ -961,6 +961,12 @@ int main(int argc, char **argv) {
         printf("ISA: exact reciprocals for online play unavailable (no rewrite table)\n");
     }
     runtime_np_set_exact_math(exact_recip);
+    {
+        char sfo[4096], version[16]="";
+        snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+        sfo_value(sfo,"APP_VER",version,sizeof(version),NULL);
+        runtime_np_set_game_version(version);
+    }
     runtime_set_report_hook(loader_report_hook);
     protect(traps, round_page((import_count + 1) * 32), 5);
     protect(image, round_page(size), 0);

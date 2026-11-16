@@ -88,7 +88,8 @@ The key in it is what lets them create an account, so send it only to people you
 - `src/runtime_np.c`: NpMatching2 calls become shadNet commands, sent from a job thread; the room the
   player is in is mirrored from replies and room events, and the existing builders lay it out in the
   PS4 structures. A match key (searchable int attribute 0x53, which GODZILLA leaves free) carries the
-  online protocol (`MT_ONLINE_PROTOCOL`) and the match group: rooms carry it, searches filter on it,
+  online protocol (`MT_ONLINE_PROTOCOL`), the game's version (APP_VER of the folder the game runs,
+  with its update) and the match group: rooms carry it, searches filter on it,
   and the game never sees it. When the connection to the server is lost, the server has taken the
   player out of the room: the game hears its room destroyed by a connection error and the other
   players' signaling goes dead, as when the direct link to a host closes. The next request signs in
@@ -162,8 +163,13 @@ server. Losing an opponent or the server has not been tried with the game yet.
 - Relayed matches (strict NAT on both sides) add the round trip to the relay: with one relay, players
   far from it feel it. Direct matches are unaffected. Relays in more regions are a later step.
 - Every player runs this port: PS4 players and shadPS4 users are not matched.
-- Players need builds with the same online protocol (`MT_ONLINE_PROTOCOL`, 2 since exact math): older
-  copies do not find newer ones' rooms.
-- Every player needs the game's 1.01 update (a game folder that includes it, or `MT_PATCH_DIR`).
-  Nothing compares game versions, so a 1.00 copy finds 1.01 rooms, and in a 3-player match it crashes
-  loading the stage the update added (`ch08a_00.pac`).
+- Players need builds with the same online protocol (`MT_ONLINE_PROTOCOL`, 3 since the game version is in
+  the match key): older copies do not find newer ones' rooms.
+- Players only meet players with the same game version: everyone with the 1.01 update (a game folder
+  that includes it, or `MT_PATCH_DIR`) plays together, and a 1.00 copy only finds 1.00 rooms. Copies of
+  different versions cannot play each other, and no setting can change that: each copy computes the
+  whole fight, and 1.01 changed the game's code and its gameplay data (`game_*.pac`, `system.pac`) and
+  added kaiju 8, Godzilla (1964), whose data (`ch08a_00.pac`) a 1.00 copy does not have (before the
+  version was in the match key, a 1.00 copy that joined a 1.01 3-player room crashed loading it). The launcher's
+  Online page says which version the game folder is, and the log says it when VS Mode opens
+  (`Online: match group ... game version 01.01`).
