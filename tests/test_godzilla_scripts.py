@@ -155,6 +155,27 @@ class LauncherTest(unittest.TestCase):
         available = patches.available_patches(patches.PATCHES_DIR / 'CUSA02046.xml', '01.01')
         self.assertTrue({patch for _, patch, _, _ in self.launcher.STARTUP_PATCHES} <= available)
 
+    def test_invite_code_round_trip(self):
+        code = self.launcher.invite_code(' 34.66.199.179 ', 'iRdoanGTXagROw1SAK4u')
+        self.assertEqual(code, 'minustwo:34.66.199.179/iRdoanGTXagROw1SAK4u')
+        self.assertEqual(self.launcher.parse_invite(code), ('34.66.199.179', 'iRdoanGTXagROw1SAK4u'))
+        # a server anyone may join: no key; a port; a name instead of an address
+        self.assertEqual(self.launcher.invite_code('play.example.net:4000'), 'minustwo:play.example.net:4000')
+        self.assertEqual(self.launcher.parse_invite('minustwo:play.example.net:4000'), ('play.example.net:4000', ''))
+        self.assertEqual(self.launcher.invite_code('  ', 'key'), '')
+
+    def test_invite_code_survives_what_chat_apps_add(self):
+        expected = ('34.66.199.179', 'abc123')
+        for pasted in ('  minustwo:34.66.199.179/abc123\n', '`minustwo:34.66.199.179/abc123`',
+                       '"minustwo:34.66.199.179/abc123"', '<minustwo://34.66.199.179/abc123>',
+                       'MinusTwo:34.66.199.179/abc123'):
+            self.assertEqual(self.launcher.parse_invite(pasted), expected, pasted)
+
+    def test_not_an_invite_code(self):
+        for text in ('', '34.66.199.179', 'https://example.net/x', 'minustwo:', 'minustwo:/key',
+                     'minustwo:bad host/key', 'minustwo:host:port/key', 'minustwo:host/key with spaces'):
+            self.assertIsNone(self.launcher.parse_invite(text), text)
+
     def test_settings_with_a_byte_order_mark_load(self):
         self.launcher.SETTINGS.write_text(json.dumps({'game_dir': 'D:/G'}), encoding='utf-8-sig')
         self.assertEqual(self.launcher.load_settings()['game_dir'], 'D:/G')

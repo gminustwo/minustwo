@@ -67,7 +67,26 @@ Repeat steps 1 and 3 (`sudo docker rm -f shadnet` first). Accounts and leaderboa
 
 By default anyone can create an account. To keep the server invite-only, set
 `RegistrationSecretKey=...` in `shadnet.cfg` inside the data volume and restart the container (`sudo docker restart shadnet`);
-players then enter that key as the Registration key on the launcher's Online page.
+players then enter that key as the Registration key on the launcher's Online page. The server writes every
+setting into that file on its first start, the key empty: change that line rather than adding a second one.
+After a restart the server may refuse to start for about 30 seconds (its lock on `worlds.cfg` looks taken),
+then it comes up by itself.
+
+The launcher's **Copy invite code** (Online page, with the address and key filled in) makes one line for
+players to paste into **Invite code**, which fills in both.
+
+## Checking the server
+
+From your PC, with Python:
+
+```bash
+python smoke_test.py <address> --key <registration key> --accounts smoketest-accounts.json
+```
+
+Two test players go through Random VS Play's matchmaking: sign-in, a VS room with the port's match key,
+the search that finds it, joining it, the host hearing the join, the peer address lookup, and the relay.
+`--accounts` keeps two test accounts (`smoketest-host`, `smoketest-join`) with random passwords in that
+file and signs in to them again on every run; leave out `--key` on a server without one.
 
 ## Upkeep
 

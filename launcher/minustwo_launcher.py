@@ -176,6 +176,33 @@ def game_environment(values):
     return env
 
 
+# An invite to a shadNet server, one line for a chat message: "minustwo:host[:port]/registration key" (without
+# "/key" for a server anyone may join). The Online page reads it into the server address and registration key.
+INVITE_PREFIX = 'minustwo:'
+
+
+def invite_code(server, secret=''):
+    """The invite code for a server address and its registration key; '' without an address."""
+    server, secret = server.strip(), secret.strip()
+    if not server:
+        return ''
+    return f'{INVITE_PREFIX}{server}/{secret}' if secret else f'{INVITE_PREFIX}{server}'
+
+
+def parse_invite(text):
+    """(server address, registration key) from an invite code, or None when `text` is not one. What chat apps
+    put around a pasted line is ignored: spaces, quotes, `code` marks, <angle brackets>, and minustwo:// for
+    minustwo:."""
+    code = text.strip().strip('`\'"<> \t\r\n')
+    if not code[:len(INVITE_PREFIX)].lower() == INVITE_PREFIX:
+        return None
+    rest = code[len(INVITE_PREFIX):]
+    server, _, secret = (rest[2:] if rest.startswith('//') else rest).partition('/')
+    if not re.fullmatch(r'[A-Za-z0-9.\-]+(:\d{1,5})?', server) or any(c.isspace() for c in secret):
+        return None
+    return server, secret
+
+
 def load_json(path, default):
     try:
         value = json.loads(Path(path).read_text(encoding='utf-8-sig'))
@@ -1112,6 +1139,16 @@ class Launcher:
         tk = self.tk
         page = self.page('online', 'Online', 'VS Mode against other players, through a community server.')
         self.section(page, 'Server')
+        # An invite code pasted here fills in the server address and the registration key (parse_invite).
+        self.invite_var = tk.StringVar()
+        self.row(page, 'Invite code', self.ttk.Entry(page, textvariable=self.invite_var, width=34),
+                 'Got an invite code (minustwo:…) from a server\'s host? Paste it here: it fills in the server '
+                 'address and the registration key.')
+        self.invite_status = tk.StringVar()
+        self.ttk.Label(page, textvariable=self.invite_status).grid(row=page.next_row, column=1, sticky='w',
+                                                                   pady=(0, self.px(6)))
+        page.next_row += 1
+        self.invite_var.trace_add('write', lambda *_: self.read_invite())
         self.online_server_var = tk.StringVar(value=self.values.get('online_server', ''))
         self.row(page, 'Server address', self.ttk.Entry(page, textvariable=self.online_server_var, width=34),
                  'The community server everyone plays on, as name or address, with :port when it is not 31313. '
@@ -1131,6 +1168,13 @@ class Launcher:
         self.online_secret_var = tk.StringVar(value=self.values.get('online_secret', ''))
         self.row(page, 'Registration key', self.ttk.Entry(page, textvariable=self.online_secret_var, width=20),
                  'Only for a private server whose host gave you one, to create your account.')
+        self.row(page, 'Invite friends', self.ttk.Button(page, text='Copy invite code', command=self.copy_invite),
+                 'Copies an invite code with the server address and registration key above, to paste in a message '
+                 'to friends. Send it only to people you want on the server.')
+        self.copy_status = tk.StringVar()
+        self.ttk.Label(page, textvariable=self.copy_status).grid(row=page.next_row, column=1, sticky='w',
+                                                                 pady=(0, self.px(6)))
+        page.next_row += 1
         self.section(page, 'Matches')
         self.online_group_var = tk.StringVar(value=self.values.get('online_group', ''))
         self.row(page, 'Match group', self.ttk.Entry(page, textvariable=self.online_group_var, width=20),
@@ -1140,6 +1184,31 @@ class Launcher:
                        style='Muted.TLabel').grid(row=page.next_row, column=0, columnspan=2, sticky='w',
                                                   pady=(self.px(6), 0))
         page.next_row += 1
+
+    def read_invite(self):
+        """The Invite code field changed: a code fills in the server address and the registration key."""
+        text = self.invite_var.get()
+        if not text.strip():
+            return
+        invite = parse_invite(text)
+        if not invite:
+            self.invite_status.set('That is not an invite code: one starts with minustwo:')
+            return
+        server, secret = invite
+        self.online_server_var.set(server)
+        self.online_secret_var.set(secret)
+        self.invite_status.set(f'Filled in: server {server}' + (', with its registration key.' if secret else '.')
+                               + ' Now your player name and password, then Save.')
+        self.invite_var.set('')
+
+    def copy_invite(self):
+        code = invite_code(self.online_server_var.get(), self.online_secret_var.get())
+        if not code:
+            self.copy_status.set('Enter the server address first.')
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(code)
+        self.copy_status.set(f'Copied: {code}')
 
     def build_controls(self):
         tk, ttk = self.tk, self.ttk

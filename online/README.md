@@ -18,6 +18,7 @@ On the launcher's **Online** page:
 
 | Field | Meaning |
 |---|---|
+| Invite code | Paste the one line a server's host sent you (`minustwo:…`): it fills in the server address and the registration key |
 | Server address | The server everyone plays on (`host` or `host:port`, port 31313 by default) |
 | Player name, Password | The account, also the name other players see (3-16 letters, digits, `-`, `_`) |
 | Email (first time only) | With it, the first sign-in creates the account when the name is free |
@@ -46,13 +47,20 @@ docker compose up -d --build
 python smoke_test.py
 ```
 
-The smoke test registers two throwaway accounts and checks sign-in, room creation, search and the
-peer address lookup. The compose file also starts `relay.py` (Python standard library only), which
+The smoke test takes two test players through Random VS Play's matchmaking: sign-in, a VS room with
+the match key, the search that finds it (and not with another group's key), joining, the room event,
+the peer address lookup and the relay. For a server people use, see `server/DEPLOY.md` (Checking the
+server): `--key` and `--accounts`. The compose file also starts `relay.py` (Python standard library only), which
 carries the matches of players who cannot reach each other directly. Players need TCP 31313 and
 UDP 31314 and 31316. On a Linux cloud machine run it with host
 networking (the server must see players' real addresses): `server/DEPLOY.md` walks through Google
 Cloud's free e2-micro. Leaderboard boards are created with default settings by their first score;
 `scoreboards.cfg` can set their rank limits and sort orders.
+
+To invite players, fill in your server's address and registration key on the Online page and click
+**Copy invite code**: it copies one line, `minustwo:<address>/<registration key>` (just
+`minustwo:<address>` for a server without a key), to send them. They paste it into **Invite code**.
+The key in it is what lets them create an account, so send it only to people you want on the server.
 
 ## Settings (environment)
 

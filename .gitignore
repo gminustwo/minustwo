@@ -22,6 +22,8 @@ perf.data
 /docs/route_run.log
 mods.json
 patches.json
+# the launcher's settings when run from the repository: they hold the online password
+/settings.json
 gamecontrollerdb.txt
 !launcher/minustwo.png
 /.vscode
