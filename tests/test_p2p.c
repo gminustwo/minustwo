@@ -277,6 +277,17 @@ int main(void) {
 
     /* member 3 stayed up all along: its probes were answered */
     assert(load(&downs[3]) == 0 && p2p_member_established(3));
+
+    /* a new room, without leaving this one (GODZILLA searches again when the host leaves as the match
+     * loads): member ids repeat, so member 2, gone in the last room, is a newcomer here and is reached */
+    fake_answer_as(2);
+    p2p_room_joined(0x5678, 1);
+    p2p_member(2, "carol", 0, 0);
+    announce_fake(2);
+    assert(wait_for(&ups[2], 2, 3000));
+    assert(p2p_member_established(2));
+    /* and the last room's members are not carried over */
+    assert(!p2p_member_established(3));
     puts("p2p-test: ok");
     return 0;
 }

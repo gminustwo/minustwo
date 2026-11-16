@@ -132,6 +132,10 @@ What GODZILLA needed beyond a plain shadNet client:
 - A copy that closes its last P2P socket tells the others, whose games then see the signaling
   connection go dead, as on a PS4 after a match.
 - Socket addresses carry the P2P virtual port in network byte order.
+- Joining a room starts P2P without the last room's players. When the host leaves as the match
+  loads, GODZILLA searches again without leaving the room it was in, and member ids repeat from room
+  to room (17, 34, 51 in join order): a player marked gone there was taken for the newcomer with its
+  id, never probed, and the next 3-player match timed out.
 
 ## Tested
 
@@ -140,13 +144,15 @@ registration, Random VS Play for 2 players, the lobby in either ready order, mat
 screen and back, the leaderboard screen. The relay was tested on its own over the internet (two
 players' packets passed both ways, a third party refused). Between a Windows PC (AMD Ryzen) and a Mac
 (Apple silicon), before exact math: matches drifted apart (one copy ended the match while the other
-still showed both players with health). Not tested yet: a full match through the relay, 3-player
-rooms, Friend VS Play.
+still showed both players with health). With exact math, a 3-player match between a Steam Deck, a
+Windows PC and a Mac on one home network (all on GODZILLA 1.01, the Deck hosting) played through to
+the end. Not tested yet: a full match through the relay, Friend VS Play.
 
 Unit tests (`ninja -C out/gpu shadnet-test p2p-test np-shadnet-test` on Windows and macOS,
 `build.sh --test` on Linux): the client against a scripted server (a server that closes the
 connection or stops answering, signing in again, a refused sign-in), P2P against a scripted player
-(keep-alive, a player going silent, the Rudp receive limits) and the matchmaking side of a lost
+(keep-alive, a player going silent, the Rudp receive limits, a player gone in the last room joining
+the next one with the same member id) and the matchmaking side of a lost
 server. Losing an opponent or the server has not been tried with the game yet.
 
 ## Limits
@@ -158,3 +164,6 @@ server. Losing an opponent or the server has not been tried with the game yet.
 - Every player runs this port: PS4 players and shadPS4 users are not matched.
 - Players need builds with the same online protocol (`MT_ONLINE_PROTOCOL`, 2 since exact math): older
   copies do not find newer ones' rooms.
+- Every player needs the game's 1.01 update (a game folder that includes it, or `MT_PATCH_DIR`).
+  Nothing compares game versions, so a 1.00 copy finds 1.01 rooms, and in a 3-player match it crashes
+  loading the stage the update added (`ch08a_00.pac`).

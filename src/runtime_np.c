@@ -1628,11 +1628,17 @@ static void p2p_enter_room(void) {
     pthread_mutex_lock(&m2_lock);
     uint64_t id = room.room_id;
     uint16_t me = my_member;
-    for (int i = 0; i < M2_MAX_MEMBERS; ++i)
-        if (room.members[i].used && room.members[i].member_id != me) others[count++] = room.members[i];
     pthread_mutex_unlock(&m2_lock);
     if (!id) return;
+    /* P2P enters the room (dropping the last room's members) before the members are read: one whose join
+     * event the reader thread hands to P2P meanwhile is then either in the list below or added after the
+     * drop, never dropped. */
     p2p_room_joined(id, me);
+    pthread_mutex_lock(&m2_lock);
+    if (room.room_id == id)
+        for (int i = 0; i < M2_MAX_MEMBERS; ++i)
+            if (room.members[i].used && room.members[i].member_id != me) others[count++] = room.members[i];
+    pthread_mutex_unlock(&m2_lock);
     for (int i = 0; i < count; ++i) p2p_member(others[i].member_id, others[i].np_id.handle.data, others[i].ip, others[i].port);
 }
 

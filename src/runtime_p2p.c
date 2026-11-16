@@ -707,6 +707,12 @@ static void announce(void) {
 
 void p2p_room_joined(uint64_t room, uint16_t member) {
     pthread_mutex_lock(&lock);
+    /* A new room starts without the last one's members, also when the game never left that room (its host
+     * left as the match loaded, and GODZILLA searched again without LeaveRoom). Member ids repeat from room
+     * to room (17, 34, 51 in join order), so a member marked gone there would be taken for the newcomer
+     * with its id here, and a gone member is never probed or reported established. */
+    if (room != room_id)
+        for (int i = 0; i < MAX_PEERS; ++i) peers[i].used = 0;
     room_id = room;
     my_member = member;
     pthread_mutex_unlock(&lock);
