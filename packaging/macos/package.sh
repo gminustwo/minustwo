@@ -9,7 +9,7 @@
 # and dylibs/ (SDL3, FFmpeg, FreeType, the Vulkan loader, KosmicKrisp). Saves, settings and the prepared
 # game go to ~/Library/Application Support/MinusTwo. Run after `bash build.sh`. Freezing uses a
 # python.org Python 3 with Tk (MACPYTHON overrides) and a private venv in out/pyenv-macos with
-# PyInstaller and Pillow. The apps are signed ad hoc: they open on this Mac; a downloaded copy needs
+# PyInstaller, Pillow and iced-x86. The apps are signed ad hoc: they open on this Mac; a downloaded copy needs
 # right-click > Open (no Developer ID, no notarization).
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
@@ -30,11 +30,10 @@ fi
 venv=out/pyenv-macos
 [[ -x $venv/bin/python ]] || "$python" -m venv "$venv"
 "$venv/bin/python" -m pip install -q --disable-pip-version-check pyinstaller pillow
-# iced_x86 serves the ISA rewrite (a CPU without AVX); Rosetta 2 runs AVX, so it is optional here.
-hidden=()
-if "$venv/bin/python" -m pip install -q --disable-pip-version-check iced-x86==1.21.0 2>/dev/null; then
-    hidden+=(--hidden-import iced_x86)
-fi
+# iced_x86 serves the ISA rewrite: online play rewrites the game's reciprocal estimates to exact math,
+# which Rosetta 2 and PC CPUs would otherwise compute differently (online/README.md). Required.
+"$venv/bin/python" -m pip install -q --disable-pip-version-check iced-x86==1.21.0
+hidden=(--hidden-import iced_x86)
 # The scripts run inside the launcher executable (--script): the standard modules they import come
 # along. PIL._tkinter_finder: Pillow's pictures in Tk (key art, trophy icons).
 for module in argparse base64 collections hashlib json re shutil socket struct tempfile threading uuid \

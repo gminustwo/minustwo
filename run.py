@@ -63,12 +63,19 @@ def parse_cpu_features(output):
     return []
 
 
+def online_configured(env):
+    """Online play through a shadNet server (MT_SHADNET_SERVER) or the direct connection (MT_ONLINE=1)."""
+    return bool(env.get('MT_SHADNET_SERVER', '').strip()) or env.get('MT_ONLINE', '').startswith('1')
+
+
 def isa_rewrite_wanted(missing, env):
-    """MT_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
+    """MT_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides, and online
+    play wants it too: its reciprocal estimates are rewritten to exact math (src/probe.c), so the copies in
+    a match compute the fight alike."""
     policy = env.get('MT_ISA_REWRITE')
     if policy in ('0', '1'):
         return policy == '1'
-    return bool(missing)
+    return bool(missing) or online_configured(env)
 
 
 def run_script(name, *args, capture=False, check=True):
@@ -235,6 +242,10 @@ def main():
             print(output, end='', flush=True)
             if code == 0:
                 isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
+            elif online_configured(env):
+                print('Online: without the rewrite table this copy only meets copies without it; install '
+                      'iced-x86 for the Python that runs the launcher: python3 -m pip install iced-x86==1.21.0',
+                      flush=True)
         run_script('content_profile.py', game, '--out', out, '--sku', env.get('MT_CONTENT_SKU', 'full'))
 
         from patches import game_profile_for, patch_requirements, patch_status, selected_patches

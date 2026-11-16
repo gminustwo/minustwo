@@ -77,6 +77,7 @@ The key in it is what lets them create an account, so send it only to people you
 | `MT_SHADNET_RELAY_PORT` | the relay's UDP port on the server (31316) |
 | `MT_P2P_FORCE_RELAY=1` | send every match through the relay (testing) |
 | `MT_ONLINE_DEBUG=1` | detailed log: room data, events handed to the game, first Rudp traffic |
+| `MT_ISA_REWRITE=0` | no instruction rewrite, so no exact math either (testing: such a copy only meets its like) |
 
 ## How it works
 
@@ -107,6 +108,15 @@ The key in it is what lets them create an account, so send it only to people you
   uses; a receiver keeps at most 256 messages ahead of the next one it expects and 1024 the game has
   not read yet, and anything beyond waits for the sender's resend.
 - `src/runtime_score.c`: NpScore (leaderboards) through shadNet's score commands.
+- Exact math (`scripts/isa_rewrite.py`, `src/isa_rewrite.c`): each copy in a match computes the whole
+  fight from both players' input, so both must compute it alike. The game normalizes its vectors with
+  reciprocal estimates (`vrsqrtps`, 538 places, and `vrcpps`, 106), whose last bits differ between CPU
+  makers and under Rosetta 2: every PS4 has the same CPU, but a Ryzen and a Mac drift apart until one
+  copy ends the match while the other still shows both players' health. With a server set (or
+  `MT_ONLINE=1`), the loader rewrites each one to the exact value (square root and division, correctly
+  rounded on every CPU) for the whole session, offline modes included. A copy that cannot (no
+  `iced-x86` for the launcher's Python, or a changed game) says so in its log and gets its own match
+  key, so it only meets copies like it.
 
 What GODZILLA needed beyond a plain shadNet client:
 
@@ -127,8 +137,10 @@ What GODZILLA needed beyond a plain shadNet client:
 Two copies on one PC, against a local server and against a Google Cloud e2-micro: sign-in and
 registration, Random VS Play for 2 players, the lobby in either ready order, matches to the result
 screen and back, the leaderboard screen. The relay was tested on its own over the internet (two
-players' packets passed both ways, a third party refused). Not tested yet: a full match through the
-relay, 3-player rooms, Friend VS Play.
+players' packets passed both ways, a third party refused). Between a Windows PC (AMD Ryzen) and a Mac
+(Apple silicon), before exact math: matches drifted apart (one copy ended the match while the other
+still showed both players with health). Not tested yet: a full match through the relay, 3-player
+rooms, Friend VS Play.
 
 Unit tests (`ninja -C out/gpu shadnet-test p2p-test np-shadnet-test` on Windows and macOS,
 `build.sh --test` on Linux): the client against a scripted server (a server that closes the
@@ -143,3 +155,5 @@ server. Losing an opponent or the server has not been tried with the game yet.
 - Relayed matches (strict NAT on both sides) add the round trip to the relay: with one relay, players
   far from it feel it. Direct matches are unaffected. Relays in more regions are a later step.
 - Every player runs this port: PS4 players and shadPS4 users are not matched.
+- Players need builds with the same online protocol (`MT_ONLINE_PROTOCOL`, 2 since exact math): older
+  copies do not find newer ones' rooms.

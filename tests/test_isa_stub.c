@@ -2,6 +2,7 @@
 #define _GNU_SOURCE   /* MAP_ANONYMOUS and REG_RIP under -std=c11 */
 #include <assert.h>
 #include <immintrin.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,33 @@ static const uint8_t S5_CODE[] = {0xf3, 0x0f, 0xbd, 0xc7, 0x90, 0x90, 0x90, 0x90
 /* andn eax, ecx, edx */
 static const uint8_t ANDN_CODE[] = {0xc4, 0xe2, 0x70, 0xf2, 0xc2};
 enum { ANDN_AT = 0x0e0 };
+
+/* Reciprocal snippets: rdi points at the input floats, rsi at the output.
+ * R1: mov qword [rsp-8], 0x5a5a5a5a ; mov [rsp-128], rdi ; vmovups ymm15, [rdi+64] ; vmovups ymm1, [rdi+32] ;
+ *     vmovups xmm0, [rdi] ; stc ; vrsqrtps xmm1, xmm0 ; vmovups [rsi], ymm1 ; vmovups [rsi+32], ymm15 ;
+ *     sbb rax, rax ; mov rdx, [rsp-8] ; mov [rsi+64], rdx ; mov rdx, [rsp-128] ; mov [rsi+72], rdx ; vzeroupper ; ret
+ *     -> site at +29 (4 bytes) + relocated vmovups: the result with a zeroed upper half, the scratch register
+ *        (ymm15), both ends of the red zone and CF kept */
+static const uint8_t R1_CODE[] = {0x48, 0xc7, 0x44, 0x24, 0xf8, 0x5a, 0x5a, 0x5a, 0x5a, 0x48, 0x89, 0x7c, 0x24, 0x80,
+                                  0xc5, 0x7c, 0x10, 0x7f, 0x40, 0xc5, 0xfc, 0x10, 0x4f, 0x20, 0xc5, 0xf8, 0x10, 0x07,
+                                  0xf9, 0xc5, 0xf8, 0x52, 0xc8, 0xc5, 0xfc, 0x11, 0x0e, 0xc5, 0x7c, 0x11, 0x7e, 0x20,
+                                  0x48, 0x19, 0xc0, 0x48, 0x8b, 0x54, 0x24, 0xf8, 0x48, 0x89, 0x56, 0x40, 0x48, 0x8b,
+                                  0x54, 0x24, 0x80, 0x48, 0x89, 0x56, 0x48, 0xc5, 0xf8, 0x77, 0xc3};
+/* R2: vmovups xmm0, [rdi] ; vrcpps xmm2, xmm0 ; vaddps xmm2, xmm2, [rip+K] ; vmovups [rsi], xmm2 ; ret
+ *     -> site at +4 (4 bytes) + relocated RIP-relative vaddps (disp32 at +12, aimed at HALVES by main) */
+static uint8_t R2_CODE[] = {0xc5, 0xf8, 0x10, 0x07, 0xc5, 0xf8, 0x53, 0xd0, 0xc5, 0xe8, 0x58, 0x15,
+                            0x00, 0x00, 0x00, 0x00, 0xc5, 0xf8, 0x11, 0x16, 0xc3};
+/* R3: vmovups ymm8, [rdi] ; vrsqrtps ymm9, ymm8 ; vmovups [rsi], ymm9 ; vzeroupper ; ret -> 5-byte site at +4 */
+static const uint8_t R3_CODE[] = {0xc5, 0x7c, 0x10, 0x07, 0xc4, 0x41, 0x7c, 0x52, 0xc8, 0xc5, 0x7c, 0x11, 0x0e,
+                                  0xc5, 0xf8, 0x77, 0xc3};
+/* R4: vmovups ymm3, [rdi] ; vrcpps ymm3, ymm3 ; vmovups [rsi], ymm3 ; vzeroupper ; ret -> site at +4 (4 bytes), in place */
+static const uint8_t R4_CODE[] = {0xc5, 0xfc, 0x10, 0x1f, 0xc5, 0xfc, 0x53, 0xdb, 0xc5, 0xfc, 0x11, 0x1e,
+                                  0xc5, 0xf8, 0x77, 0xc3};
+/* R5: vmovups ymm14, [rdi+64] ; vmovups xmm15, [rdi] ; vrsqrtps xmm15, xmm15 ; vmovups [rsi], xmm15 ;
+ *     vmovups [rsi+32], ymm14 ; vzeroupper ; ret -> 5-byte site at +9; xmm15 is taken, the scratch is ymm14 */
+static const uint8_t R5_CODE[] = {0xc5, 0x7c, 0x10, 0x77, 0x40, 0xc5, 0x78, 0x10, 0x3f, 0xc4, 0x41, 0x78, 0x52,
+                                  0xff, 0xc5, 0x78, 0x11, 0x3e, 0xc5, 0x7c, 0x11, 0x76, 0x20, 0xc5, 0xf8, 0x77, 0xc3};
+enum { R1 = 0x200, R2 = 0x280, R3 = 0x300, R4 = 0x340, R5 = 0x380, HALVES = 0x400 };
 
 static unsigned char *region, *image, *stubs;
 static unsigned char pristine[PAGE];
@@ -402,6 +430,138 @@ static void test_relocated_next_changed(void) {
     assert(t->hits[1] == 1);
 }
 
+/* ---- reciprocal sites: exact values from the stubs ---- */
+
+typedef uint64_t (ABI *Recip)(const float *in, float *out);
+
+static float exact_rsqrt(float x) {
+    volatile float v = x;   /* computed at run time by sqrtss and divss, as the stub does */
+    return 1.0f / _mm_cvtss_f32(_mm_sqrt_ss(_mm_set_ss(v)));
+}
+
+static float exact_rcp(float x) {
+    volatile float v = x;
+    return 1.0f / v;
+}
+
+static int same_float(float a, float b) {
+    uint32_t x, y;
+    memcpy(&x, &a, 4);
+    memcpy(&y, &b, 4);
+    return x == y || (a != a && b != b);
+}
+
+static IsaSite recip_site(uint64_t offset, uint8_t length, uint8_t kind, uint8_t mode, uint8_t width, uint8_t dst,
+                          uint8_t src) {
+    IsaSite s = site_at(offset, length, kind, mode, dst, src);
+    s.width = width;
+    return s;
+}
+
+static IsaSite relocating(IsaSite s, uint8_t length, uint8_t disp_at) {
+    s.relocated_length = length;
+    s.relocated_disp_at = disp_at;
+    memcpy(s.relocated, pristine + s.offset + s.length, length);
+    return s;
+}
+
+/* R1-R5 sites, ascending. */
+static IsaTable *recip_table(void) {
+    IsaSite sites[5];
+    sites[0] = relocating(recip_site(R1 + 29, 4, ISA_VRSQRTPS, ISA_MODE_JMP_RELOCATE, 16, 1, 0), 4, 0);
+    sites[1] = relocating(recip_site(R2 + 4, 4, ISA_VRCPPS, ISA_MODE_JMP_RELOCATE, 16, 2, 0), 8, 4);
+    sites[2] = recip_site(R3 + 4, 5, ISA_VRSQRTPS, ISA_MODE_JMP, 32, 9, 8);
+    sites[3] = relocating(recip_site(R4 + 4, 4, ISA_VRCPPS, ISA_MODE_JMP_RELOCATE, 32, 3, 3), 4, 0);
+    sites[4] = recip_site(R5 + 9, 5, ISA_VRSQRTPS, ISA_MODE_JMP, 16, 15, 15);
+    return table_of(sites, 5);
+}
+
+static float recip_inputs[2][8] = {{4.0f, 2.0f, 0.25f, 3.0f, 1e-3f, 12345.678f, 3.4e38f, 1.2e-38f},
+                                   {0.0f, -0.0f, -1.0f, INFINITY, 1e-40f, NAN, 7.0f, 0.1f}};
+
+static void test_recip_exact_values(void) {
+    reset_region();
+    IsaTable *t = recip_table();
+    IsaReport r = isa_rewrite_apply(t, image, stubs, CPU_SET_EXACT_RECIP);
+    assert(r.rewritten == 5 && r.jmp == 2 && r.relocated == 3 && r.int3 == 0 && r.skipped == 0);
+    static const uint8_t prologue[] = {0x48, 0x8d, 0xa4, 0x24, 0x60, 0xff, 0xff, 0xff};   /* lea rsp,[rsp-0xa0] */
+    assert(memcmp(stubs, prologue, sizeof prologue) == 0);
+    assert(image[R1 + 29] == 0xe9 && image[R1 + 34] == 0x90 && image[R3 + 4] == 0xe9);
+    int differs_from_estimate = 0;
+    for (int set = 0; set < 2; set++) {
+        const float *x = recip_inputs[set];
+        float in[24], out[24];
+        memcpy(in, x, 32);
+        for (int i = 8; i < 24; i++) in[i] = (float)(i * 3 + 1);   /* ymm1's old upper half, then the scratch's pattern */
+
+        memset(out, 0xee, sizeof out);
+        uint64_t carry = ((Recip)(void *)(image + R1))(in, out);
+        float estimate[4];
+        _mm_storeu_ps(estimate, _mm_rsqrt_ps(_mm_loadu_ps(x)));
+        for (int i = 0; i < 4; i++) {
+            assert(same_float(out[i], exact_rsqrt(x[i])));
+            differs_from_estimate |= !same_float(out[i], estimate[i]);
+        }
+        uint32_t upper[4];
+        memcpy(upper, out + 4, sizeof upper);
+        assert(upper[0] == 0 && upper[1] == 0 && upper[2] == 0 && upper[3] == 0);   /* VEX.128 zeroes it */
+        assert(memcmp(out + 8, in + 16, 32) == 0);                                  /* ymm15, the scratch */
+        uint64_t top, bottom;
+        memcpy(&top, out + 16, 8);
+        memcpy(&bottom, out + 18, 8);
+        assert(carry == ~0ull && top == 0x5a5a5a5a && bottom == (uint64_t)(uintptr_t)in);
+
+        memset(out, 0, sizeof out);
+        ((Recip)(void *)(image + R2))(in, out);
+        for (int i = 0; i < 4; i++) assert(same_float(out[i], exact_rcp(x[i]) + 0.5f));   /* the moved RIP load */
+
+        memset(out, 0, sizeof out);
+        ((Recip)(void *)(image + R3))(in, out);
+        for (int i = 0; i < 8; i++) assert(same_float(out[i], exact_rsqrt(x[i])));
+
+        memset(out, 0, sizeof out);
+        ((Recip)(void *)(image + R4))(in, out);
+        for (int i = 0; i < 8; i++) assert(same_float(out[i], exact_rcp(x[i])));
+
+        memset(out, 0, sizeof out);
+        ((Recip)(void *)(image + R5))(in, out);
+        for (int i = 0; i < 4; i++) assert(same_float(out[i], exact_rsqrt(x[i])));
+        assert(memcmp(out + 8, in + 16, 32) == 0);                                  /* ymm14, the scratch */
+    }
+    assert(differs_from_estimate);   /* the stub ran, not the estimate */
+}
+
+static void test_recip_only_with_its_set(void) {
+    reset_region();
+    IsaTable *t = recip_table();
+    IsaReport r = isa_rewrite_apply(t, image, stubs, CPU_SET_MOVBE | CPU_SET_BMI1 | CPU_SET_LZCNT | CPU_SET_F16C);
+    assert(r.rewritten == 0 && r.skipped == 0);
+    assert(memcmp(image, pristine, PAGE) == 0);
+    assert(isa_site_set(&t->sites[0]) == CPU_SET_EXACT_RECIP && strcmp(isa_kind_name(ISA_VRCPPS), "vrcpps") == 0);
+}
+
+/* A changed instruction after a reciprocal site: no int3 to fall back to, the estimate stays. */
+static void test_recip_next_changed_is_skipped(void) {
+    reset_region();
+    image[R1 + 33 + 3] = 0x16;   /* vmovups [rsi], ymm1 -> vmovups [rsi], ymm2 */
+    IsaTable *t = recip_table();
+    IsaReport r = isa_rewrite_apply(t, image, stubs, CPU_SET_EXACT_RECIP);
+    assert(r.rewritten == 4 && r.skipped == 1 && r.int3 == 0);
+    assert(memcmp(image + R1, pristine + R1, 33) == 0 && t->sites[0].mode == ISA_MODE_JMP_RELOCATE);
+}
+
+/* An unsupported reciprocal site keeps its estimate and counts as skipped; it never blocks the others. */
+static void test_recip_unsupported_never_blocks(void) {
+    reset_region();
+    IsaSite sites[2];
+    sites[0] = site_at(S1 + 0x0b, 5, ISA_BLSR, ISA_MODE_JMP, 1, 1);
+    sites[1] = recip_site(R1 + 29, 4, ISA_VRSQRTPS, ISA_MODE_UNSUPPORTED, 16, 1, 0);
+    IsaTable *t = table_of(sites, 2);
+    IsaReport r = isa_rewrite_apply(t, image, stubs, 0xffffffffu);
+    assert(r.unsupported_needed == 0 && r.rewritten == 1 && r.skipped == 1);
+    assert(memcmp(image + R1, pristine + R1, sizeof R1_CODE) == 0);
+}
+
 /* A copy of the fixture, `size` bytes long, with byte `at` set to `value`, must not load. */
 static void expect_rejected(const unsigned char *fixture, long size, long at, unsigned char value) {
     const char *dir = getenv("TMPDIR");
@@ -417,8 +577,8 @@ static void expect_rejected(const unsigned char *fixture, long size, long at, un
     remove(path);
 }
 
-enum { RECORD0 = 64, RECORD1 = 128, R_LENGTH = 8, R_WIDTH = 10, R_MODE = 11, R_DST = 12, R_MEM_SLOT = 15,
-       R_BASE = 16, R_SCALE = 18 };
+enum { RECORD0 = 64, RECORD1 = 128, R_LENGTH = 8, R_KIND = 9, R_WIDTH = 10, R_MODE = 11, R_DST = 12, R_MEM_SLOT = 15,
+       R_BASE = 16, R_SCALE = 18, R_DISP_AT = 20 };
 
 /* Last: each rejection prints one "ISA: ..." line on stderr. */
 static void test_table_load_rejects(const char *path) {
@@ -440,6 +600,11 @@ static void test_table_load_rejects(const char *path) {
     expect_rejected(fixture, size, RECORD0 + R_WIDTH, 8);                  /* width 8 */
     expect_rejected(fixture, size, RECORD1 + R_SCALE, 3);                  /* scale 3 */
     expect_rejected(fixture, size, RECORD0 + R_MODE, ISA_MODE_INT3);       /* 5-byte int3 */
+    expect_rejected(fixture, size, RECORD1 + R_KIND, ISA_VRSQRTPS);        /* reciprocal with a memory operand */
+    expect_rejected(fixture, size, RECORD1 + R_KIND, ISA_VRCPPS);
+    expect_rejected(fixture, size, RECORD0 + R_KIND, ISA_VRCPPS + 1);      /* unknown kind */
+    expect_rejected(fixture, size, RECORD0 + R_DISP_AT, 1);                /* displacement without relocation */
+    expect_rejected(fixture, size, RECORD1 + R_DISP_AT, 1);                /* past the 1-byte relocated nop */
 }
 
 int main(int argc, char **argv) {
@@ -463,6 +628,15 @@ int main(int argc, char **argv) {
     memcpy(pristine + S4, S4_CODE, sizeof S4_CODE);
     memcpy(pristine + S5, S5_CODE, sizeof S5_CODE);
     memcpy(pristine + ANDN_AT, ANDN_CODE, sizeof ANDN_CODE);
+    int32_t halves_disp = HALVES - (R2 + 16);   /* the vaddps ends at +16 */
+    memcpy(R2_CODE + 12, &halves_disp, 4);
+    memcpy(pristine + R1, R1_CODE, sizeof R1_CODE);
+    memcpy(pristine + R2, R2_CODE, sizeof R2_CODE);
+    memcpy(pristine + R3, R3_CODE, sizeof R3_CODE);
+    memcpy(pristine + R4, R4_CODE, sizeof R4_CODE);
+    memcpy(pristine + R5, R5_CODE, sizeof R5_CODE);
+    const float halves[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    memcpy(pristine + HALVES, halves, sizeof halves);
     test_jmp_site();
     test_relocated_site();
     test_adjacent_sites();
@@ -478,6 +652,10 @@ int main(int argc, char **argv) {
     test_site_of_stub();
     test_report_top_sites();
     test_relocated_next_changed();
+    test_recip_exact_values();
+    test_recip_only_with_its_set();
+    test_recip_next_changed_is_skipped();
+    test_recip_unsupported_never_blocks();
     test_table_load_rejects(argv[1]);
     puts("isa-stub-test ok");
     return 0;

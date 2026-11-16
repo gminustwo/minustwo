@@ -118,7 +118,7 @@ void ABI isa_emulate(const IsaSite *site, IsaRegs *regs) {
         result = source & (source - 1) & mask;
         flags = zf_sf(site, result) | (source == 0 ? ISA_CF : 0);
         break;
-    default:   /* F16C sites are never applied */
+    default:   /* F16C sites are never applied; reciprocal sites compute in their stubs */
         return;
     }
     write_dst(site, regs, result);

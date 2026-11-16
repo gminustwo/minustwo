@@ -22,6 +22,12 @@ class RunIsaTests(unittest.TestCase):
     def test_rewrite_disabled(self):
         self.assertFalse(run.isa_rewrite_wanted(['MOVBE', 'BMI1'], {'MT_ISA_REWRITE': '0'}))
 
+    def test_online_play_wants_the_rewrite(self):
+        self.assertTrue(run.isa_rewrite_wanted([], {'MT_SHADNET_SERVER': '203.0.113.5'}))
+        self.assertTrue(run.isa_rewrite_wanted([], {'MT_ONLINE': '1'}))
+        self.assertFalse(run.isa_rewrite_wanted([], {'MT_SHADNET_SERVER': ' ', 'MT_ONLINE': '0'}))
+        self.assertFalse(run.isa_rewrite_wanted([], {'MT_SHADNET_SERVER': '203.0.113.5', 'MT_ISA_REWRITE': '0'}))
+
     def test_prepare_stops_when_the_folder_has_no_eboot(self):
         with tempfile.TemporaryDirectory() as folder:
             env = {'MT_GAME_DIR': folder, 'MT_DATA_DIR': folder}

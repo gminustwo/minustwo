@@ -9,13 +9,18 @@
 #define ABI __attribute__((sysv_abi))
 #endif
 
-enum { ISA_MOVBE_LOAD = 1, ISA_MOVBE_STORE, ISA_LZCNT, ISA_TZCNT, ISA_ANDN, ISA_BEXTR, ISA_BLSI, ISA_BLSMSK, ISA_BLSR, ISA_VCVTPH2PS, ISA_VCVTPS2PH };
+/* ISA_VRSQRTPS and ISA_VRCPPS (register forms; their width is the vector's size in bytes, 16 for xmm or
+ * 32 for ymm) are not emulated here: their stubs compute the exact value inline (isa_rewrite.c), and they
+ * never become int3 sites. Every other kind's width is its operand size in bits. */
+enum { ISA_MOVBE_LOAD = 1, ISA_MOVBE_STORE, ISA_LZCNT, ISA_TZCNT, ISA_ANDN, ISA_BEXTR, ISA_BLSI, ISA_BLSMSK, ISA_BLSR, ISA_VCVTPH2PS, ISA_VCVTPS2PH,
+       ISA_VRSQRTPS, ISA_VRCPPS };
 enum { ISA_MODE_JMP = 0, ISA_MODE_JMP_RELOCATE, ISA_MODE_INT3, ISA_MODE_UNSUPPORTED };
 enum { ISA_NO_REG = 0xff, ISA_MEM_NONE = 0, ISA_MEM_DST = 1, ISA_MEM_SRC = 2, ISA_MEM_RIP_RELATIVE = 1 };
 typedef struct {                       /* one G3ISA1 record (spec 4.4), as stored in the file */
     uint64_t offset;
     uint8_t length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, mem_flags;
-    uint8_t reserved[4];
+    uint8_t relocated_disp_at;         /* JMP_RELOCATE: offset of a RIP-relative disp32 in relocated, 0 = none */
+    uint8_t reserved[3];
     int64_t disp;
     uint8_t original[15];
     uint8_t relocated_length;

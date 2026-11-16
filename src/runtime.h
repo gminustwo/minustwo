@@ -107,8 +107,12 @@ int shadnet_request_raw(uint16_t command, const void *prefix, uint32_t prefix_si
 uintptr_t runtime_score_resolve(const char *name); /* NpScore leaderboards through shadNet (runtime_score.c) */
 
 /* The port's online protocol: copies that differ never match each other (runtime_np.c's match key) and
- * ignore each other's P2P datagrams (runtime_p2p.c). Raise it with any incompatible change. */
-#define MT_ONLINE_PROTOCOL 1
+ * ignore each other's P2P datagrams (runtime_p2p.c). Raise it with any incompatible change.
+ * 2: the reciprocal estimates are rewritten to exact math (probe.c), so copies on different CPUs agree. */
+#define MT_ONLINE_PROTOCOL 2
+/* probe.c, before the game starts: 1 when every reciprocal estimate was rewritten to exact math. A copy
+ * without it is only matched with copies without it (their fights could drift apart from the others'). */
+void runtime_np_set_exact_math(int exact);
 
 /* P2P sockets and Rudp between copies of the port (runtime_p2p.c), with shadNet. */
 uintptr_t runtime_p2p_resolve(const char *name);

@@ -72,6 +72,67 @@ class ScanSegmentTests(unittest.TestCase):
         self.assertEqual(isa_rewrite.scan_segment(MOV_FS + RET, 0), [])
 
 
+VRSQRTPS_X1_X0 = bytes.fromhex('c5f852c8')         # vrsqrtps xmm1, xmm0       (4)
+VRCPPS_X2_X0 = bytes.fromhex('c5f853d0')           # vrcpps xmm2, xmm0         (4)
+VRSQRTPS_Y9_Y8 = bytes.fromhex('c4417c52c8')       # vrsqrtps ymm9, ymm8       (5)
+VRSQRTPS_MEM = bytes.fromhex('c5f85208')           # vrsqrtps xmm1, [rax]      (4): not a site
+USE_X1 = bytes.fromhex('c5f059d1')                 # vmulps xmm2, xmm1, xmm1
+USE_X2 = bytes.fromhex('c5e859d2')                 # vmulps xmm2, xmm2, xmm2
+STORE_Y9 = bytes.fromhex('c57c110e')               # vmovups [rsi], ymm9
+MOVAPS_RIP = bytes.fromhex('c5f8282d10000000')     # vmovaps xmm5, [rip+0x10]  (8, disp32 at 4)
+OTHER = bytes.fromhex('c5d859dd')                  # vmulps xmm3, xmm4, xmm5: names neither xmm1 nor xmm2
+CODE = NOP * isa_rewrite.CODE_AFTER + RET          # enough code after a site
+
+
+@unittest.skipUnless(isa_rewrite.iced_x86, 'pip install iced-x86')
+class ReciprocalScanTests(unittest.TestCase):
+    def test_vrsqrtps_relocates_the_next_instruction(self):
+        s, = isa_rewrite.scan_segment(VRSQRTPS_X1_X0 + USE_X1 + CODE, 0x1000)
+        self.assertEqual((s.offset, s.length, s.kind, s.width, s.mode), (0x1000, 4, isa_rewrite.KIND_VRSQRTPS, 16, isa_rewrite.MODE_JMP_RELOCATE))
+        self.assertEqual((s.dst, s.src1, s.mem_slot, s.relocated, s.relocated_disp_at), (1, 0, 0, USE_X1, 0))
+        self.assertEqual(isa_rewrite.SET_OF_KIND[s.kind], 'RECIP')
+
+    def test_a_rip_relative_next_instruction_moves_with_its_displacement_marked(self):
+        s, = isa_rewrite.scan_segment(VRCPPS_X2_X0 + MOVAPS_RIP + USE_X2 + CODE, 0)
+        self.assertEqual((s.kind, s.mode, s.relocated, s.relocated_disp_at), (isa_rewrite.KIND_VRCPPS, isa_rewrite.MODE_JMP_RELOCATE, MOVAPS_RIP, 4))
+
+    def test_five_byte_ymm_site_is_a_jmp(self):
+        s, = isa_rewrite.scan_segment(VRSQRTPS_Y9_Y8 + STORE_Y9 + CODE, 0)
+        self.assertEqual((s.length, s.width, s.mode, s.dst, s.src1), (5, 32, isa_rewrite.MODE_JMP, 9, 8))
+        record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', [s]), 64)   # the width fits a byte
+        self.assertEqual(record[3], 32)
+
+    def test_no_room_for_the_jump_is_unsupported_never_int3(self):
+        s, = isa_rewrite.scan_segment(VRSQRTPS_X1_X0 + bytes.fromhex('eb00') + USE_X1 + CODE, 0)   # jmp next
+        self.assertEqual(s.mode, isa_rewrite.MODE_UNSUPPORTED)
+
+    def test_memory_form_is_not_a_site(self):
+        self.assertEqual(isa_rewrite.scan_segment(VRSQRTPS_MEM + USE_X1 + CODE, 0), [])
+
+    def test_data_that_decodes_as_a_site_is_left_alone(self):
+        for code, why in ((b'\xff\xff' + VRSQRTPS_X1_X0 + USE_X1 + CODE, 'invalid before'),
+                          (VRSQRTPS_X1_X0 + USE_X1 + b'\xfa' + CODE, 'cli after'),
+                          (VRSQRTPS_X1_X0 + OTHER + CODE, 'result never used'),
+                          (VRSQRTPS_X1_X0 + USE_X1 + RET, 'segment ends')):
+            self.assertEqual(isa_rewrite.scan_segment(code, 0), [], why)
+
+    def test_a_late_first_use_still_counts(self):
+        code = VRSQRTPS_X1_X0 + NOP * (isa_rewrite.USED_WITHIN - 1) + USE_X1 + CODE
+        self.assertEqual(len(isa_rewrite.scan_segment(code, 0)), 1)
+        code = VRSQRTPS_X1_X0 + NOP * isa_rewrite.USED_WITHIN + USE_X1 + CODE
+        self.assertEqual(isa_rewrite.scan_segment(code, 0), [])
+
+    def test_record_carries_the_displacement_offset(self):
+        sites = isa_rewrite.scan_segment(VRCPPS_X2_X0 + MOVAPS_RIP + USE_X2 + CODE, 0)
+        record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', sites), 64)
+        self.assertEqual((record[2], record[3], record[13], record[16], record[17][:8]), (isa_rewrite.KIND_VRCPPS, 16, 4, 8, MOVAPS_RIP))
+
+    def test_summary_counts_reciprocals(self):
+        sites = isa_rewrite.scan_segment(VRSQRTPS_Y9_Y8 + STORE_Y9 + CODE, 0)
+        self.assertEqual(isa_rewrite.summary(sites),
+                         'ISA: 1 sites (MOVBE 0, BMI1 0, LZCNT 0, F16C 0, RECIP 1); 0 relocated, 0 int3, 0 unsupported')
+
+
 def boot_linked(segments):
     """Fake G3PROBE5 as link_modules.py writes it: (code, size, flags) segments laid out from address 0,
     no modules, bindings, names or relocations."""
@@ -128,16 +189,16 @@ class TableTests(unittest.TestCase):
         magic, size, sha, count, unsupported = isa_rewrite.HEADER.unpack_from(table, 0)
         self.assertEqual((magic, size, sha, count, unsupported), (b'G3ISA1\0\0', len(image), hashlib.sha256(image).digest(), 2, 0))
         self.assertEqual(len(table), 64 + 2 * 64)
-        offset, length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, flags, disp, original, rl, relocated = \
-            isa_rewrite.RECORD.unpack_from(table, 64 + 64)
-        self.assertEqual((offset, length, kind, mode, mem_slot, base, rl, relocated[:rl]),
-                         (0x2005, 4, isa_rewrite.KIND_MOVBE_STORE, isa_rewrite.MODE_JMP_RELOCATE, 1, 0, 1, NOP))
+        offset, length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, flags, disp_at, disp, original, rl, \
+            relocated = isa_rewrite.RECORD.unpack_from(table, 64 + 64)
+        self.assertEqual((offset, length, kind, mode, mem_slot, base, disp_at, rl, relocated[:rl]),
+                         (0x2005, 4, isa_rewrite.KIND_MOVBE_STORE, isa_rewrite.MODE_JMP_RELOCATE, 1, 0, 0, 1, NOP))
         self.assertEqual(original[:length], MOVBE_STORE)
 
     def test_encode_table_keeps_negative_displacement(self):
         sites = isa_rewrite.scan_segment(bytes.fromhex('0f38f048f8') + RET, 0)   # movbe ecx, [rax-8]
         record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', sites), 64)
-        self.assertEqual(record[13], -8)
+        self.assertEqual(record[14], -8)
 
     def test_encode_table_sorts_records_by_offset(self):
         late, early = isa_rewrite.scan_segment(BLSR_ECX, 0x2000) + isa_rewrite.scan_segment(BLSR_ECX, 0x1000)
@@ -148,7 +209,7 @@ class TableTests(unittest.TestCase):
     def test_summary_line(self):
         sites = isa_rewrite.scan_segment(BLSR_ECX + MOVBE_STORE + NOP + bytes.fromhex('c4e2791310') + RET, 0)
         self.assertEqual(isa_rewrite.summary(sites),
-                         'ISA: 3 sites (MOVBE 1, BMI1 1, LZCNT 0, F16C 1); 1 relocated, 0 int3, 1 unsupported')
+                         'ISA: 3 sites (MOVBE 1, BMI1 1, LZCNT 0, F16C 1, RECIP 0); 1 relocated, 0 int3, 1 unsupported')
 
     def test_main_writes_table_for_executable_segments_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,7 +217,7 @@ class TableTests(unittest.TestCase):
             boot.write_bytes(boot_linked([(BLSR_ECX + RET, 0x1000, 5), (b'', 0x1000, 5), (BLSR_ECX, 0x1000, 6)]))
             code, out = run_main([str(boot), '--out', tmp])
             self.assertEqual(code, 0)
-            self.assertEqual(out, 'ISA: 1 sites (MOVBE 0, BMI1 1, LZCNT 0, F16C 0); 0 relocated, 0 int3, 0 unsupported\n')
+            self.assertEqual(out, 'ISA: 1 sites (MOVBE 0, BMI1 1, LZCNT 0, F16C 0, RECIP 0); 0 relocated, 0 int3, 0 unsupported\n')
             table = (Path(tmp) / 'isa-rewrite.bin').read_bytes()
             image = isa_rewrite.read_boot_linked(boot.read_bytes())[1]
             self.assertEqual(table, isa_rewrite.encode_table(image, isa_rewrite.scan_segment(BLSR_ECX + RET, 0)))

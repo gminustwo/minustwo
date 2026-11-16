@@ -67,16 +67,26 @@ static uint32_t read_u32(const unsigned char *p) {
 
 static int register_valid(uint8_t reg) { return reg <= 15 || reg == ISA_NO_REG; }
 
+static int is_recip(uint8_t kind) { return kind == ISA_VRSQRTPS || kind == ISA_VRCPPS; }
+
 /* Field ranges of spec 4.4, plus what the patch writes: a 5-byte jmp needs a 5-byte site (mode 0)
  * or a relocated instruction (mode 1), an int3 site is 4 bytes, and every write stays inside the image.
  * The writer stores scale 0 without a memory operand, else iced's scale (1 when there is no index). */
 static int record_valid(const IsaSite *s, uint64_t image_size) {
     if (s->length < 4 || s->length > 15 || s->relocated_length > 15) return 0;
-    if (s->kind < ISA_MOVBE_LOAD || s->kind > ISA_VCVTPS2PH || s->mode > ISA_MODE_UNSUPPORTED) return 0;
+    if (s->kind < ISA_MOVBE_LOAD || s->kind > ISA_VRCPPS || s->mode > ISA_MODE_UNSUPPORTED) return 0;
     if (!register_valid(s->dst) || !register_valid(s->src1) || !register_valid(s->src2) || !register_valid(s->base) ||
         !register_valid(s->index) || s->mem_slot > ISA_MEM_SRC)
         return 0;
     if (s->kind <= ISA_BLSR && s->width != 16 && s->width != 32 && s->width != 64) return 0;
+    /* Reciprocal sites: two vector registers, no memory operand, and never an int3 (the trap emulates
+     * general registers only). */
+    if (is_recip(s->kind) && ((s->width != 16 && s->width != 32) || s->dst > 15 || s->src1 > 15 ||
+                              s->mem_slot != ISA_MEM_NONE || s->mode == ISA_MODE_INT3))
+        return 0;
+    if (s->relocated_disp_at &&
+        (s->mode != ISA_MODE_JMP_RELOCATE || s->relocated_length < 4 || s->relocated_disp_at > s->relocated_length - 4))
+        return 0;
     if (s->scale != 1 && s->scale != 2 && s->scale != 4 && s->scale != 8 && !(s->scale == 0 && s->index == ISA_NO_REG))
         return 0;
     if (s->mode == ISA_MODE_JMP && s->length < JMP_BYTES) return 0;
@@ -146,6 +156,7 @@ unsigned isa_site_set(const IsaSite *s) {
     case ISA_LZCNT: return CPU_SET_LZCNT;
     case ISA_TZCNT: case ISA_ANDN: case ISA_BEXTR: case ISA_BLSI: case ISA_BLSMSK: case ISA_BLSR: return CPU_SET_BMI1;
     case ISA_VCVTPH2PS: case ISA_VCVTPS2PH: return CPU_SET_F16C;
+    case ISA_VRSQRTPS: case ISA_VRCPPS: return CPU_SET_EXACT_RECIP;
     default: return 0;
     }
 }
@@ -179,10 +190,89 @@ static int rel32_to(const unsigned char *next, const unsigned char *target, int3
     return 1;
 }
 
+/* The end of a stub: the relocated instruction (a RIP-relative one with its disp32 aimed at the same
+ * target from the stub) and the jmp back. 0 when a rel32 does not fit. */
+static int emit_tail(unsigned char **p, const unsigned char *code, const unsigned char *at, const IsaSite *s,
+                     unsigned char *image) {
+    const unsigned char *back = image + s->offset + s->length;
+    if (s->mode == ISA_MODE_JMP_RELOCATE) {
+        unsigned char *copy = *p;
+        emit_bytes(p, s->relocated, s->relocated_length);
+        back += s->relocated_length;
+        if (s->relocated_disp_at) {
+            int32_t disp, rel;
+            memcpy(&disp, s->relocated + s->relocated_disp_at, sizeof disp);
+            if (!rel32_to(at + (*p - code), back + disp, &rel)) return 0;
+            memcpy(copy + s->relocated_disp_at, &rel, sizeof rel);
+        }
+    }
+    int32_t rel;
+    if (!rel32_to(at + (*p - code) + JMP_BYTES, back, &rel)) return 0;
+    emit_u8(p, 0xe9);
+    emit_u32(p, (uint32_t)rel);
+    return 1;
+}
+
+/* A VEX instruction (3-byte form, map 0F, W0): reg, vvvv (0 when unused) and as r/m a register 0-15,
+ * [rsp] (RM_RSP) or [rip+disp32] (RM_RIP: the disp32 is written as 0 and its address returned). */
+enum { RM_RSP = 0x100, RM_RIP = 0x101 };
+static unsigned char *emit_vex(unsigned char **p, uint8_t opcode, int pp, int l, int reg, int vvvv, int rm) {
+    emit_u8(p, 0xc4);
+    emit_u8(p, (uint8_t)((reg & 8 ? 0 : 0x80) | 0x40 | (rm < 16 && (rm & 8) ? 0 : 0x20) | 0x01));
+    emit_u8(p, (uint8_t)((~vvvv & 15) << 3 | l << 2 | pp));
+    emit_u8(p, opcode);
+    if (rm < 16) {
+        emit_u8(p, (uint8_t)(0xc0 | (reg & 7) << 3 | (rm & 7)));
+        return NULL;
+    }
+    if (rm == RM_RSP) {
+        emit_u8(p, (uint8_t)(0x04 | (reg & 7) << 3));
+        emit_u8(p, 0x24);
+        return NULL;
+    }
+    emit_u8(p, (uint8_t)(0x05 | (reg & 7) << 3));
+    unsigned char *disp = *p;
+    emit_u32(p, 0);
+    return disp;
+}
+
+/* The stub of a reciprocal site: the exact value, 1/sqrt(x) (vsqrtps then vdivps) or 1/x (vdivps), in
+ * place of the estimate. Square root and division are correctly rounded on every IEEE host, so every
+ * CPU and Rosetta 2 compute the same bits. A scratch register T (xmm15, else 14 or 13) is saved whole
+ * below the red zone and restored; nothing here changes the flags. The width and the zeroed upper half
+ * of a 128-bit destination follow the VEX instruction it replaces. */
+static size_t emit_recip_stub(unsigned char *code, const unsigned char *at, const IsaSite *s, unsigned char *image) {
+    static const uint8_t lea_rsp_down[] = {0x48, 0x8d, 0xa4, 0x24, 0x60, 0xff, 0xff, 0xff}; /* lea rsp,[rsp-0xa0] */
+    static const uint8_t lea_rsp_up[] = {0x48, 0x8d, 0xa4, 0x24, 0xa0, 0x00, 0x00, 0x00};   /* lea rsp,[rsp+0xa0] */
+    const int l = s->width == 32, d = s->dst, x = s->src1;   /* width in bytes: VEX.L for ymm */
+    int t = 15;
+    while (t == d || t == x) t--;
+    unsigned char *p = code, *ones;
+    emit_bytes(&p, lea_rsp_down, sizeof lea_rsp_down);
+    emit_vex(&p, 0x7f, 2, 1, t, 0, RM_RSP);                   /* vmovdqu [rsp], ymmT */
+    if (s->kind == ISA_VRSQRTPS) {
+        emit_vex(&p, 0x51, 0, l, t, 0, x);                    /* vsqrtps T, X */
+        ones = emit_vex(&p, 0x10, 0, l, d, 0, RM_RIP);        /* vmovups D, [ones] */
+        emit_vex(&p, 0x5e, 0, l, d, d, t);                    /* vdivps D, D, T */
+    } else {
+        ones = emit_vex(&p, 0x10, 0, l, t, 0, RM_RIP);        /* vmovups T, [ones] */
+        emit_vex(&p, 0x5e, 0, l, d, t, x);                    /* vdivps D, T, X */
+    }
+    emit_vex(&p, 0x6f, 2, 1, t, 0, RM_RSP);                   /* vmovdqu ymmT, [rsp] */
+    emit_bytes(&p, lea_rsp_up, sizeof lea_rsp_up);
+    if (!emit_tail(&p, code, at, s, image)) return 0;
+    while ((p - code) % 32) emit_u8(&p, 0xcc);
+    int32_t rel = (int32_t)(p - (ones + 4));
+    memcpy(ones, &rel, sizeof rel);
+    for (int i = 0; i < 8; i++) emit_u32(&p, 0x3f800000u);   /* 1.0f */
+    return (size_t)(p - code);
+}
+
 /* Writes the stub for `s` into `code` (laid out to run at `at`). Returns its size, or 0 when the
  * jmp back is out of rel32 range. */
 static size_t emit_stub(unsigned char *code, const unsigned char *at, const IsaSite *s, uint64_t *hit,
                         unsigned char *image) {
+    if (is_recip(s->kind)) return emit_recip_stub(code, at, s, image);
     static const uint8_t lea_rsp_down[] = {0x48, 0x8d, 0xa4, 0x24, 0x00, 0xff, 0xff, 0xff};   /* lea rsp,[rsp-0x100] */
     static const uint8_t lea_rax_rsp_up[] = {0x48, 0x8d, 0x84, 0x24, 0x00, 0x01, 0x00, 0x00}; /* lea rax,[rsp+0x100] */
     static const uint8_t lea_rsp_up[] = {0x48, 0x8d, 0xa4, 0x24, 0x00, 0x01, 0x00, 0x00};     /* lea rsp,[rsp+0x100] */
@@ -209,15 +299,7 @@ static size_t emit_stub(unsigned char *code, const unsigned char *at, const IsaS
     for (int reg = 0; reg < 16; reg++)
         if (reg != 4) emit_mov_load(&p, reg, (uint8_t)(8 * reg));
     emit_bytes(&p, lea_rsp_up, sizeof lea_rsp_up);
-    const unsigned char *back = image + s->offset + s->length;
-    if (s->mode == ISA_MODE_JMP_RELOCATE) {
-        emit_bytes(&p, s->relocated, s->relocated_length);
-        back = image + s->offset + 4 + s->relocated_length;
-    }
-    int32_t rel;
-    if (!rel32_to(at + (p - code) + JMP_BYTES, back, &rel)) return 0;
-    emit_u8(&p, 0xe9);
-    emit_u32(&p, (uint32_t)rel);
+    if (!emit_tail(&p, code, at, s, image)) return 0;
     return (size_t)(p - code);
 }
 
@@ -239,15 +321,32 @@ IsaReport isa_rewrite_apply(IsaTable *t, unsigned char *image, unsigned char *st
     t->image = image;
     t->stubs = stubs;
     isa_emulate_set_image(image);
+    /* A reciprocal site left as it is only keeps the estimate: it counts as skipped, not as needed. */
     for (uint32_t i = 0; i < t->count; i++)
-        if (t->sites[i].mode == ISA_MODE_UNSUPPORTED && (isa_site_set(&t->sites[i]) & sets)) report.unsupported_needed++;
+        if (t->sites[i].mode == ISA_MODE_UNSUPPORTED && (isa_site_set(&t->sites[i]) & sets) && !is_recip(t->sites[i].kind))
+            report.unsupported_needed++;
     if (report.unsupported_needed) return report;
     for (uint32_t i = 0; i < t->count; i++) {
         const IsaSite *s = &t->sites[i];
-        if (s->mode == ISA_MODE_UNSUPPORTED || !(isa_site_set(s) & sets)) continue;
+        if (!(isa_site_set(s) & sets)) continue;
+        if (s->mode == ISA_MODE_UNSUPPORTED || (is_recip(s->kind) && s->mode == ISA_MODE_INT3)) {
+            if (is_recip(s->kind)) {
+                fprintf(stderr, "ISA: site 0x%llx %s left as it is: no room for the jump\n", (unsigned long long)s->offset,
+                        isa_kind_name(s->kind));
+                report.skipped++;
+            }
+            continue;
+        }
         unsigned char *site = image + s->offset;
         if (memcmp(site, s->original, s->length) != 0) {
             fprintf(stderr, "ISA: site 0x%llx %s skipped: bytes changed\n", (unsigned long long)s->offset,
+                    isa_kind_name(s->kind));
+            report.skipped++;
+            continue;
+        }
+        if (s->mode == ISA_MODE_JMP_RELOCATE && memcmp(site + 4, s->relocated, s->relocated_length) != 0 &&
+            is_recip(s->kind)) {
+            fprintf(stderr, "ISA: site 0x%llx %s skipped: next instruction changed\n", (unsigned long long)s->offset,
                     isa_kind_name(s->kind));
             report.skipped++;
             continue;
@@ -315,7 +414,8 @@ int isa_rewrite_site_of_stub(const IsaTable *t, uintptr_t rip) {
 
 const char *isa_kind_name(uint8_t kind) {
     static const char *const names[] = {"?",     "movbe", "movbe",  "lzcnt", "tzcnt",     "andn",
-                                        "bextr", "blsi",  "blsmsk", "blsr",  "vcvtph2ps", "vcvtps2ph"};
+                                        "bextr", "blsi",  "blsmsk", "blsr",  "vcvtph2ps", "vcvtps2ph",
+                                        "vrsqrtps", "vrcpps"};
     return kind < sizeof names / sizeof names[0] ? names[kind] : "?";
 }
 

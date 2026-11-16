@@ -680,9 +680,14 @@ int main(int argc, char **argv) {
     }
     if (!cpu_supported(missing, sizeof missing)) return 20;
     if (cpu_missing_sets) printf("CPU: missing %s\n", missing);
-    /* MT_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks. */
+    /* MT_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks, and with
+     * online play (MT_SHADNET_SERVER or MT_ONLINE=1) the reciprocal estimates: both copies in a match
+     * compute the whole fight, and the estimates differ between CPU makers and Rosetta 2. */
     const char *policy = getenv("MT_ISA_REWRITE");
     unsigned isa_sets = policy && !strcmp(policy, "1") ? 0xffffffffu : policy && !strcmp(policy, "0") ? 0 : cpu_missing_sets;
+    const char *shadnet_server = getenv("MT_SHADNET_SERVER"), *direct_online = getenv("MT_ONLINE");
+    if (((shadnet_server && *shadnet_server) || (direct_online && *direct_online == '1')) && !(policy && !strcmp(policy, "0")))
+        isa_sets |= CPU_SET_EXACT_RECIP;
     if (cpu_missing_sets && !isa_sets) {
         printf("STOP: this CPU lacks %s and the rewrite is disabled (MT_ISA_REWRITE=0)\n", missing);
         return 20;
@@ -857,8 +862,12 @@ int main(int argc, char **argv) {
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (isa_table && isa_table_matches(isa_table, image, size)) {
-        printf("STOP: this CPU lacks %s and no rewrite table matches the image\n", missing);
-        return 20;
+        if (cpu_missing_sets) {
+            printf("STOP: this CPU lacks %s and no rewrite table matches the image\n", missing);
+            return 20;
+        }
+        printf("ISA: the rewrite table does not match the image; nothing rewritten\n");
+        isa_table = NULL;
     }
     if (!cpu_only) {
         char title[128]="GODZILLA", serial[16]="UNKNOWN", sfo[4096];
@@ -929,18 +938,29 @@ int main(int argc, char **argv) {
 #elif defined(__APPLE__)
     printf("Guest TCB loads redirected to the pthread TSD slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
+    int exact_recip = 0;
     if (isa_table) {
-        IsaReport r = isa_rewrite_apply(isa_table, image, stubs, isa_sets);
+        /* The sets the CPU lacks, then the reciprocal estimates: each pass reports on its own. */
+        const IsaReport none = {0};
+        IsaReport r = isa_sets & ~CPU_SET_EXACT_RECIP ? isa_rewrite_apply(isa_table, image, stubs, isa_sets & ~CPU_SET_EXACT_RECIP) : none;
         if (r.unsupported_needed) {
             printf("STOP: this CPU lacks %s and %u sites use encodings the rewrite cannot emulate\n", missing, r.unsupported_needed);
             fflush(NULL);
             _exit(20); /* no destructors: GPU threads are running */
         }
-        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (MT_ISA_REWRITE=1), %u skipped\n", r.rewritten, r.skipped);
-        else printf("ISA: CPU lacks %s: %u sites rewritten (%u jmp, %u relocated, %u int3), %u skipped\n",
-                    missing, r.rewritten, r.jmp, r.relocated, r.int3, r.skipped);
+        IsaReport e = isa_sets & CPU_SET_EXACT_RECIP ? isa_rewrite_apply(isa_table, image, stubs, CPU_SET_EXACT_RECIP) : none;
+        exact_recip = e.skipped == 0;
+        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (MT_ISA_REWRITE=1), %u skipped\n", r.rewritten + e.rewritten, r.skipped + e.skipped);
+        else if (cpu_missing_sets) printf("ISA: CPU lacks %s: %u sites rewritten (%u jmp, %u relocated, %u int3), %u skipped\n",
+                                          missing, r.rewritten, r.jmp, r.relocated, r.int3, r.skipped);
+        if (isa_sets & CPU_SET_EXACT_RECIP)
+            printf("ISA: exact reciprocals for online play: %u sites rewritten (%u jmp, %u relocated), %u left as they are\n",
+                   e.rewritten, e.jmp, e.relocated, e.skipped);
         protect(stubs, stub_area, 5);
+    } else if (isa_sets & CPU_SET_EXACT_RECIP) {
+        printf("ISA: exact reciprocals for online play unavailable (no rewrite table)\n");
     }
+    runtime_np_set_exact_math(exact_recip);
     runtime_set_report_hook(loader_report_hook);
     protect(traps, round_page((import_count + 1) * 32), 5);
     protect(image, round_page(size), 0);
