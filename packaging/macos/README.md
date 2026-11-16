@@ -48,7 +48,10 @@ bash packaging/macos/package.sh   # dist/minustwo-macos/ (MinusTwo.app, Play Min
 ```
 
 Run it after `build.sh`. `MinusTwo.app` is the launcher, frozen with PyInstaller from a python.org Python
-with Tk, so players need no Python. Its `Contents/Resources` holds the rest of the port:
+with Tk, so players need no Python. It is x86-64 and runs under Rosetta 2 like the game: `iced-x86`, which
+online play needs, is published for x86-64 Macs only, so on Apple silicon the script starts itself again
+with `arch -x86_64` and freezes the launcher from a venv of its own (`out/pyenv-macos-x86_64`). Its
+`Contents/Resources` holds the rest of the port:
 - `run.py`, the scripts and the patches;
 - `bin/minustwo` with the KosmicKrisp manifest beside it;
 - `dylibs/` with the libraries from `out/macos-deps`, relinked to `@executable_path/../dylibs`.

@@ -3,15 +3,22 @@
 # frozen with PyInstaller so players need no Python, and Play MinusTwo.app, which starts the game with
 # the saved settings (MinusTwo --play), as MinusTwo.exe and Play MinusTwo.exe do on Windows.
 #
-# MinusTwo.app/Contents/MacOS/MinusTwo is the launcher (native: it only runs Python); everything else of
-# the port is in Contents/Resources, which the launcher takes as the port folder (port_folder()):
-# run.py, scripts/, patches/, bin/minustwo (x86-64, run by Rosetta 2) with the KosmicKrisp manifest,
+# MinusTwo.app/Contents/MacOS/MinusTwo is the launcher (x86-64, run by Rosetta 2 like the game: see
+# below); everything else of the port is in Contents/Resources, which the launcher takes as the port
+# folder (port_folder()): run.py, scripts/, patches/, bin/minustwo (x86-64) with the KosmicKrisp manifest,
 # and dylibs/ (SDL3, FFmpeg, FreeType, the Vulkan loader, KosmicKrisp). Saves, settings and the prepared
 # game go to ~/Library/Application Support/MinusTwo. Run after `bash build.sh`. Freezing uses a
-# python.org Python 3 with Tk (MACPYTHON overrides) and a private venv in out/pyenv-macos with
-# PyInstaller, Pillow and iced-x86. The apps are signed ad hoc: they open on this Mac; a downloaded copy needs
-# right-click > Open (no Developer ID, no notarization).
+# python.org Python 3 with Tk (universal2; MACPYTHON overrides) and a private venv in out/pyenv-macos-x86_64
+# with PyInstaller, Pillow and iced-x86. The apps are signed ad hoc: they open on this Mac; a downloaded copy
+# needs right-click > Open (no Developer ID, no notarization).
 set -euo pipefail
+# iced-x86, which online play needs (below), is published for x86-64 Macs only (no arm64 wheel; building
+# it needs Rust). So on Apple silicon the script starts again as x86-64: a universal binary started from
+# an x86-64 process runs as x86-64 too, so the Python, pip and PyInstaller below do, and the launcher is
+# frozen for x86-64. Under Rosetta, uname -m says x86_64, so this happens once.
+if [[ $(uname -m) == arm64 ]]; then
+    exec arch -x86_64 /bin/bash "$0" "$@"
+fi
 cd -- "$(dirname -- "$0")/../.."
 deps=out/macos-deps
 [[ -f out/minustwo && -f out/minustwo-gpu-capabilities && -f $deps/lib/libvulkan_kosmickrisp.dylib ]] ||
@@ -27,8 +34,11 @@ if [[ -z $python ]]; then
     done
 fi
 [[ -n $python ]] || { echo 'Need a Python 3 with Tk (python.org) or MACPYTHON=/path/to/python3' >&2; exit 1; }
-venv=out/pyenv-macos
+# Its own name: a venv made by an arm64 run holds arm64 Pillow, which an x86-64 launcher cannot load.
+venv=out/pyenv-macos-x86_64
 [[ -x $venv/bin/python ]] || "$python" -m venv "$venv"
+[[ $("$venv/bin/python" -c 'import platform; print(platform.machine())') == x86_64 ]] ||
+    { echo "$python does not run as x86-64: use a universal2 python.org Python (MACPYTHON=/path/to/python3)" >&2; exit 1; }
 "$venv/bin/python" -m pip install -q --disable-pip-version-check pyinstaller pillow
 # iced_x86 serves the ISA rewrite: online play rewrites the game's reciprocal estimates to exact math,
 # which Rosetta 2 and PC CPUs would otherwise compute differently (online/README.md). Required.
@@ -54,7 +64,7 @@ for size in 16 32 64 128 256; do
 done
 iconutil -c icns -o out/pyi-work-macos/MinusTwo.icns "$iconset"
 
-"$venv/bin/python" -m PyInstaller --noconfirm --clean --log-level WARN --windowed --copy-metadata pillow \
+"$venv/bin/python" -m PyInstaller --noconfirm --clean --log-level WARN --windowed --target-arch x86_64 --copy-metadata pillow \
     --name MinusTwo --icon "$PWD/out/pyi-work-macos/MinusTwo.icns" \
     --osx-bundle-identifier io.github.gminustwo.minustwo --distpath out/pyi-dist-macos \
     --workpath out/pyi-work-macos --specpath out/pyi-work-macos --paths "$PWD/scripts" "${hidden[@]}" \
