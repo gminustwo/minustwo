@@ -29,20 +29,36 @@ GAME_ROOTS = frozenset({'dvdroot_ps4', 'exec', 'dutch', 'english', 'french', 'ge
                         'polish', 'portuguese', 'russian', 'spanish'})
 # Never replaced through the overlay: executable patches go through the patch compiler.
 PROTECTED = frozenset({'eboot.bin', 'sce_module', 'sce_sys'})
+# GODZILLA keeps its data in files at the game root (ch02a_00.pac, map10.pac, ...), so a mod may hold
+# them directly, and a .pac dropped straight into the mods folder is a mod of its own. Any .pac counts,
+# even without the game folder at hand; with it, so does every other file at the game root (movies).
+GAME_FILE_SUFFIXES = ('.pac',)
 
 
 def data_roots(game=None):
-    """Allowed data folders for this game only; never learn executable/system folders (#234)."""
+    """Allowed data folders, and files at the game root, for this game only; never learn executable/system
+    folders (#234)."""
     game = Path(game) if game else None
     if not game or not game.is_dir():
         return GAME_ROOTS
     return GAME_ROOTS | {e.name.casefold() for e in game.iterdir()
-                         if e.is_dir() and e.name.casefold() not in PROTECTED}
+                         if (e.is_dir() or e.is_file()) and e.name.casefold() not in PROTECTED}
 
 
 def has_game_root(folder, roots=GAME_ROOTS):
     folder = Path(folder)
     return folder.is_dir() and any(e.is_dir() and e.name.casefold() in roots for e in folder.iterdir())
+
+
+def game_file(name, roots=GAME_ROOTS):
+    """Whether a file at a mod's top level goes to the game root: any .pac, or a file the game has there."""
+    key = name.casefold()
+    return key not in PROTECTED and (key.endswith(GAME_FILE_SUFFIXES) or key in roots)
+
+
+def has_game_files(folder, roots=GAME_ROOTS):
+    folder = Path(folder)
+    return folder.is_dir() and any(e.is_file() and game_file(e.name, roots) for e in folder.iterdir())
 
 
 def game_path(relative, flat):
@@ -60,13 +76,14 @@ def content_root(folder, roots=GAME_ROOTS):
 
     Accepted layouts: <mod>/<game folder>, <mod>/app0/<game folder> and one wrapper folder
     around either (an archive extracted into a folder of its name), where <game folder> is EXEC,
-    a language folder or dvdroot_ps4 (GAME_ROOTS)."""
+    a language folder or dvdroot_ps4 (GAME_ROOTS) or a folder of the game; and the same with the
+    game's root files (<mod>/ch02a_00.pac) in place of a folder."""
     folder = Path(folder)
     if not folder.is_dir():
         return None
     for wrapper in ('', 'app0'):
         base = child(folder, wrapper) if wrapper else folder
-        if has_game_root(base, roots):
+        if has_game_root(base, roots) or has_game_files(base, roots):
             return base, ''
     entries = [e for e in folder.iterdir() if not e.name.startswith('.')]
     folders = [e for e in entries if e.is_dir()]
@@ -85,13 +102,18 @@ FIRST_IMAGES = ('preview', 'cover', 'screenshot')
 def mod_info(folder, game=None):
     """What the launcher shows for a mod: name, author, version, description and url from an
     optional mod.json, else the folder name and the start of a readme; image is the mod's preview
-    (preview, cover or screenshot first, else any picture) or None. Only reads inside the mod."""
+    (preview, cover or screenshot first, else any picture) or None. Only reads inside the mod.
+    A mod that is one file (a .pac in the mods folder) is just its name."""
     folder = Path(folder)
-    layout = content_root(folder, data_roots(game))
-    places = list(dict.fromkeys([folder, layout[0] if layout else folder]))
     info = {'name': folder.name, 'author': '', 'version': '', 'description': '', 'url': '', 'image': None}
+    if not folder.is_dir():
+        return info
+    roots = data_roots(game)
+    layout = content_root(folder, roots)
+    places = list(dict.fromkeys([folder, layout[0] if layout else folder]))
+    # The mod's own files, not the game files it replaces (a .pac, the game's sc_logo_off.png).
     files = [e for place in places for e in sorted(place.iterdir(), key=lambda e: e.name.casefold())
-             if e.is_file() and not e.is_symlink()]
+             if e.is_file() and not e.is_symlink() and not game_file(e.name, roots)]
     meta = next((e for e in files if e.name.casefold() == 'mod.json'), None)
     try:
         fields = json.loads(meta.read_text(encoding='utf-8')) if meta else {}
@@ -185,7 +207,7 @@ def unpack_zips(root, game=None):
             target.mkdir(exist_ok=True)
             marker.write_text(stamp)
             done.append(archive_path.stem)
-            kind = 'a mod' if (content_root(target, data_roots(game)) or patch_files(target)) else 'not a mod (no EXEC, language folder, dvdroot_ps4 or patches)'
+            kind = 'a mod' if (content_root(target, data_roots(game)) or patch_files(target)) else 'not a mod (no game files, game folders or patches)'
             print(f'Mods: {archive_path.name} unpacked: {kind}', file=sys.stderr)
         except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as error:
             shutil.rmtree(target, ignore_errors=True)
@@ -214,14 +236,17 @@ def patch_files(folder):
 
 
 def discover(root, game=None):
-    """Named mods: folders of `root` with an accepted layout (content_root) or with patch files. A mod
-    dropped in as <name>.zip is unpacked first (unpack_zips)."""
+    """Named mods: folders of `root` with an accepted layout (content_root) or with patch files, and game
+    files dropped into `root` on their own (ch02a_00.pac: a mod of that name). A mod dropped in as
+    <name>.zip is unpacked first (unpack_zips)."""
     root = Path(root)
     if not root.is_dir():
         return []
     unpack_zips(root, game)
     roots = data_roots(game)
-    return sorted((p.name for p in root.iterdir() if p.is_dir() and (content_root(p, roots) or patch_files(p))),
+    return sorted((p.name for p in root.iterdir()
+                   if (p.is_dir() and (content_root(p, roots) or patch_files(p)))
+                   or (p.is_file() and not p.is_symlink() and game_file(p.name, roots))),
                   key=lambda name: (name.casefold(), name))
 
 
@@ -251,14 +276,24 @@ def enabled_patch_files(root, config, enabled=True, game=None):
 
 
 def mod_files(folder, game=None):
-    """(mod path, source) of every file a mod replaces or adds under a GAME_ROOTS folder; the
-    game path is game_path(mod path)."""
+    """(mod path, source) of every file a mod replaces or adds under a GAME_ROOTS folder or a folder of
+    the game, or at the game root (its .pac files); the game path is game_path(mod path). A mod that
+    is one game file in the mods folder replaces that file."""
     roots = data_roots(game)
+    folder = Path(folder)
+    if not folder.is_dir() and (folder.is_file() or folder.is_symlink()):
+        if folder.is_symlink():
+            raise ValueError(f'Mod links are unsupported: {folder}')
+        if not game_file(folder.name, roots):
+            raise ValueError(f'{folder.name} is not a file of the game')
+        yield Path(folder.name), folder.resolve()
+        return
     layout = content_root(folder, roots)
     if not layout:
         if patch_files(folder):
             return  # patches only
-        raise ValueError(f'{folder}: expected EXEC, a language folder or dvdroot_ps4 inside the mod folder')
+        raise ValueError(f'{folder}: expected the game\'s files (.pac) or folders (sound, dvdroot_ps4, ...) '
+                         'inside the mod folder')
     root, prefix = layout
     root = root.resolve()
     for directory, folders, files in os.walk(root, followlinks=False):
@@ -274,9 +309,10 @@ def mod_files(folder, game=None):
             relative = Path(prefix) / source.relative_to(root) if prefix else source.relative_to(root)
             # Readme/metadata stay outside the mounted game. This loader handles assets;
             # executable patches use the existing patch compiler, with address validation.
-            if relative.parts[0].casefold() not in roots:
-                if relative.parts[0].casefold() in PROTECTED:
-                    raise ValueError(f'Executable/system replacement is unsupported: {source}')
+            top = relative.parts[0].casefold()
+            if top in PROTECTED:
+                raise ValueError(f'Executable/system replacement is unsupported: {source}')
+            if not (game_file(relative.name, roots) if len(relative.parts) == 1 else top in roots):
                 continue
             if not source.is_file():
                 raise ValueError(f'Not a regular mod file: {source}')

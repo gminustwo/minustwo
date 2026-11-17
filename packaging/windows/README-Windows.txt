@@ -52,8 +52,9 @@ While playing
   being looked at.
 
 Mods and patches
-- Put each mod in its own folder (or a .zip) under mods\, holding the game's folders with the
-  files it replaces (sound\st\..., ...). Turn them on and order them on "Mods & patches" in the
+- Put mods under mods\: a .pac file as it is (mods\ch02a_00.pac), or each mod in its own folder
+  (or a .zip) holding the game files it replaces (ch02a_00.pac, sound\st\..., ...), with its
+  readme beside them if it has one. Turn them on and order them on "Mods & patches" in the
   launcher: when two mods change the same file, the lower one wins. The game files are never
   changed. A mod.json (name, author, version, description, url) and a preview picture are shown.
 - Third-party patches: shadPS4/GoldHEN XML files for GODZILLA 01.01 in patches\, chosen on the

@@ -1371,8 +1371,9 @@ class Launcher:
             box = tk.Frame(self.mods_list, bg=CARD, pady=self.px(26))
             box.pack(fill='x')
             tk.Label(box, text='No mods yet', bg=CARD, fg=TEXT, font=(self.title_face, 16)).pack()
-            tk.Label(box, text='Put each mod in its own folder, or as a .zip, in the mods folder. A mod holds the '
-                               'game\'s folders (sound, ...) with the files it replaces.', bg=CARD, fg=MUTED,
+            tk.Label(box, text='Put mods in the mods folder: a .pac file as it is, or each mod in its own folder '
+                               'or .zip, holding the game files it replaces (ch02a_00.pac, the sound folder, ...).',
+                     bg=CARD, fg=MUTED,
                      font=self.font(10), wraplength=self.px(560)).pack(pady=(self.px(4), self.px(12)))
             ttk.Button(box, text='Open mods folder', command=lambda: self.open_folder(MODS)).pack()
         for index, name in enumerate(self.mod_order):
@@ -1527,7 +1528,9 @@ class Launcher:
                      font=self.font(9), wraplength=width, justify='left').pack(anchor='w', pady=(self.px(4), 0))
         buttons = tk.Frame(panel, bg=CARD)
         buttons.pack(anchor='w', pady=(self.px(14), 0))
-        ttk.Button(buttons, text='Open mod folder', command=lambda: self.open_folder(MODS / name)).pack(side='left')
+        # A mod that is one .pac file lives in the mods folder itself.
+        folder = MODS / name if (MODS / name).is_dir() else MODS
+        ttk.Button(buttons, text='Open mod folder', command=lambda: self.open_folder(folder)).pack(side='left')
         if info['url']:
             ttk.Button(buttons, text='Website', command=lambda: open_path(info['url'])).pack(
                 side='left', padx=(self.px(6), 0))

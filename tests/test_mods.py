@@ -496,3 +496,106 @@ class ModInfo(unittest.TestCase):
         (wrapper / 'mod.json').write_text(json.dumps({'name': 'Outer Mod'}), encoding='utf-8')
         self.assertIn('Outer', mods.discover(Path(self.temp.name)))
         self.assertEqual(mods.mod_info(wrapper)['name'], 'Outer Mod')
+
+
+class RootFileMods(unittest.TestCase):
+    """GODZILLA's data are files at the game root (ch02a_00.pac): mods that are just those files."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.game = self.root / 'CUSA02046'
+        (self.game / 'sound' / 'st').mkdir(parents=True)
+        (self.game / 'sce_sys').mkdir()
+        (self.game / 'eboot.bin').write_bytes(b'original executable')
+        (self.game / 'ch02a_00.pac').write_bytes(b'original kaiju')
+        (self.game / 'map10.pac').write_bytes(b'original map')
+        (self.game / '01_op_en.mp4').write_bytes(b'original movie')
+        (self.game / 'sound' / 'st' / 'VOICE.at9').write_bytes(b'original voice')
+        self.moddir = self.root / 'mods'
+        self.moddir.mkdir()
+
+    def overlay(self, *names):
+        return mods.build_overlay(self.game, self.root / 'out', [(n, self.moddir / n) for n in names])
+
+    def test_a_pac_in_a_mod_folder_replaces_the_game_file(self):
+        mod = self.moddir / 'Hollywood Skin'
+        mod.mkdir()
+        (mod / 'ch02a_00.pac').write_bytes(b'skin')
+        (mod / 'readme.txt').write_text('A new look for Godzilla (2014).')
+        (mod / 'preview.png').write_bytes(b'img')
+        self.assertEqual(mods.discover(self.moddir, self.game), ['Hollywood Skin'])
+        self.assertEqual([p.as_posix() for p, _ in mods.mod_files(mod, self.game)], ['ch02a_00.pac'])
+        info = mods.mod_info(mod, self.game)
+        self.assertEqual((info['description'], info['image'].name), ('A new look for Godzilla (2014).', 'preview.png'))
+        result = self.overlay('Hollywood Skin')
+        self.assertEqual((result / 'ch02a_00.pac').read_bytes(), b'skin')
+        self.assertEqual((result / 'map10.pac').read_bytes(), b'original map')
+        self.assertFalse((result / 'readme.txt').exists())
+        self.assertEqual((self.game / 'ch02a_00.pac').read_bytes(), b'original kaiju')
+
+    def test_a_pac_dropped_into_the_mods_folder_is_a_mod(self):
+        (self.moddir / 'ch02a_00.pac').write_bytes(b'loose')
+        (self.moddir / 'notes.txt').write_text('not a mod')
+        for game in (self.game, None):  # the .pac is a game file even without the game folder
+            with self.subTest(game=game):
+                self.assertEqual(mods.discover(self.moddir, game), ['ch02a_00.pac'])
+        self.assertEqual(mods.mod_info(self.moddir / 'ch02a_00.pac', self.game)['name'], 'ch02a_00.pac')
+        result = self.overlay('ch02a_00.pac')
+        self.assertEqual((result / 'ch02a_00.pac').read_bytes(), b'loose')
+        self.assertEqual((self.game / 'ch02a_00.pac').read_bytes(), b'original kaiju')
+
+    def test_a_zip_with_a_pac_and_a_wrapper_folder(self):
+        with zipfile.ZipFile(self.moddir / 'Skin.zip', 'w') as archive:
+            archive.writestr('Skin v1/ch02a_00.pac', b'zipped')
+            archive.writestr('Skin v1/readme.txt', 'notes')
+        self.assertEqual(mods.discover(self.moddir, self.game), ['Skin'])
+        result = self.overlay('Skin')
+        self.assertEqual((result / 'ch02a_00.pac').read_bytes(), b'zipped')
+
+    def test_other_root_files_and_folders_of_the_game(self):
+        mod = self.moddir / 'Movie and voice'
+        (mod / 'sound' / 'st').mkdir(parents=True)
+        (mod / '01_op_en.mp4').write_bytes(b'new movie')
+        (mod / 'sound' / 'st' / 'VOICE.at9').write_bytes(b'new voice')
+        (mod / 'new_area.pac').write_bytes(b'added')
+        result = self.overlay('Movie and voice')
+        self.assertEqual((result / '01_op_en.mp4').read_bytes(), b'new movie')
+        self.assertEqual((result / 'sound' / 'st' / 'VOICE.at9').read_bytes(), b'new voice')
+        self.assertEqual((result / 'new_area.pac').read_bytes(), b'added')
+        # Without the game folder only the .pac is known as a game file; the folder still needs the game.
+        self.assertEqual([p.as_posix() for p, _ in mods.mod_files(mod)], ['new_area.pac'])
+
+    def test_executable_and_system_files_stay_refused(self):
+        (self.moddir / 'eboot.bin').write_bytes(b'patched')
+        self.assertEqual(mods.discover(self.moddir, self.game), [])
+        with self.assertRaises(ValueError):
+            list(mods.mod_files(self.moddir / 'eboot.bin', self.game))
+        mod = self.moddir / 'Exe'
+        mod.mkdir()
+        (mod / 'ch02a_00.pac').write_bytes(b'skin')
+        (mod / 'eboot.bin').write_bytes(b'patched')
+        with self.assertRaises(ValueError):
+            list(mods.mod_files(mod, self.game))
+
+    def test_conflicts_between_a_loose_pac_and_a_folder_mod(self):
+        (self.moddir / 'ch02a_00.pac').write_bytes(b'loose')
+        (self.moddir / 'Skin').mkdir()
+        (self.moddir / 'Skin' / 'CH02A_00.PAC').write_bytes(b'folder')
+        names = mods.discover(self.moddir, self.game)
+        self.assertEqual(names, ['ch02a_00.pac', 'Skin'])
+        self.assertEqual(mods.conflicts(self.moddir, names, self.game), [('ch02a_00.pac', ['ch02a_00.pac', 'Skin'])])
+        self.assertEqual((self.overlay(*names) / 'ch02a_00.pac').read_bytes(), b'folder')  # the last one wins
+
+    def test_command_line_takes_loose_pacs_beside_mod_folders(self):
+        (self.moddir / 'map10.pac').write_bytes(b'loose map')
+        (self.moddir / 'Skin').mkdir()
+        (self.moddir / 'Skin' / 'ch02a_00.pac').write_bytes(b'skin')
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/mods.py'), str(self.game), '--out',
+                                 str(self.root / 'out'), '--mods-dir', str(self.moddir)],
+                                capture_output=True, text=True, check=True)
+        view = Path(result.stdout.strip())
+        self.assertEqual((view / 'map10.pac').read_bytes(), b'loose map')
+        self.assertEqual((view / 'ch02a_00.pac').read_bytes(), b'skin')
+        self.assertIn('2 game files replaced, 0 added', result.stderr)
