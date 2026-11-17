@@ -64,6 +64,8 @@ PACKAGE_SUFFIX = {'win32': '-windows.zip', 'darwin': '-macos.zip'}.get(sys.platf
 USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
               'patches.json', 'last_run.log', 'fsr4_shaders', 'nvngx_dlss*.dll')
 TITLE_IDS = ('CUSA02046',)
+# Stage files of the base game that its 01.01 update does not hold.
+BASE_GAME_FILES = ('ch01a_00.pac', 'map10.pac')
 # The game's languages (game_en, game_fr, game_ns, game_bp) as PS4 system language ids.
 LANGUAGES = (('English', '1'), ('Français', '2'), ('Español (Latinoamérica)', '20'), ('Português (Brasil)', '17'))
 DISPLAY_MODES = (('Windowed', 'windowed'), ('Borderless', 'borderless'), ('Fullscreen', 'fullscreen'))
@@ -138,6 +140,13 @@ def game_problem(folder):
     sfo = read_sfo(folder / 'sce_sys' / 'param.sfo') or {}
     if sfo.get('TITLE_ID') not in TITLE_IDS and 'GODZILLA' not in str(sfo.get('TITLE', '')).upper():
         return f'This is {sfo.get("TITLE", "another game")} ({sfo.get("TITLE_ID", "?")}), not GODZILLA.'
+    # The 01.01 update alone has eboot.bin, sce_module, sce_sys and the menus but none of the stages:
+    # the game then runs until a stage loads and crashes there (issue #10).
+    missing = [name for name in BASE_GAME_FILES if not (folder / name).is_file()]
+    if missing:
+        return (f'{missing[0]} and other files of the base game are missing: this folder holds only part of '
+                'the game (the 01.01 update on its own has no stages). Choose a dump of the base game with the '
+                'update copied over it.')
     return None
 
 

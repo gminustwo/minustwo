@@ -11,7 +11,8 @@ Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
 
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
-> and `sce_sys` (tested: CUSA02046, versions 01.01 and 01.00). This project is not affiliated with or endorsed by
+> and `sce_sys` (tested: CUSA02046, versions 01.01 and 01.00). For 01.01, copy the update's files over the base
+> game's: the update's folder on its own has no stages. This project is not affiliated with or endorsed by
 > Toho, Bandai Namco, Natsume Atari or Sony Interactive Entertainment. GODZILLA is a trademark of Toho Co., Ltd.
 
 ## How it works
@@ -133,6 +134,12 @@ for a desktop shortcut or Steam's *Add a Non-Steam Game*.
 
 Saves, the shader cache and `user/last_run.log` are in the `user` folder next to the port; settings are in
 `settings.json` (launcher) and `minustwo.ini` (display and input, also changed by the in-game menu).
+
+**Your PS4 save**: a decrypted save works as it is (tested with a shadPS4 save, which holds the same files as one
+exported decrypted from a PS4). With the game closed, put its `SAVEDATA00` folder (the one with `DATA.BIN`) at
+`user/savedata/1/CUSA02046/SAVEDATA00`, replacing the one there. A save written by the 01.01 game needs a 01.01
+dump: the update's notes say older versions cannot use it. The port copies the saves it finds to
+`user/savedata_backups` at each start.
 
 ### Controls
 

@@ -74,7 +74,21 @@ class ProfileTest(unittest.TestCase):
             ('0x31488', 'c6 00 00 e9 7e 00 00 00'),                    # flag cleared, jmp 0x3150e
             ('0x3187e', '66 c7 83 9a 00 00 00 40 00 e9 f6 fd ff ff'),  # state 0x40, jmp 0x31682
             ('0x2c7bb', '66 0f 1f 44 00 00'),                          # no tutorial branch
+            ('0x2cae2', '66 0f 1f 44 00 00'),                          # menu unlocks without the tutorial
         ])
+
+    def test_menu_unlock_line_is_found_in_both_builds(self):
+        # The main menu's unlocks test the tutorial's clear flag first (issue #9): 01.01's bytes,
+        # then 01.00's (the same code, its save data 0x120 bytes lower).
+        import xml.etree.ElementTree as ET
+        meta = next(m for m in ET.parse(patches.PATCHES_DIR / 'CUSA02046.xml').getroot().iter('Metadata')
+                    if m.get('Name') == 'Skip tutorial')
+        line = next(line for line in meta.iter('Line') if line.get('Address') == '0x42cae2')
+        for code in ('4c 8d 35 c6 75 69 00 41 83 be 44 2f 0d 00 00 0f 84 35 01 00 00',
+                     '4c 8d 35 26 75 69 00 41 83 be 44 2f 0d 00 00 0f 84 35 01 00 00'):
+            image = bytes(0x40) + bytes.fromhex(code) + bytes(0x40)
+            self.assertEqual(patches.locate(image, line), 0x40 + 15)  # the je
+            self.assertEqual(image[0x40 + 15:0x40 + 17], b'\x0f\x84')
 
     def test_god_of_destruction_line_is_found_in_both_builds(self):
         # The save's stage flag test before the tutorial branch: 01.01's registers, then 01.00's.
@@ -115,6 +129,8 @@ class LauncherTest(unittest.TestCase):
         (folder / 'eboot.bin').write_bytes(b'x')
         (folder / 'sce_module' / 'libc.prx').write_bytes(b'x')
         write_sfo(folder / 'sce_sys' / 'param.sfo', {'TITLE': title, 'TITLE_ID': title_id, 'APP_VER': '01.01'})
+        for name in self.launcher.BASE_GAME_FILES:
+            (folder / name).write_bytes(b'x')
         return folder
 
     def test_game_option_is_the_folder_after_it(self):
@@ -130,6 +146,9 @@ class LauncherTest(unittest.TestCase):
         folder = self.dump('CUSA02046', 'GODZILLA')
         self.assertIsNone(self.launcher.game_problem(str(folder)))
         self.assertEqual(self.launcher.game_version(str(folder)), 'CUSA02046 · version 01.01')
+        (folder / 'ch01a_00.pac').unlink()  # the 01.01 update on its own (issue #10)
+        self.assertIn('ch01a_00.pac and other files of the base game are missing',
+                      self.launcher.game_problem(str(folder)))
         (folder / 'eboot.bin').unlink()
         self.assertIn('no eboot.bin', self.launcher.game_problem(str(folder)))
 

@@ -33,17 +33,24 @@
     <!-- START on a new save, and New Game, start the tutorial stage (title state 0x22,
          0x1f7d0(0, 1)); state 0x40 opens the main menu instead, as START does on a save that has
          played. The save still records that the game was started (offset 0x2c).
-         God of Destruction in the main menu (0x2c640) also starts the tutorial while no stage has
-         been played (save offset 0xd2f44, set when a stage starts); it goes to the stage map.
-         01.00 has that test in other registers: its pattern leaves them open (the ModRM bytes). -->
+         God of Destruction in the main menu (0x2c640) also starts the tutorial while the save says
+         it has not been cleared (offset 0xd2f44: the clear flag of stage 0, the tutorial, set by
+         0x164350 when a run clears it); it goes to the stage map.
+         01.00 has that test in other registers: its pattern leaves them open (the ModRM bytes).
+         The main menu's unlocks (0x2cab0) offer only God of Destruction, Diorama (with an add-on)
+         and Settings while that flag is 0, so the tutorial is never cleared and King of Kaiju, VS,
+         Evolution and Kaiju Guide stayed locked (issue #9). Without that branch, each item follows
+         its own unlock in the save (+0xd2f24..+0xd2f34) as after the tutorial. Same code in 01.00. -->
     <Metadata Title="GODZILLA" Name="Skip tutorial"
-              Note="A new game opens the main menu, and God of Destruction its first stage, without the 1954 tutorial stage."
+              Note="A new game opens the main menu, and God of Destruction its first stage, without the 1954 tutorial stage. The other modes are open as after the tutorial."
               Author="Minus Two" PatchVer="1.0" AppVer="01.01" AppElf="eboot.bin">
         <PatchList>
             <Target Name="title_next" Address="0x431682" Pattern="eb 42 ff 83 c8 06 00 00 83 bb e4 03 00 00 00 74 0a" At="8"/>
             <Line Type="bytes" Address="0x43187e" Pattern="31 ff be 01 00 00 00 e8 ?? ?? ?? ?? 66 ff 83 9a 00 00 00" At="0"
                   Value="66 c7 83 9a 00 00 00 40 00 e9 {rel:title_next:0}"/>
             <Line Type="bytes" Address="0x42c7bb" Pattern="8b ?? d0 01 00 00 8b ?? 44 2f 0d 00 09 ?? 0f 84 ?? ?? ?? ??" At="14"
+                  Value="66 0f 1f 44 00 00"/>
+            <Line Type="bytes" Address="0x42cae2" Pattern="4c 8d 35 ?? ?? ?? ?? 41 83 be 44 2f 0d 00 00 0f 84 ?? ?? ?? ??" At="15"
                   Value="66 0f 1f 44 00 00"/>
         </PatchList>
     </Metadata>
