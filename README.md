@@ -1,7 +1,7 @@
 # Minus Two
 
 [![release](https://img.shields.io/github/v/release/gminustwo/minustwo?filter=v%2A&sort=semver&display_name=tag&label=release&color=orange)](https://github.com/gminustwo/minustwo/releases/latest)
-[![downloads](https://img.shields.io/github/downloads/gminustwo/minustwo/latest/total?label=downloads&color=brightgreen)](https://github.com/gminustwo/minustwo/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/gminustwo/minustwo/total?label=downloads&color=brightgreen)](https://github.com/gminustwo/minustwo/releases)
 
 <a href="https://recomplauncher.com/game/minustwo"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
 
