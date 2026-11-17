@@ -9,6 +9,8 @@ of the frames and the loudness of what each audio port played (MT_AUDIO_DUMP).
 --press T:BUTTONS taps the buttons (space-separated pad file tokens) for 0.3 s at T seconds;
 --hold A-B:TOKENS holds them from A to B. Dialogs answer themselves (MT_AUTO_DIALOGS=1).
 Results go to --out (default out/autoplay): sheet.png, frames, run.log and audio levels.
+The game's window opens off the screens without taking the focus (MT_WINDOW_BACKGROUND=1), so it
+does not cover the user's windows; --foreground shows it.
 """
 import argparse
 import array
@@ -90,6 +92,7 @@ def main():
     p.add_argument('--hold', action='append', default=[])
     p.add_argument('--out', type=Path, default=PORT / 'out' / 'autoplay')
     p.add_argument('--env', action='append', default=[], help='extra NAME=VALUE for the game')
+    p.add_argument('--foreground', action='store_true', help='show the game window (else it stays off the screens)')
     a = p.parse_args()
     if not a.game:
         p.error('--game or MT_GAME_DIR is needed')
@@ -99,7 +102,7 @@ def main():
     write_pad(pad, '')
     env = {**os.environ, 'MT_GAME_DIR': a.game, 'MT_PAD_FILE': str(pad), 'MT_FRAME_DUMP_TRIGGER': str(trigger),
            'MT_DUMP_DIR': str(a.out), 'MT_AUTO_DIALOGS': '1', 'MT_AUDIO_DUMP': str(a.out / 'audio'),
-           'PYTHONIOENCODING': 'utf-8'}
+           'PYTHONIOENCODING': 'utf-8', 'MT_WINDOW_BACKGROUND': '0' if a.foreground else '1'}
     for item in a.env:
         name, value = item.split('=', 1)
         env[name] = value

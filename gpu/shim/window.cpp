@@ -97,6 +97,16 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height_);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_MAXIMIZED_BOOLEAN, too_large);
+    // minustwo: MT_WINDOW_BACKGROUND=1 (unattended test runs, tools/autoplay.py): the window opens
+    // far off the screens and never takes the focus, so it does not cover the user's windows. It
+    // still renders and presents (it is not minimized), so frame dumps keep working.
+    if (const char* background = std::getenv("MT_WINDOW_BACKGROUND"); background && background[0] == '1') {
+        SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+        SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, -30000);
+        SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, -30000);
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_MAXIMIZED_BOOLEAN, false);
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN, false);
+    }
 #ifdef __APPLE__
     // The renderer makes its own Metal surface on the window's layer (vk_platform.cpp).
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_METAL_BOOLEAN, true);
@@ -185,8 +195,12 @@ static std::optional<SDL_DisplayMode> RefreshFor60(SDL_DisplayID display, const 
 // stays up when it loses focus, as without the switch. Window thread only (SDL). The swapchain
 // follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
-    display_mode = mode;
+    display_mode = mode; // what the settings asked for: applied, so the event loop does not ask again
     match_refresh = MtSettings::Get().match_refresh;
+    // A window kept in the background (MT_WINDOW_BACKGROUND) stays a window off the screens.
+    if (const char* background = std::getenv("MT_WINDOW_BACKGROUND"); background && background[0] == '1') {
+        mode = MtGraphics::Windowed;
+    }
     if (mode == MtGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
         std::printf("Window: %s\n", MtGraphics::DisplayModeNames[mode]);
