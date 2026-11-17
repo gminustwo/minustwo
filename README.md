@@ -42,8 +42,12 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   limiter, and the RIFF waveform parser (`src/runtime_ngs2.c`).
 - **Rendering above 1080p**: the in-game menu's *Render resolution* (1440p, 1800p, 4K, 8K, ...) draws the whole frame,
   scene and interface, at that size on the GPU side: the game's 1080p targets get larger stand-ins, its 4x MSAA
-  interface pass included (`gpu/shadps4/video_core/renderer_vulkan/vk_scene_resolution.cpp`). A size of another shape
-  keeps the game's 16:9 picture at that height.
+  interface pass included (`gpu/shadps4/video_core/renderer_vulkan/vk_scene_resolution.cpp`). A narrower size (16:10,
+  4:3) keeps the game's 16:9 picture at that height.
+- **Ultrawide (21:9, 32:9)**: a wider *Render resolution* (2560x1080, 3440x1440, 3840x1080, 5120x1440, ...) widens the
+  game's view instead of stretching it: the cameras the game sets up, and those of its menu layouts, take the
+  screen's aspect (`src/runtime_aspect.c`), while menus, the HUD, text and movies stay 16:9 in the middle (the
+  renderer draws them there and clips the menu layouts to it; movies get black bars).
 - **Movies without stutter**: the PS4 movie player's clock followed the game's audio pulls, so frames were handed out
   one, then three display refreshes apart (shadPS4 shows the same). It now runs on a steady clock locked to the
   game's 60 Hz frame requests and waits for the sound only when the sound falls behind. Each decoded frame is

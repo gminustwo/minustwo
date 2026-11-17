@@ -342,6 +342,19 @@ private:
     /// minustwo: render scale (the render resolution, or MT_SCENE_SIZE): every eligible pass of
     /// every frame is drawn at the scene size.
     bool render_scale = false;
+    /// minustwo: the scene size is wider than 16:9 (ultrawide: src/runtime_aspect.c widens the
+    /// game's cameras with it).
+    bool ultrawide = false;
+    /// minustwo: ultrawide, and this draw is the interface (no depth, a camera's matrix in its
+    /// vertex shader's first constants): clipped to the 16:9 middle of the wide target.
+    bool interface_draw = false;
+    /// minustwo: ultrawide, and this draw is a movie's picture (BindTextures): kept 16:9 in the
+    /// middle, with black bars around it (MovieBars).
+    bool movie_draw = false;
+    /// minustwo: ultrawide, and this draw's vertex shader places it in the game's 1920x1080 pixels
+    /// (its first constants are such an orthographic matrix: menu text): the draw keeps 16:9 in
+    /// the middle of the wide target instead of stretching over it.
+    bool screen_space_draw = false;
     /// minustwo: this draw reads a multisampled scene proxy (render scale). Such reads are
     /// texel fetches at the pixel's own coordinate (an MSAA resolve), so the shader sees
     /// FragCoord in the proxy's pixels, 1:1, instead of the guest's.

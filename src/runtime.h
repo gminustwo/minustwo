@@ -164,6 +164,15 @@ void runtime_cheats_start(void);
  * sleep until the GPU writes the label. Returns the number of loops replaced. */
 enum { RUNTIME_LABEL_WAIT_STUB_AREA = 4096 };
 unsigned runtime_label_wait_install(unsigned char *image, uint64_t size, unsigned char *stubs, size_t bytes);
+/* Ultrawide screens (runtime_aspect.c): with MT_ASPECT (or MT_SCENE_SIZE) wider than 16:9, the
+ * game's camera aspects in `code` become the screen's, and its menu layouts' cameras take it through
+ * a stub written to `stubs` (within rel32 of the code). Returns the number of sites changed (0:
+ * nothing to do). */
+enum { RUNTIME_ASPECT_STUB_AREA = 4096 };
+unsigned runtime_aspect_install(unsigned char *code, uint64_t size, unsigned char *stubs, size_t bytes);
+float runtime_aspect_parse(const char *text);
+unsigned runtime_aspect_set_cameras(unsigned char *code, uint64_t size, float screen);
+int runtime_aspect_hook_layouts(unsigned char *code, uint64_t size, unsigned char *stub, size_t bytes, float screen);
 /* AjmDecMp3ParseFrame (guest layout). */
 typedef struct {
     uint64_t frame_size;

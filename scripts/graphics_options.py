@@ -15,7 +15,7 @@ RESOLUTIONS = ('native', '480p', '720p', '900p', '1440p', '1800p', '4K',
                '2560x1080', '3440x1440', '3840x1600', '5120x1440', '1920x1200', '2560x1600', '1280x800',
                '1440x900', '1360x768',
                '1280x960', '1440x1080', '1920x1440', '2048x1536', '2560x1920',
-               '5120x2160', '8K')
+               '5120x2160', '8K', '3840x1080')
 # The ultrawide, 16:10 and 4:3 sizes of the Ultrawide mod (#202), built in: beta until more screens confirm
 # them, except the ones tested in game (the maintainer's own tests and players' reports in issues #180, #505
 # and #519): 2560x1080, 1440x1080, 2048x1536, 2560x1920 and 8K are still beta.
@@ -244,8 +244,20 @@ def applied_engine_fps(names):
     return max((int(n.split(' - ')[1].split()[0]) for n in names if n.startswith(f'{FPS_PREFIX} - ')), default=60)
 
 
+def wider_than_16_9(name):
+    """Whether a render resolution is wider than 16:9 by more than 1% (21:9, 32:9; as
+    MtGraphics::WiderThan16x9): the game's view widens to it (src/runtime_aspect.c)."""
+    size = resolution_size(name)
+    return bool(size) and size[0] * 9 > size[1] * 16 + size[1] // 8
+
+
 def environment(options):
-    return {'MT_DEFERRED_READBACK': options['deferred_readback'],
+    """The game's environment for these options. MT_ASPECT=<width>x<height> for a resolution wider than
+    16:9 (the renderer draws it at its own width and the game's cameras widen with it), else empty: a
+    restart from the in-game menu must not keep the last one."""
+    resolution = options.get('render_resolution', 'native')
+    aspect = 'x'.join(map(str, resolution_size(resolution))) if wider_than_16_9(resolution) else ''
+    return {'MT_ASPECT': aspect, 'MT_DEFERRED_READBACK': options['deferred_readback'],
             'MT_STALE_READBACK': options['stale_readback'],
             'MT_ASYNC_SHADERS': options['async_shaders'],
             'MT_MONITOR': options.get('monitor', ''), 'MT_HDR': options.get('hdr', '0'),

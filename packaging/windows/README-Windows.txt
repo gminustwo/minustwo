@@ -41,7 +41,8 @@ While playing
 - Settings -> Achievements: the trophies you unlocked, and Unlock achievements (off: the game
   unlocks none and shows no notices).
 - Render resolution in that menu draws the game above 1080p, up to 4K and 8K (Apply and
-  restart).
+  restart). Ultrawide sizes (21:9 such as 3440x1440, 32:9 such as 5120x1440 or 3840x1080)
+  widen the game's view; menus, the HUD and movies stay 16:9 in the middle.
 - Match refresh rate (on by default): in Borderless and Fullscreen, a display whose refresh
   rate is not a multiple of 60 (144 Hz) runs at 120 Hz while the game runs, so every frame
   lasts the same; the game's frame clock then follows the display's own.

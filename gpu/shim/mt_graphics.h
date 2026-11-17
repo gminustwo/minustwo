@@ -28,12 +28,12 @@ inline constexpr std::array<int, 8> FpsLimits = {30, 60, 100, 120, 144, 180, 240
 /// Game patch suffixes ("Resolution Patch - <name>"); "native" is no resolution patch.
 /// The ones after 900p are the Ultrawide mod's sizes (#202) and the 16:10 and 4:3 ones, built in as beta
 /// (scripts/graphics_options.py).
-inline constexpr std::array<std::string_view, 23> Resolutions = {
+inline constexpr std::array<std::string_view, 24> Resolutions = {
     "native", "480p", "720p", "900p", "1440p", "1800p", "4K",
     "2560x1080", "3440x1440", "3840x1600", "5120x1440", "1920x1200", "2560x1600", "1280x800",
     "1440x900", "1360x768",
     "1280x960", "1440x1080", "1920x1440", "2048x1536", "2560x1920",
-    "5120x2160", "8K"};
+    "5120x2160", "8K", "3840x1080"};
 /// The resolutions to choose from: the built-in ones, then those of the enabled mods' patch files
 /// (MT_EXTRA_RESOLUTIONS, ";"-separated sizes such as "3440x1440"; run.py sets it at every start).
 inline std::vector<std::string> ResolutionNames() {
@@ -65,12 +65,20 @@ inline std::pair<int, int> ResolutionSize(std::string_view name) {
     }
     return ResolutionSizes[0].second;
 }
+/// Whether a render resolution is wider than 16:9 (21:9, 32:9): the game's view widens to it when
+/// run.py sets MT_ASPECT (src/runtime_aspect.c).
+inline bool WiderThan16x9(std::string_view name) {
+    const auto [width, height] = ResolutionSize(name);
+    return width * 9 > height * 16 + height / 8; // more than 16:9 by over 1%
+}
 /// The size the game's 1920x1080 frame is drawn at for a render resolution (the renderer's render
-/// scale; GODZILLA has no resolution patches): that height at 16:9, so a 21:9 or 4:3 choice keeps
-/// the picture's shape. {0, 0}: the game's own size.
-inline std::pair<int, int> RenderScaleSize(std::string_view name) {
+/// scale; GODZILLA has no resolution patches): that height at 16:9, so a 4:3 choice keeps the
+/// picture's shape. `wide` (MT_ASPECT set: the game's view widens with it) draws a wider one at
+/// its own size instead. {0, 0}: the game's own size.
+inline std::pair<int, int> RenderScaleSize(std::string_view name, bool wide = false) {
     const int height = std::clamp(ResolutionSize(name).second, 180, 4320) & ~1;
-    const int width = (height * 16 / 9 + 1) & ~1;
+    int width = (height * 16 / 9 + 1) & ~1;
+    if (wide && WiderThan16x9(name)) width = std::clamp(ResolutionSize(name).first, 320, 7680) & ~1;
     if (name == "native" || (width == 1920 && height == 1080)) return {0, 0};
     return {width, height};
 }

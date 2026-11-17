@@ -46,6 +46,15 @@ int main() {
     assert(G::RenderScaleSize("4K") == Size(3840, 2160) && G::RenderScaleSize("1440p") == Size(2560, 1440));
     assert(G::RenderScaleSize("3440x1440") == Size(2560, 1440) && G::RenderScaleSize("720p") == Size(1280, 720));
     assert(G::RenderScaleSize("8K") == Size(7680, 4320) && G::RenderScaleSize("1280x800") == Size(1422, 800));
+    // Ultrawide (MT_ASPECT set: the game's view widens): a resolution wider than 16:9 at its own size;
+    // 16:9 and narrower ones as before.
+    assert(G::WiderThan16x9("3440x1440") && G::WiderThan16x9("5120x1440") && G::WiderThan16x9("3840x1080"));
+    assert(!G::WiderThan16x9("4K") && !G::WiderThan16x9("1360x768") && !G::WiderThan16x9("1920x1200"));
+    assert(G::RenderScaleSize("3440x1440", true) == Size(3440, 1440));
+    assert(G::RenderScaleSize("5120x1440", true) == Size(5120, 1440));
+    assert(G::RenderScaleSize("3840x1080", true) == Size(3840, 1080));
+    assert(G::RenderScaleSize("4K", true) == Size(3840, 2160) && G::RenderScaleSize("1280x800", true) == Size(1422, 800));
+    assert(G::RenderScaleSize("native", true) == Size(0, 0));
     // Monitor preference (window.cpp): empty means the primary display, and that default is distinct
     // from an explicit index 0. The launcher's value is untrusted text, so anything else falls back.
     assert(G::ParseMonitor("") == G::PrimaryMonitor && G::PrimaryMonitor != 0);

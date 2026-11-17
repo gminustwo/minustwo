@@ -53,6 +53,19 @@ class PatchSelectionTest(unittest.TestCase):
         self.assertEqual(graphics_options.restrict_to_available(['Resolution Patch - 4K', 'Other'], {'Other'}),
                          ['Other'])
 
+    def test_ultrawide_resolutions_set_the_screen_aspect(self):
+        # MT_ASPECT for a resolution wider than 16:9 (src/runtime_aspect.c widens the game's cameras);
+        # empty otherwise, so a restart from the in-game menu does not keep the last one.
+        def aspect(resolution):
+            options = graphics_options.startup_options({'render_resolution': resolution})
+            return graphics_options.environment(options)['MT_ASPECT']
+        self.assertEqual([aspect(r) for r in ('5120x1440', '3840x1080', '3440x1440', '2560x1080')],
+                         ['5120x1440', '3840x1080', '3440x1440', '2560x1080'])
+        self.assertEqual([aspect(r) for r in ('native', '4K', '1440p', '1360x768', '1920x1200', '1440x1080')],
+                         [''] * 6)
+        self.assertIn('3840x1080', graphics_options.RESOLUTIONS)
+        self.assertEqual(graphics_options.aspect_of('3840x1080'), '32:9')
+
 
 class ProfileTest(unittest.TestCase):
     def test_godzilla_is_recognized_by_title_id_and_title(self):

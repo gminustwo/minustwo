@@ -3,6 +3,7 @@
 
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
+#include "video_core/renderer_vulkan/movie_bars.h"
 #include "mt_graphics.h"
 #include "mt_settings.h"
 #include "mt_toggles.h"
@@ -77,13 +78,17 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
         const std::vector<std::string> names = MtGraphics::ResolutionNames();
         const int index =
             std::clamp(MtSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
-        const auto [w, h] = MtGraphics::RenderScaleSize(names[index]);
+        // An ultrawide resolution at its own width once the game's view widens with it (run.py
+        // sets MT_ASPECT for those: src/runtime_aspect.c).
+        const char* aspect = std::getenv("MT_ASPECT");
+        const auto [w, h] = MtGraphics::RenderScaleSize(names[index], aspect && aspect[0]);
         width = unsigned(w);
         height = unsigned(h);
     }
     if (width && height && (width != 1920 || height != 1080)) {
         scene_targets->Lock({width & ~1u, height & ~1u});
         render_scale = true;
+        ultrawide = width * 9 > height * 16 + height / 8; // as MtGraphics::WiderThan16x9
         std::printf("Render scale: the game's 1920x1080 frame is drawn at %ux%u\n", width & ~1u,
                     height & ~1u);
     }
@@ -1650,6 +1655,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     buffer_infos.clear();
     image_infos.clear();
     host_fetch = false;
+    interface_draw = false;
+    screen_space_draw = false;
+    movie_draw = false;
     // minustwo: G-buffer passes sample material textures for a scene rendered below the output
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
@@ -2158,6 +2166,29 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 FrameCapture::Buffer(stage.pgm_hash, buffer_index, ring->address,
                                      constant_ring->Data(ring->offset), ring->size);
             }
+            // minustwo: ultrawide. The interface (menus, HUD) is drawn without depth by vertex
+            // shaders whose first constants are a camera's matrix (perspective or affine): it is
+            // clipped to the 16:9 middle, where the game's layouts are made to be seen (they keep
+            // elements beyond a 16:9 screen's edges, which the widened cameras would show).
+            // Menu text has an affine matrix of the game's 1920x1080 pixels (x and y scaled alike
+            // in pixels: 1080/1920 in clip space, at any zoom): it is also kept 16:9 rather than
+            // stretched (UpdateViewportScissorState). Post-processing (16-byte constants) and the
+            // scene (depth) do not match.
+            const bool depth_test =
+                Regs().depth_control.depth_enable && Regs().depth_buffer.DepthValid();
+            if (ultrawide && buffer_index == 0 && stage.sw_stage == Shader::SwStage::Vertex &&
+                ring->size >= 64 && !depth_test) {
+                float m[16];
+                std::memcpy(m, constant_ring->Data(ring->offset), sizeof(m));
+                const bool affine = m[11] == 0.0f && m[15] == 1.0f;
+                // A camera's projection times its view and the element's place: w = -z_view (the
+                // last element is the element's distance from the camera).
+                const bool perspective = std::abs(m[11]) == 1.0f;
+                interface_draw = m[3] == 0.0f && m[7] == 0.0f && (affine || perspective);
+                const float sx = std::hypot(m[0], m[1]), sy = std::hypot(m[4], m[5]);
+                screen_space_draw = interface_draw && affine && sx > 0.0f && sy > 0.0f &&
+                                    std::abs(sx / sy - 1080.0f / 1920.0f) < 0.002f;
+            }
             if (!desc.IsSpecial()) {
                 if (ring->size == 864 && gbuffer_draw &&
                     memory->IsValidGpuMapping(ring->address, 0)) {
@@ -2326,6 +2357,27 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                               Shader::Backend::Bindings& binding, u32& write_index,
                               bool& barrier, bool on_helper) {
     const u32 first_image_idx = image_infos.size();
+    // minustwo: ultrawide. The game's movies are a full-screen draw of a decoded picture's two
+    // planes (NV12: luma, and chroma at half its size): the draw keeps 16:9 in the middle
+    // (UpdateViewportScissorState) and the presenter draws black bars around it (MovieBars).
+    if (ultrawide && stage.sw_stage == Shader::SwStage::Fragment && !movie_draw) {
+        u32 luma_w = 0, luma_h = 0, chroma_w = 0, chroma_h = 0;
+        for (const auto& image_desc : stage.images) {
+            const auto sharp = image_desc.GetSharp(stage);
+            const u32 w = u32(sharp.width) + 1, h = u32(sharp.height) + 1;
+            if (sharp.GetDataFmt() == AmdGpu::DataFormat::Format8) {
+                luma_w = w;
+                luma_h = h;
+            } else if (sharp.GetDataFmt() == AmdGpu::DataFormat::Format8_8) {
+                chroma_w = w;
+                chroma_h = h;
+            }
+        }
+        movie_draw = luma_w >= 320 && chroma_w * 2 == luma_w && chroma_h * 2 == luma_h;
+        if (movie_draw) {
+            MovieBars::Cutscenes().NotePicture(MovieBars::NowMs());
+        }
+    }
     TextureSet* set_slot = nullptr;
     if (!on_helper && BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
         // Descriptor writes: one per image (no mip arrays in a memoized set).
@@ -3457,6 +3509,12 @@ void Rasterizer::UpdateViewportScissorState() const {
             viewport.y = (yoffset - yscale) * target_scale[1] + draw_jitter[1];
             viewport.width = xscale * 2.0f * target_scale[0];
             viewport.height = yscale * 2.0f * target_scale[1];
+            if ((screen_space_draw || movie_draw) && target_scale[0] != target_scale[1]) {
+                // Ultrawide: the game's pixels at the height's scale, the viewport's width (the
+                // target's) centered in the wider one.
+                viewport.x = (xoffset - xscale) * target_scale[1] + xscale * (target_scale[0] - target_scale[1]);
+                viewport.width = xscale * 2.0f * target_scale[1];
+            }
         }
 
         viewports.push_back(viewport);
@@ -3474,9 +3532,26 @@ void Rasterizer::UpdateViewportScissorState() const {
         }
         if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
             const auto scale = [](s32 v, float f) { return s32(std::lround(float(v) * f)); };
-            const s32 x0 = scale(vp_scsr.top_left_x, target_scale[0]);
+            // Ultrawide screen-space draws: the scissor moves with the centered viewport.
+            const bool centered = (screen_space_draw || movie_draw) &&
+                                  target_scale[0] != target_scale[1] && !regs.IsClipDisabled();
+            const float shift = centered ? (vp_ctl.xscale_enable ? vp.xscale : 1.f) *
+                                               (target_scale[0] - target_scale[1])
+                                         : 0.0f;
+            const auto scale_x = [&](s32 v) {
+                return centered ? s32(std::lround(float(v) * target_scale[1] + shift))
+                                : scale(v, target_scale[0]);
+            };
+            s32 x0 = scale_x(vp_scsr.top_left_x);
             const s32 y0 = scale(vp_scsr.top_left_y, target_scale[1]);
-            const s32 x1 = scale(vp_scsr.top_left_x + s32(vp_scsr.GetWidth()), target_scale[0]);
+            s32 x1 = scale_x(vp_scsr.top_left_x + s32(vp_scsr.GetWidth()));
+            if (interface_draw && target_scale[0] != target_scale[1] && !regs.IsClipDisabled()) {
+                // Ultrawide interface: only the screen's 16:9 middle.
+                const auto size = scene_targets->Size();
+                const float middle = float(size.height) * 16.0f / 9.0f;
+                x0 = std::max(x0, s32(std::lround((float(size.width) - middle) * 0.5f)));
+                x1 = std::min(x1, s32(std::lround((float(size.width) + middle) * 0.5f)));
+            }
             const s32 y1 = scale(vp_scsr.top_left_y + s32(vp_scsr.GetHeight()), target_scale[1]);
             scissors.push_back({
                 .offset = {x0, y0},
