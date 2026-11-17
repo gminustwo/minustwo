@@ -2,6 +2,7 @@
 
 [![release](https://img.shields.io/github/v/release/gminustwo/minustwo?filter=v%2A&sort=semver&display_name=tag&label=release&color=orange)](https://github.com/gminustwo/minustwo/releases/latest)
 [![downloads](https://img.shields.io/github/downloads/gminustwo/minustwo/total?label=downloads&color=brightgreen)](https://github.com/gminustwo/minustwo/releases)
+[![Discord](https://img.shields.io/discord/1563746962220523641?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/G9ZdrHJkTb)
 
 <a href="https://recomplauncher.com/game/minustwo"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
 
@@ -11,7 +12,7 @@ for Windows 10 and 11, Linux and the Steam Deck, and macOS on Apple silicon (exp
 
 Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 
-Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
+Questions, bug reports and news: the project's Discord server, https://discord.gg/G9ZdrHJkTb
 
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
 > and `sce_sys` (tested: CUSA02046, versions 01.01 and 01.00). For 01.01, copy the update's files over the base

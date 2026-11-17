@@ -67,4 +67,4 @@ Files
 
 If the game does not start, open Advanced > Show the last game log in the launcher.
 
-Questions, bug reports and news: the project's Discord server, https://discord.gg/VVthdPE4q
+Questions, bug reports and news: the project's Discord server, https://discord.gg/G9ZdrHJkTb
