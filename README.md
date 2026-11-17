@@ -4,8 +4,6 @@
 [![downloads](https://img.shields.io/github/downloads/gminustwo/minustwo/total?label=downloads&color=brightgreen)](https://github.com/gminustwo/minustwo/releases)
 [![Discord](https://img.shields.io/discord/1563746962220523641?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/G9ZdrHJkTb)
 
-<a href="https://recomplauncher.com/game/minustwo"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
-
 **Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
 for Windows 10 and 11, Linux and the Steam Deck, and macOS on Apple silicon (experimental:
 [packaging/macos/README.md](packaging/macos/README.md)). It is a personal project, for playing a copy of the game you own.
