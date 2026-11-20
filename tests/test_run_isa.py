@@ -36,5 +36,17 @@ class RunIsaTests(unittest.TestCase):
         self.assertEqual(stopped.exception.code, 1)
 
 
+class ExitLineTests(unittest.TestCase):
+    def test_session_length_and_how_it_ended(self):
+        def line(code, seconds):
+            return run.exit_line(code, seconds, now=0).split(' ', 2)[2]
+        self.assertEqual(line(0, 8.9), 'the game process ended after 8 s, exit code 0')
+        self.assertEqual(line(1, 754), 'the game process ended after 12 min 34 s, exit code 1')
+        self.assertEqual(line(0, 3725), 'the game process ended after 1 h 02 min 05 s, exit code 0')
+        self.assertEqual(line(0xC0000005, 60), 'the game process ended after 1 min 00 s, Windows exception 0xc0000005')
+        self.assertEqual(line(-9, 5), 'the game process ended after 5 s, killed by signal 9')
+        self.assertTrue(run.exit_line(0, 1).startswith('[exit] '))
+
+
 if __name__ == '__main__':
     unittest.main()

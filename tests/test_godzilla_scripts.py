@@ -240,6 +240,14 @@ class LauncherTest(unittest.TestCase):
         path.write_text('[1, 2]', encoding='utf-8')  # not what the page writes: the default
         self.assertEqual(self.launcher.load_json(path, {}), {})
 
+    def test_session_line_names_the_version_package_and_steam(self):
+        line = self.launcher.session_line({}, now=0)
+        self.assertTrue(line.startswith(f'Minus Two {self.launcher.VERSION} (from source), '), line)
+        self.assertTrue(line.endswith('\n'))
+        self.assertNotIn('Steam', line)
+        self.assertIn(', started through Steam)', self.launcher.session_line({'SteamGameId': '123'}, now=0))
+        self.assertNotIn('Steam', self.launcher.session_line({'SteamGameId': ''}, now=0))
+
 
 class UpdateTest(unittest.TestCase):
     """The launcher's updates from GitHub releases (no network: file:// downloads)."""

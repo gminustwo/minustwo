@@ -268,7 +268,19 @@ def game_command():
     return [sys.executable, '--run'] if FROZEN else [sys.executable, str(PORT / 'run.py')]
 
 
+def session_line(environ=os.environ, now=None):
+    """The game log's first line: this build, its package, how and when the game was started."""
+    package = ('from source' if not FROZEN else 'Windows zip' if sys.platform == 'win32' else
+               'macOS app' if sys.platform == 'darwin' else
+               'Linux AppImage' if environ.get('APPIMAGE') else 'Linux')
+    steam = any(environ.get(name) for name in ('SteamGameId', 'SteamClientLaunch'))
+    started = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))
+    return f'Minus Two {VERSION} ({package}{", started through Steam" if steam else ""}), {started}\n'
+
+
 def start_game(values, log_file):
+    log_file.write(session_line().encode())
+    log_file.flush()
     no_window = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
     return subprocess.Popen(game_command(), cwd=PORT, env=game_environment(values), stdin=subprocess.DEVNULL,
                             stdout=log_file, stderr=subprocess.STDOUT, creationflags=no_window)

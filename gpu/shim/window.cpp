@@ -1,8 +1,11 @@
 // minustwo: SDL3 window for the Vulkan swapchain (X11, Wayland, Win32 or a Metal layer on macOS).
 #include <algorithm>
+#include <chrono>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <optional>
 #include <vector>
 #include <SDL3/SDL.h>
@@ -13,8 +16,142 @@
 #include "mt_graphics.h"
 #include "mt_settings.h"
 #include "mt_vblank.h"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#undef near
+#undef far
+#endif
 
 namespace Frontend {
+
+// minustwo: "[window]" lines in the game log: the clock time and the seconds since the game started,
+// so they line up with a player's screen recording. At most 40 a minute (a window that keeps
+// minimizing and restoring must not fill the log). Window thread only.
+static const auto window_log_start = std::chrono::steady_clock::now();
+
+__attribute__((format(printf, 1, 2))) static void WindowLog(const char* format, ...) {
+    static std::chrono::steady_clock::time_point minute_start = window_log_start;
+    static int this_minute = 0;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - minute_start >= std::chrono::minutes(1)) {
+        minute_start = now;
+        this_minute = 0;
+    }
+    if (++this_minute > 41) return;
+    char text[512];
+    if (this_minute == 41) {
+        std::snprintf(text, sizeof text, "more window events this minute are not logged");
+    } else {
+        va_list args;
+        va_start(args, format);
+        std::vsnprintf(text, sizeof text, format, args);
+        va_end(args);
+    }
+    const std::time_t clock = std::time(nullptr);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &clock);
+#else
+    localtime_r(&clock, &local);
+#endif
+    const double seconds = std::chrono::duration<double>(now - window_log_start).count();
+    std::printf("[window] %02d:%02d:%02d +%.1f s %s\n", local.tm_hour, local.tm_min, local.tm_sec, seconds, text);
+}
+
+// The program whose window has the focus now (its file name only: never a window title, which can
+// hold personal data). Empty where the system does not say.
+static std::string ForegroundProgram() {
+#ifdef _WIN32
+    const HWND foreground = GetForegroundWindow();
+    if (!foreground) return "no window";
+    DWORD pid = 0;
+    GetWindowThreadProcessId(foreground, &pid);
+    if (pid == GetCurrentProcessId()) return "this game";
+    std::string name = "process " + std::to_string(pid);
+    if (const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)) {
+        wchar_t path[MAX_PATH];
+        DWORD size = MAX_PATH;
+        if (QueryFullProcessImageNameW(process, 0, path, &size)) {
+            const wchar_t* file = path;
+            for (const wchar_t* c = path; *c; ++c) {
+                if (*c == L'\\' || *c == L'/') file = c + 1;
+            }
+            char utf8[MAX_PATH * 3];
+            if (WideCharToMultiByte(CP_UTF8, 0, file, -1, utf8, sizeof utf8, nullptr, nullptr) > 0) {
+                name = utf8;
+            }
+        }
+        CloseHandle(process);
+    }
+    return name;
+#else
+    return {};
+#endif
+}
+
+static void LogWindowEvent(SDL_Window* window, const SDL_Event& event) {
+    const auto size = [window] {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        return std::to_string(w) + "x" + std::to_string(h);
+    };
+    switch (event.type) {
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        WindowLog("focus gained");
+        break;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        if (const std::string program = ForegroundProgram(); !program.empty()) {
+            WindowLog("focus lost (now in front: %s)", program.c_str());
+        } else {
+            WindowLog("focus lost");
+        }
+        break;
+    case SDL_EVENT_WINDOW_MINIMIZED:
+        WindowLog("minimized");
+        break;
+    case SDL_EVENT_WINDOW_MAXIMIZED:
+        WindowLog("maximized, %s", size().c_str());
+        break;
+    case SDL_EVENT_WINDOW_RESTORED:
+        WindowLog("restored, %s", size().c_str());
+        break;
+    case SDL_EVENT_WINDOW_SHOWN:
+        WindowLog("shown");
+        break;
+    case SDL_EVENT_WINDOW_HIDDEN:
+        WindowLog("hidden");
+        break;
+    case SDL_EVENT_WINDOW_OCCLUDED:
+        WindowLog("covered by other windows");
+        break;
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+        WindowLog("entered fullscreen, %s", size().c_str());
+        break;
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+        WindowLog("left fullscreen, %s", size().c_str());
+        break;
+    case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+        WindowLog("moved to display %u", unsigned(event.window.data1));
+        break;
+    case SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED:
+        if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(event.display.displayID)) {
+            WindowLog("display %u mode now %dx%d at %.2f Hz", unsigned(event.display.displayID), mode->w, mode->h,
+                      mode->refresh_rate);
+        }
+        break;
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        WindowLog("closed by the player");
+        break;
+    default:
+        break;
+    }
+}
 
 // minustwo: set by the pause key (any thread), cleared by it or a click in the window.
 static std::atomic<bool> mouse_paused{false};
@@ -87,6 +224,10 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         UNREACHABLE_MSG("Failed to initialize SDL video: {}", SDL_GetError());
     }
+    // minustwo: no display mode minimizes when another window takes the focus. SDL's default does for
+    // exclusive fullscreen, and a window that minimized as it started on some AMD PCs never came back
+    // (issue #11); the display keeps the game's mode until the game ends.
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     const SDL_DisplayID display = MonitorDisplay();
     const bool too_large = StartSize(width_, height_, display);
     SDL_PropertiesID props = SDL_CreateProperties();
@@ -191,8 +332,8 @@ static std::optional<SDL_DisplayMode> RefreshFor60(SDL_DisplayID display, const 
 
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
 // mode; borderless and fullscreen at a refresh rate for 60 FPS instead when the desktop's is not
-// one (MtSettings::match_refresh): SDL switches the mode back when the game ends. Borderless then
-// stays up when it loses focus, as without the switch. Window thread only (SDL). The swapchain
+// one (MtSettings::match_refresh): SDL switches the mode back when the game ends. Neither minimizes
+// when it loses the focus (the constructor's hint). Window thread only (SDL). The swapchain
 // follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode; // what the settings asked for: applied, so the event loop does not ask again
@@ -203,26 +344,33 @@ void WindowSDL::ApplyDisplayMode(int mode) {
     }
     if (mode == MtGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
-        std::printf("Window: %s\n", MtGraphics::DisplayModeNames[mode]);
+        WindowLog("%s", MtGraphics::DisplayModeNames[mode]);
     } else {
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
         const std::optional<SDL_DisplayMode> fit = match_refresh ? RefreshFor60(display, desktop) : std::nullopt;
         const SDL_DisplayMode* refresh = fit ? &*fit : nullptr;
         const SDL_DisplayMode* exclusive = refresh ? refresh : mode == MtGraphics::Fullscreen ? desktop : nullptr;
-        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, mode == MtGraphics::Borderless ? "0" : "auto");
         if (!SDL_SetWindowFullscreenMode(window, exclusive)) {
-            LOG_WARNING(Frontend, "Fullscreen mode: {}", SDL_GetError());
+            WindowLog("fullscreen mode not set: %s", SDL_GetError());
         }
         SDL_SetWindowFullscreen(window, true);
         if (refresh) {
-            std::printf("Window: %s at %.2f Hz (the desktop's %.2f Hz is not a multiple of 60)\n",
-                        MtGraphics::DisplayModeNames[mode], refresh->refresh_rate, desktop->refresh_rate);
+            WindowLog("%s at %.2f Hz (the desktop's %.2f Hz is not a multiple of 60)",
+                      MtGraphics::DisplayModeNames[mode], refresh->refresh_rate, desktop->refresh_rate);
+        } else if (exclusive) {
+            WindowLog("%s at the desktop's %dx%d, %.2f Hz", MtGraphics::DisplayModeNames[mode], exclusive->w,
+                      exclusive->h, exclusive->refresh_rate);
         } else {
-            std::printf("Window: %s\n", MtGraphics::DisplayModeNames[mode]);
+            WindowLog("%s", MtGraphics::DisplayModeNames[mode]);
         }
     }
-    SDL_SyncWindow(window);
+    const bool synced = SDL_SyncWindow(window);
+    WindowLog("%s, %s", synced ? "applied" : "not applied within SDL's wait", [this] {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        return std::to_string(w) + "x" + std::to_string(h);
+    }().c_str());
 }
 
 WindowSDL::~WindowSDL() {
@@ -269,6 +417,7 @@ bool WindowSDL::PollEvents() {
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        LogWindowEvent(window, event);
         if (text_active && (event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_KEY_DOWN)) {
             std::scoped_lock lock{text_mutex};
             if (event.type == SDL_EVENT_TEXT_INPUT) {
