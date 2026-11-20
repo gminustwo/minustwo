@@ -10,6 +10,9 @@ uintptr_t runtime_lookup(const RuntimeExport *table,size_t n,const char *name) {
 }
 static int japanese_voices;
 int mtgpu_japanese_voices(void) { return japanese_voices; }
+static unsigned char save_block[SAVE_SIZE];
+static int save_block_found=1;
+unsigned char *runtime_save_block(void) { return save_block_found ? save_block : NULL; }
 static void write_file(const char *dir,const char *name,const char *text) {
     char path[600]; snprintf(path,sizeof(path),"%s/%s",dir,name);
     FILE *f=fopen(path,"w"); assert(f); assert(fputs(text,f)>=0); assert(!fclose(f));
@@ -54,6 +57,71 @@ static void japanese_voice_files(const char *game) {
     remove_file(game,"VOICE_TOP_EN.at9"); remove_file(game,"VOICE_TOP.at9");
     assert(!rmdir(st) && !rmdir(sound));
 }
+/* A GODZILLA save (DATA.BIN): header 1, `version` (1 from 01.00, 2 from 01.01), size; language word
+ * `language`; the game's checksum at +0 unless `broken`. */
+static void write_save(const char *dir,uint16_t language,int broken,uint32_t version) {
+    static unsigned char data[SAVE_SIZE];
+    memset(data,0,sizeof(data));
+    const uint32_t header[3]={1,version,SAVE_SIZE};
+    memcpy(data+4,header,sizeof(header));
+    for (size_t i=0x100;i<SAVE_SIZE;i+=97) data[i]=(unsigned char)(i*7);  /* bytes of both signs */
+    memcpy(data+SAVE_LANGUAGE,&language,2);
+    int32_t sum=broken;
+    for (size_t i=4;i<SAVE_SIZE;++i) sum+=(signed char)data[i];
+    memcpy(data,&sum,4);
+    char path[600]; snprintf(path,sizeof(path),"%s/DATA.BIN",dir);
+    FILE *f=fopen(path,"wb"); assert(f); assert(fwrite(data,1,SAVE_SIZE,f)==SAVE_SIZE); assert(!fclose(f));
+}
+/* What the game reads from /savedata0/DATA.BIN: whole (in two reads) and by pread; returns its language word
+ * after checking that the game's checksum holds. */
+static uint16_t read_save(int flags) {
+    static unsigned char data[SAVE_SIZE];
+    int fd=(int)do_open("/savedata0/DATA.BIN",flags,0); assert(fd>=3);
+    assert(do_read(fd,data,0x2b)==0x2b);  /* ends inside the language word */
+    assert(do_read(fd,data+0x2b,SAVE_SIZE-0x2b)==SAVE_SIZE-0x2b);
+    unsigned char part[4];
+    assert(do_pread(fd,part,4,0x29)==4 && !memcmp(part,data+0x29,4));
+    assert(do_pread(fd,part,2,0)==2 && !memcmp(part,data,2));
+    assert(!do_close(fd));
+    int32_t sum=0, stored;
+    for (size_t i=4;i<SAVE_SIZE;++i) sum+=(signed char)data[i];
+    memcpy(&stored,data,4);
+    assert(sum==stored);
+    uint16_t language; memcpy(&language,data+SAVE_LANGUAGE,2);
+    return language;
+}
+/* The save's language: DATA.BIN is read with the one the game plays in (the save block's word). */
+static void save_language(const char *root) {
+    char dir[560]; snprintf(dir,sizeof(dir),"%s/savedata",root);
+    assert(!mkdir(dir,0755));
+    assert(!runtime_file_mount("/savedata0",dir));
+    const uint16_t italian=5, german=3;
+    memcpy(save_block+SAVE_LANGUAGE,&italian,2);
+    write_save(dir,german,0,1);
+    assert(read_save(0)==italian);
+    write_save(dir,german,0,2);            /* a save of 01.01 */
+    assert(read_save(0)==italian);
+    write_save(dir,german,0,3);            /* a version no build of the game reads */
+    assert(read_save(0)==german);
+    write_save(dir,german,0,1);
+    assert(read_save(2)==german);          /* opened to write: the file's own bytes */
+    setenv("MT_SAVE_LANGUAGE","0",1);
+    assert(read_save(0)==german);
+    unsetenv("MT_SAVE_LANGUAGE");
+    save_block_found=0;
+    assert(read_save(0)==german);          /* no save block in this game build */
+    save_block_found=1;
+    write_save(dir,italian,0,1);
+    assert(read_save(0)==italian);         /* already the game's */
+    write_save(dir,german,1,1);            /* a broken checksum stays the game's to find */
+    int fd=(int)do_open("/savedata0/DATA.BIN",0,0); assert(fd>=3);
+    uint16_t language; assert(do_pread(fd,&language,2,SAVE_LANGUAGE)==2 && language==german);
+    assert(!do_close(fd));
+    assert(language_patches==0);
+    runtime_file_unmount("/savedata0");
+    remove_file(dir,"DATA.BIN");
+    assert(!rmdir(dir));
+}
 int main(void) {
     char root[]="/tmp/minustwo-mod-files-XXXXXX";
     assert(mkdtemp(root));
@@ -95,6 +163,7 @@ int main(void) {
     assert(!do_close(sibling));
     runtime_file_unmount("/app0/asset.dcx");
     japanese_voice_files(game);
+    save_language(root);
     int dir=(int)do_open("/app0",0x20000,0); assert(dir>=3);
     char entries[1024]; int64_t count=do_getdents(dir,entries,sizeof(entries),NULL); assert(count>0);
     int found=0;
@@ -112,5 +181,6 @@ int main(void) {
     const char *dirs[]={"temp0","download0","data"};
     for (int i=0;i<3;++i) { char p[1024]; snprintf(p,sizeof(p),"%s/%s",user,dirs[i]); assert(!rmdir(p)); }
     assert(!rmdir(user) && !rmdir(root));
-    puts("Guest mod files: reads, stat, merged listing, readonly assets, writable saves and Japanese voices PASS");
+    puts("Guest mod files: reads, stat, merged listing, readonly assets, writable saves, Japanese voices and the "
+         "save's language PASS");
 }

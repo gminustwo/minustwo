@@ -79,9 +79,10 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - **The US and European releases** (`scripts/game_release.py`). The game takes its language from the PS4 system
   language, and each release has its own: the US one (CUSA02046) English, French, Latin American Spanish and
   Brazilian Portuguese, the European one (CUSA02058) English, French, German, Spanish and Italian. The launcher's
-  *Game* page lists the languages of the release in the chosen folder. The game stores the language in its save
-  when it creates it (`DATA.BIN` offset 0x2a), so a save keeps its language when the launcher's changes. Each
-  release keeps its own saves (`user/savedata/1/<title ID>`).
+  *Game* page lists the languages of the release in the chosen folder. The game also stores the language in its
+  save (`DATA.BIN` offset 0x2a) and would keep that one; the port reads the save with the chosen language instead
+  (`src/runtime_file.c`; `MT_SAVE_LANGUAGE=0` keeps the save's). Each release keeps its own saves
+  (`user/savedata/1/<title ID>`).
 - **Japanese voices** (the launcher's *Game* page, or the in-game menu's *Game* tab, live from the next line
   spoken): the original Japanese voice acting with the subtitles and text in the game language. Every voice line
   ships in both languages (`sound/<folder>/VOICE_<line>.at9` and `VOICE_<line>_EN.at9`); the game asks for the

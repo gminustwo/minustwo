@@ -6,9 +6,9 @@ release's eboot.bin maps the ids it knows to its own text files and plays any ot
   Spanish (game_fr, game_bp, game_ns).
 - Europe (CUSA02058, 0x17e210 in 01.00): 2 French, 3 Spanish, 4 German, 5 Italian (game_fr, game_es,
   game_de, game_it).
-Both have the English text and the same English and Japanese voice files. The game stores the language in
-its save data (+0x2a, the word both routines write) when it creates the save, and loading a save puts that one
-back: MT_LANGUAGE is the language of a new save.
+Both have the English text and the same English and Japanese voice files. The game also stores the language
+in its save data (+0x2a, the word both routines write) and loading a save would put that one back:
+src/runtime_file.c hands the game the language it started in when it reads the save.
 """
 ENGLISH = '1'
 RELEASES = {

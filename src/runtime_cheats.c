@@ -140,6 +140,8 @@ static void *hold(void *unused) {
     return NULL;
 }
 
+unsigned char *runtime_save_block(void) { return save; }
+
 void runtime_cheats_configure(unsigned char *image, uint64_t size) {
     player = find_data(image, size, &table_ref, field_reads, sizeof(field_reads) / sizeof(*field_reads), 0xd0);
     save = find_data(image, size, &save_ref, kaiju_reads, sizeof(kaiju_reads) / sizeof(*kaiju_reads),

@@ -48,7 +48,10 @@ typedef struct {
 _Static_assert(sizeof(GuestStat)==120,"FreeBSD stat layout");
 
 typedef struct { char *names; size_t count, *offsets; unsigned char *types; } Listing;
-typedef struct { int used, host; Listing *dir; size_t position; char path[512]; } File;
+/* A save read with the language the game plays in (save_language_patch): the bytes that replace the
+ * file's at those offsets. */
+typedef struct { int active; unsigned char sum[4], language[2]; } LanguagePatch;
+typedef struct { int used, host; Listing *dir; size_t position; char path[512]; LanguagePatch language; } File;
 typedef struct { char guest[64]; char host[512]; } Mount;
 static File files[MAX_FILES];
 static Mount mounts[MAX_MOUNTS];
@@ -233,6 +236,64 @@ static int game_path(const char *p) {
     return (!strncmp(p,"/app0",5) && (!p[5] || p[5]=='/')) ||
            (!strncmp(p,"/hostapp",8) && (!p[8] || p[8]=='/'));
 }
+/* The game keeps its language in its save: DATA.BIN's word at +0x2a, which loading the save puts back over
+ * the one it started in. That one comes from the PS4 system language (MT_LANGUAGE, the launcher's choice),
+ * which the game's startup code turns into the same word of its save block; so a save made in German stayed
+ * German whatever the launcher chose. While the game reads DATA.BIN, the runtime hands it the word the game
+ * is playing with (the save block's, read when the file opens) and the checksum the game checks to match:
+ * the int32 at +0, the sum of the signed bytes after it (header: +4 = 1, +8 = the save's version, 1 from
+ * 01.00 and 2 from 01.01, +0xc = the size). The file keeps its bytes until the game saves again.
+ * MT_SAVE_LANGUAGE=0 keeps the save's own language. */
+enum { SAVE_SIZE=0xd6760, SAVE_LANGUAGE=0x2a };
+static int language_patches; /* open files with a patch: reads ask for their offset only then */
+static LanguagePatch save_language_patch(const char *guest,int flags,int host) {
+    LanguagePatch patch={0};
+    const char *name=strrchr(guest,'/'), *setting=getenv("MT_SAVE_LANGUAGE");
+    unsigned char *block=runtime_save_block();
+    if ((flags&3) || host<0 || !name || strcmp(name,"/DATA.BIN") || strncmp(guest,"/savedata",9) || !block ||
+        (setting && setting[0]=='0'))
+        return patch;
+    unsigned char *data=malloc(SAVE_SIZE);
+    if (!data) return patch;
+    uint32_t header[4];
+    int32_t sum=0;
+    uint16_t stored, playing=__atomic_load_n((uint16_t *)(block+SAVE_LANGUAGE),__ATOMIC_RELAXED);
+    int whole=pread(host,data,SAVE_SIZE,0)==SAVE_SIZE;
+    char extra;
+    if (whole) whole=pread(host,&extra,1,SAVE_SIZE)==0;  /* nothing after it */
+    if (whole) {
+        memcpy(header,data,sizeof(header));
+        memcpy(&stored,data+SAVE_LANGUAGE,2);
+        for (size_t i=4;i<SAVE_SIZE;++i) sum+=(signed char)data[i];
+    }
+    free(data);
+    if (!whole || header[1]!=1 || header[2]<1 || header[2]>2 || header[3]!=SAVE_SIZE || (uint32_t)sum!=header[0] ||
+        stored==playing || !playing || playing>=0x80 || stored>=0x80)
+        return patch;
+    sum+=(signed char)(playing&0xff)-(signed char)(stored&0xff); /* high bytes 0: values below 0x80 */
+    patch.active=1;
+    memcpy(patch.sum,&sum,4);
+    memcpy(patch.language,&playing,2);
+    printf("Language: the save was made in the game's language %u; it is read with %u, the one the game started "
+           "in (MT_LANGUAGE %s; MT_SAVE_LANGUAGE=0 keeps the save's)\n",stored,playing,
+           getenv("MT_LANGUAGE") ? getenv("MT_LANGUAGE") : "unset");
+    return patch;
+}
+/* The language patch over `n` bytes the game read at file offset `at`. */
+static void save_language_apply(int fd,unsigned char *buffer,int64_t at,int64_t n) {
+    pthread_mutex_lock(&lock);
+    File *f=get(fd);
+    LanguagePatch patch=f ? f->language : (LanguagePatch){0};
+    pthread_mutex_unlock(&lock);
+    if (!patch.active || at<0 || n<=0) return;
+    const struct { int64_t offset; const unsigned char *bytes; int64_t count; } parts[2]={
+        {0,patch.sum,4}, {SAVE_LANGUAGE,patch.language,2}};
+    for (int p=0;p<2;++p)
+        for (int64_t i=0;i<parts[p].count;++i) {
+            const int64_t at_file=parts[p].offset+i;
+            if (at_file>=at && at_file<at+n) buffer[at_file-at]=parts[p].bytes[i];
+        }
+}
 /* All operations return >=0 or -(host errno); wrappers adapt the convention. */
 static int64_t do_open(const char *guest,int flags,int mode) {
     if (game_path(guest) && (flags & (3|0x8|0x200|0x400|0x800))) return -EROFS;
@@ -272,11 +333,13 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     Listing *dir=NULL;
     if (!fstat(host,&s) && S_ISDIR(s.st_mode)) dir=list_directory(path);
 #endif
+    const LanguagePatch language=save_language_patch(guest,flags,host);
     pthread_mutex_lock(&lock);
     int fd=-1;
     for (int i=3;i<MAX_FILES;++i) if (!files[i].used) { fd=i; break; }
     if (fd<0) { pthread_mutex_unlock(&lock); if (host>=0) close(host); free_listing(dir); return -EMFILE; }
-    files[fd]=(File){.used=1,.host=host,.dir=dir};
+    files[fd]=(File){.used=1,.host=host,.dir=dir,.language=language};
+    if (language.active) __atomic_add_fetch(&language_patches,1,__ATOMIC_RELAXED);
     snprintf(files[fd].path,sizeof(files[fd].path),"%s",guest);
     ++opens;
     pthread_mutex_unlock(&lock);
@@ -301,6 +364,7 @@ static int64_t do_close(int fd) {
     if (!f) { pthread_mutex_unlock(&lock); return -EBADF; }
     if (f->host>=0) close(f->host);
     free_listing(f->dir);
+    if (f->language.active) __atomic_sub_fetch(&language_patches,1,__ATOMIC_RELAXED);
     *f=(File){0};
     pthread_mutex_unlock(&lock);
     return 0;
@@ -352,7 +416,9 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
+    const int64_t at=__atomic_load_n(&language_patches,__ATOMIC_RELAXED) ? host_lseek(h,0,SEEK_CUR) : -1;
     ssize_t n=host_read(h,buffer,size);
+    if (n>0 && at>=0) save_language_apply(fd,buffer,at,n);
     trace_sound_read(fd,"read",size,-1,n<0 ? -errno : n);
     if (n<0) { if (audio_trace()) printf("Audio trace: read(fd %d, %llu) failed, errno %d\n",fd,(unsigned long long)size,errno); return -errno; }
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
@@ -363,6 +429,7 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
     ssize_t n=pread(h,buffer,size,offset);
+    if (n>0 && __atomic_load_n(&language_patches,__ATOMIC_RELAXED)) save_language_apply(fd,buffer,offset,n);
     trace_sound_read(fd,"pread",size,offset,n<0 ? -errno : n);
     if (n<0) { if (audio_trace()) printf("Audio trace: pread(fd %d, %llu @%lld) failed, errno %d\n",fd,(unsigned long long)size,(long long)offset,errno); return -errno; }
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
