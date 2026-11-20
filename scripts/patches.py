@@ -160,8 +160,9 @@ PATCHES_DIR=Path(__file__).resolve().parent.parent/'patches'
 # Built-in patch file per game: its title IDs, the AppVer its metadata is tagged with and the
 # title that also recognizes a release under an ID not listed. That title is the GAME's own TITLE
 # in its param.sfo ("GODZILLA"), not the name of this project. The signatures find the sites in any
-# region or version whose code matches, so the eboot.bin build is not checked.
-GAMES=[({'CUSA02046'},PATCHES_DIR/'CUSA02046.xml','01.01','GODZILLA')]
+# region or version whose code matches, so the eboot.bin build is not checked: the US release
+# (CUSA02046) 01.01 and 01.00 and the European one (CUSA02058) 01.00 have them all.
+GAMES=[({'CUSA02046','CUSA02058'},PATCHES_DIR/'CUSA02046.xml','01.01','GODZILLA')]
 # The build the built-in Address values and third-party patch files are written for (CUSA02046 01.01).
 REFERENCE_SHA256='c2e2a6f4ff62d1c4004f80cddf1ab1dc38386540a96f77f7130a55583fc32462'
 DMEM_RETAIL_MB=5056  # runtime_memory.c POOL_SIZE default

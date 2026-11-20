@@ -38,6 +38,9 @@ def port_folder():
 
 
 PORT = port_folder()
+# The port's Python modules (scripts/): the game image steps, settings files and the game's releases.
+sys.path.insert(0, str(PORT / 'scripts'))
+import game_release  # noqa: E402
 if FROZEN and sys.platform == 'darwin':
     # An app bundle is not written into: saves, settings, mods and the prepared game go to Application
     # Support (run.py, started by this program, inherits the folder).
@@ -63,11 +66,10 @@ PACKAGE_SUFFIX = {'win32': '-windows.zip', 'darwin': '-macos.zip'}.get(sys.platf
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'cache', 'mods', 'minustwo.ini', 'settings.json', 'mods.json', 'mods_presets.json',
               'patches.json', 'last_run.log', 'fsr4_shaders', 'nvngx_dlss*.dll')
-TITLE_IDS = ('CUSA02046',)
+# GODZILLA's releases (scripts/game_release.py): the US one and the European one.
+TITLE_IDS = tuple(game_release.RELEASES)
 # Stage files of the base game that its 01.01 update does not hold.
 BASE_GAME_FILES = ('ch01a_00.pac', 'map10.pac')
-# The game's languages (game_en, game_fr, game_ns, game_bp) as PS4 system language ids.
-LANGUAGES = (('English', '1'), ('Français', '2'), ('Español (Latinoamérica)', '20'), ('Português (Brasil)', '17'))
 DISPLAY_MODES = (('Windowed', 'windowed'), ('Borderless', 'borderless'), ('Fullscreen', 'fullscreen'))
 FPS_LIMITS = (('60 (the game\'s own)', '60'), ('30', '30'), ('Unlimited', '0'))
 # The keyboard's PS4 buttons and their default keys (src/runtime_pad.c key_map); MT_KEY_MAP carries changes.
@@ -100,8 +102,6 @@ CHEATS = (('cheat_no_damage', 'No damage', "Godzilla's health is full again the 
            'is turned off.'))
 MODS, MODS_CONFIG, MOD_PRESETS = DATA / 'mods', DATA / 'mods.json', DATA / 'mods_presets.json'
 PATCHES, PATCHES_CONFIG = DATA / 'patches', DATA / 'patches.json'
-
-sys.path.insert(0, str(PORT / 'scripts'))
 
 
 def load_settings():
@@ -150,10 +150,19 @@ def game_problem(folder):
     return None
 
 
-def game_version(folder):
+def game_sfo(folder):
+    """The values of the game folder's param.sfo ({} when there is none)."""
     from prepare import read_sfo
-    sfo = read_sfo(Path(folder) / 'sce_sys' / 'param.sfo') or {}
-    return f'{sfo.get("TITLE_ID", "?")} · version {sfo.get("APP_VER", "?")}'
+    return (read_sfo(Path(folder) / 'sce_sys' / 'param.sfo') or {}) if folder else {}
+
+
+def game_version(folder):
+    sfo = game_sfo(folder)
+    return game_release.describe(sfo.get('TITLE_ID'), sfo.get('APP_VER'))
+
+
+def game_title_id(folder):
+    return game_sfo(folder).get('TITLE_ID')
 
 
 # The game's version with its update. Online, copies only meet copies of the same version (the match key in
@@ -163,13 +172,19 @@ LATEST_GAME_VERSION = '01.01'
 
 def online_version_note(folder, environ=os.environ):
     """What the Online page says about the game's version (MT_PATCH_DIR's update when one is set)."""
-    from prepare import read_sfo
-    version = None
+    version = title_id = None
     for candidate in (environ.get('MT_PATCH_DIR'), folder):
         if candidate and not version:
-            version = (read_sfo(Path(candidate) / 'sce_sys' / 'param.sfo') or {}).get('APP_VER')
+            sfo = game_sfo(candidate)
+            version, title_id = sfo.get('APP_VER'), sfo.get('TITLE_ID')
     if not version:
         return ''
+    # Each release has its own players (src/runtime_np.c match_key): the European game's stages and code
+    # differ from the US one's.
+    if title_id and title_id != game_release.DEFAULT_TITLE_ID:
+        return (f'Your game is {game_release.release_name(title_id)}, version {version}: you meet the players who '
+                'have the same release and version. Copies of the US release are not matched with it, as their '
+                'games differ.')
     if version == LATEST_GAME_VERSION:
         return f'Your game is version {version}: you meet the players who have the same version.'
     return (f'Your game is version {version}, without the {LATEST_GAME_VERSION} update: you only meet players who '
@@ -179,7 +194,9 @@ def online_version_note(folder, environ=os.environ):
 
 def game_environment(values):
     """The variables run.py and the game read, from the launcher's settings."""
-    env = {**os.environ, 'MT_GAME_DIR': values['game_dir'], 'MT_LANGUAGE': values['language'],
+    # The chosen language, or its nearest in the game's release (English when the release does not have it).
+    language = game_release.language_for(game_title_id(values['game_dir']), values['language'])
+    env = {**os.environ, 'MT_GAME_DIR': values['game_dir'], 'MT_LANGUAGE': language,
            'MT_UNLOCK_ADDONS': '1' if values['unlock_addons'] else '0', 'MT_CONFIG': str(INI),
            'MT_DATA_DIR': str(DATA), 'MT_MODS_ENABLED': '1' if values.get('mods_enabled', True) else '0',
            'PYTHONIOENCODING': 'utf-8'}
@@ -1148,8 +1165,15 @@ class Launcher:
         tk = self.tk
         page = self.page('game', 'Game', 'Language, voices, add-ons, startup, cheats and the controller.')
         self.section(page, 'Game')
-        self.language_var, box = self.choice(page, LANGUAGES, self.values['language'], width=26)
-        self.row(page, 'Game language', box)
+        # The languages of the chosen game's release (refresh_game changes them with the folder).
+        title_id = game_title_id(self.values['game_dir'])
+        self.languages = game_release.languages(title_id)
+        self.language_var, self.language_box = self.choice(
+            page, self.languages, game_release.language_for(title_id, self.values['language']), width=26)
+        self.row(page, 'Game language', self.language_box,
+                 'Used when the game creates its save; the save then keeps its own language. US release: English, '
+                 'French, Latin American Spanish, Brazilian Portuguese. European: English, French, German, '
+                 'Spanish, Italian.')
         self.japanese_voices_var = tk.BooleanVar(value=self.ini.get('japanese_voices', '0') == '1')
         self.row(page, 'Japanese voices', self.check(page, self.japanese_voices_var),
                  'The original Japanese voice acting, with subtitles and text in the game language.')
@@ -1787,7 +1811,7 @@ class Launcher:
             self.key_vars[action].set(default)
 
     def collect(self):
-        self.values['language'] = dict(LANGUAGES)[self.language_var.get()]
+        self.values['language'] = dict(self.languages)[self.language_var.get()]
         self.values['unlock_addons'] = bool(self.addons_var.get())
         self.values['mods_enabled'] = bool(self.mods_enabled_var.get())
         self.values['check_updates'] = bool(self.check_updates_var.get())
@@ -1832,6 +1856,16 @@ class Launcher:
         folder = self.values['game_dir']
         problem = game_problem(folder)
         self.version_label.configure(text='' if problem else f'GODZILLA  ·  {game_version(folder)}')
+        if hasattr(self, 'language_box'):
+            # Another release has other languages: the list follows the folder, the choice its nearest there.
+            title_id = None if problem else game_title_id(folder)
+            languages = game_release.languages(title_id)
+            if languages != self.languages:
+                chosen = dict(self.languages).get(self.language_var.get(), self.values['language'])
+                nearest = game_release.language_for(title_id, chosen)
+                self.languages = languages
+                self.language_box.configure(values=[name for name, _ in languages])
+                self.language_var.set(next(name for name, value in languages if value == nearest))
         if hasattr(self, 'online_version_var'):
             self.online_version_var.set('' if problem else online_version_note(folder))
         self.play_button.state(['disabled'] if problem else ['!disabled'])

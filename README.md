@@ -13,8 +13,9 @@ Confirmed on the Steam Deck: it runs well at 30 FPS, rendering at 1080p.
 Questions, bug reports and news: the project's Discord server, https://discord.gg/G9ZdrHJkTb
 
 > **No game files are included.** You need a dump of your own PS4 copy: the folder with `eboot.bin`, `sce_module`
-> and `sce_sys` (tested: CUSA02046, versions 01.01 and 01.00). For 01.01, copy the update's files over the base
-> game's: the update's folder on its own has no stages. This project is not affiliated with or endorsed by
+> and `sce_sys` (tested: the US release CUSA02046, versions 01.01 and 01.00, and the European release CUSA02058,
+> version 01.00). For 01.01, copy the update's files over the base game's: the update's folder on its own has no
+> stages. This project is not affiliated with or endorsed by
 > Toho, Bandai Namco, Natsume Atari or Sony Interactive Entertainment. GODZILLA is a trademark of Toho Co., Ltd.
 
 ## How it works
@@ -75,6 +76,12 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - The add-ons (the pre-order early unlocks and the diorama figure sets, whose content is in the base game) are
   reported as owned. Turn it off in the launcher, or with `MT_UNLOCK_ADDONS=0`.
 - Keyboard and mouse defaults for GODZILLA's controls, mouse camera.
+- **The US and European releases** (`scripts/game_release.py`). The game takes its language from the PS4 system
+  language, and each release has its own: the US one (CUSA02046) English, French, Latin American Spanish and
+  Brazilian Portuguese, the European one (CUSA02058) English, French, German, Spanish and Italian. The launcher's
+  *Game* page lists the languages of the release in the chosen folder. The game stores the language in its save
+  when it creates it (`DATA.BIN` offset 0x2a), so a save keeps its language when the launcher's changes. Each
+  release keeps its own saves (`user/savedata/1/<title ID>`).
 - **Japanese voices** (the launcher's *Game* page, or the in-game menu's *Game* tab, live from the next line
   spoken): the original Japanese voice acting with the subtitles and text in the game language. Every voice line
   ships in both languages (`sound/<folder>/VOICE_<line>.at9` and `VOICE_<line>_EN.at9`); the game asks for the
@@ -91,7 +98,7 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
   kaiju's records in the save data, as the game's own unlock does: King of Kaiju and Evolution modes then offer all
   of them. The game saves them, so they stay unlocked when the cheat is turned off, and it awards *Kaiju Sighting*
   and *Kaiju Collector* for them unless achievements are off. The startup options and the cheats work in
-  versions 01.01 and 01.00 of the game.
+  versions 01.01 and 01.00 of the US release and in the European release.
 - **Achievements**: the trophies the game unlocks are kept in `trophies.dat` in the user folder, beside the saves,
   and listed on the launcher's *Achievements* page and in-game (F8, or R3 + R2). *Unlock achievements* (that page, or
   the in-game menu's *Game* tab) turns them off: the game then unlocks none and shows no notices.
@@ -123,8 +130,11 @@ Tested on Windows 11 with a 32-thread CPU and a Vulkan 1.3 GPU, from the first s
   files (separated by `;`) if you prefer.
 - Online VS Mode needs a shadNet server (see [online/README.md](online/README.md)); without one the game sees a
   console that is not signed in to PSN, as before. Players only meet players with the same game version: get the
-  01.01 update, which most players have (a 01.00 copy only meets 01.00 copies).
-- Only the US release (CUSA02046) has been tested: version 01.01, and 01.00 for the startup options and cheats.
+  01.01 update, which most players have (a 01.00 copy only meets 01.00 copies). European copies only meet European
+  copies: that release's code and some of its stages differ from the US one's.
+- Tested: the US release (CUSA02046) 01.01, and 01.00 for the startup options and cheats; the European release
+  (CUSA02058) 01.00: the title screen, the main menu and the 1954 tutorial, the startup options, and its text in
+  German and Italian. The European 01.01 update has not been tried.
 
 ## Playing
 
@@ -143,9 +153,9 @@ Saves, the shader cache and `user/last_run.log` are in the `user` folder next to
 
 **Your PS4 save**: a decrypted save works as it is (tested with a shadPS4 save, which holds the same files as one
 exported decrypted from a PS4). With the game closed, put its `SAVEDATA00` folder (the one with `DATA.BIN`) at
-`user/savedata/1/CUSA02046/SAVEDATA00`, replacing the one there. A save written by the 01.01 game needs a 01.01
-dump: the update's notes say older versions cannot use it. The port copies the saves it finds to
-`user/savedata_backups` at each start.
+`user/savedata/1/CUSA02046/SAVEDATA00` (`CUSA02058` for the European release), replacing the one there. A save
+written by the 01.01 game needs a 01.01 dump: the update's notes say older versions cannot use it. The port copies
+the saves it finds to `user/savedata_backups` at each start.
 
 ### Controls
 

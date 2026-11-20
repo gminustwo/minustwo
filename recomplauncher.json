@@ -5,7 +5,7 @@
   "repo": "gminustwo/minustwo",
   "game": {
     "kind": "folder",
-    "label": "Your dump of GODZILLA (PS4, CUSA02046): the folder with eboot.bin, sce_module and sce_sys.",
+    "label": "Your dump of GODZILLA (PS4, the US release CUSA02046 or the European CUSA02058): the folder with eboot.bin, sce_module and sce_sys.",
     "check": { "file": "eboot.bin" }
   },
   "start": {

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'launcher'))
 
+import game_release  # noqa: E402
 import graphics_options  # noqa: E402
 import patches  # noqa: E402
 
@@ -67,9 +68,38 @@ class PatchSelectionTest(unittest.TestCase):
         self.assertEqual(graphics_options.aspect_of('3840x1080'), '32:9')
 
 
+class ReleaseTest(unittest.TestCase):
+    def test_each_release_has_its_languages(self):
+        # what each eboot.bin maps (scripts/game_release.py): the ids of its own text files, English first
+        self.assertEqual([v for _, v in game_release.languages('CUSA02046')], ['1', '2', '20', '17'])
+        self.assertEqual([v for _, v in game_release.languages('CUSA02058')], ['1', '2', '4', '3', '5'])
+        self.assertEqual(game_release.languages('CUSA99999'), game_release.languages('CUSA02046'))
+        self.assertEqual(game_release.languages(None), game_release.languages('CUSA02046'))
+
+    def test_a_language_the_release_lacks_becomes_its_nearest(self):
+        self.assertEqual(game_release.language_for('CUSA02058', '4'), '4')
+        self.assertEqual(game_release.language_for('CUSA02058', '20'), '3')  # Spanish either way
+        self.assertEqual(game_release.language_for('CUSA02046', '3'), '20')
+        self.assertEqual(game_release.language_for('CUSA02058', '17'), '1')  # no Portuguese: English
+        self.assertEqual(game_release.language_for('CUSA02046', '5'), '1')
+        self.assertEqual(game_release.language_for('CUSA02046', '2'), '2')
+        self.assertEqual(game_release.language_for(None, '17'), '17')
+        self.assertEqual(game_release.language_for('CUSA02058', ''), '1')
+
+    def test_the_log_names_the_release_version_and_language(self):
+        sfo = {'TITLE': 'GODZILLA', 'TITLE_ID': 'CUSA02058', 'APP_VER': '01.00'}
+        self.assertEqual(game_release.log_line(sfo, '5'),
+                         'Game: GODZILLA CUSA02058 (Europe), version 01.00, language Italian (5)')
+        self.assertIn('which this release does not have', game_release.log_line(sfo, '17'))
+        self.assertEqual(game_release.log_line({'TITLE': 'GODZILLA', 'TITLE_ID': 'CUSA02046', 'APP_VER': '01.01'}, '1'),
+                         'Game: GODZILLA CUSA02046 (US), version 01.01, language English (1)')
+        self.assertNotIn('does not have', game_release.log_line({'TITLE_ID': 'CUSA99999'}, '4'))
+
+
 class ProfileTest(unittest.TestCase):
     def test_godzilla_is_recognized_by_title_id_and_title(self):
         self.assertEqual(patches.game_profile('CUSA02046')[1].name, 'CUSA02046.xml')
+        self.assertEqual(patches.game_profile('CUSA02058')[1].name, 'CUSA02046.xml')  # the European release
         self.assertIsNotNone(patches.game_profile('CUSA99999', 'GODZILLA'))
         self.assertIsNone(patches.game_profile('CUSA01623', 'God of War III Remastered'))
 
@@ -158,7 +188,10 @@ class LauncherTest(unittest.TestCase):
         self.assertIn('not GODZILLA', self.launcher.game_problem(str(self.dump('CUSA01623', 'God of War III'))))
         folder = self.dump('CUSA02046', 'GODZILLA')
         self.assertIsNone(self.launcher.game_problem(str(folder)))
-        self.assertEqual(self.launcher.game_version(str(folder)), 'CUSA02046 · version 01.01')
+        self.assertEqual(self.launcher.game_version(str(folder)), 'CUSA02046 (US) · version 01.01')
+        europe = self.dump('CUSA02058', 'GODZILLA')
+        self.assertIsNone(self.launcher.game_problem(str(europe)))
+        self.assertEqual(self.launcher.game_version(str(europe)), 'CUSA02058 (Europe) · version 01.01')
         (folder / 'ch01a_00.pac').unlink()  # the 01.01 update on its own (issue #10)
         self.assertIn('ch01a_00.pac and other files of the base game are missing',
                       self.launcher.game_problem(str(folder)))
@@ -171,6 +204,15 @@ class LauncherTest(unittest.TestCase):
         env = self.launcher.game_environment(values)
         self.assertEqual((env['MT_GAME_DIR'], env['MT_LANGUAGE'], env['MT_UNLOCK_ADDONS']), ('G', '17', '0'))
         self.assertEqual(env['MT_KEY_MAP'], 'cross=Return,circle=Comma')
+
+    def test_the_language_follows_the_release_of_the_game_folder(self):
+        europe, us = self.dump('CUSA02058', 'GODZILLA'), self.dump('CUSA02046', 'GODZILLA')
+        values = {**self.launcher.DEFAULTS, 'language': '4'}
+        self.assertEqual(self.launcher.game_environment({**values, 'game_dir': str(europe)})['MT_LANGUAGE'], '4')
+        # the US release has no German: English
+        self.assertEqual(self.launcher.game_environment({**values, 'game_dir': str(us)})['MT_LANGUAGE'], '1')
+        values['language'] = '20'  # Latin American Spanish: the European release's Spanish
+        self.assertEqual(self.launcher.game_environment({**values, 'game_dir': str(europe)})['MT_LANGUAGE'], '3')
 
     def test_startup_options_reach_run_py_as_patches(self):
         values = {**self.launcher.DEFAULTS, 'game_dir': 'G'}
@@ -199,6 +241,12 @@ class LauncherTest(unittest.TestCase):
         write_sfo(update / 'sce_sys' / 'param.sfo', {'TITLE_ID': 'CUSA02046', 'APP_VER': '01.01'})
         self.assertIn('version 01.01', self.launcher.online_version_note(str(folder), {'MT_PATCH_DIR': str(update)}))
         self.assertEqual(self.launcher.online_version_note('', {}), '')
+        # the European release meets only its own copies (src/runtime_np.c match_key)
+        europe = self.dump('CUSA02058', 'GODZILLA')
+        write_sfo(europe / 'sce_sys' / 'param.sfo', {'TITLE': 'GODZILLA', 'TITLE_ID': 'CUSA02058', 'APP_VER': '01.00'})
+        note = self.launcher.online_version_note(str(europe), {})
+        self.assertIn('CUSA02058 (Europe), version 01.00', note)
+        self.assertIn('Copies of the US release are not matched with it', note)
 
     def test_invite_code_round_trip(self):
         code = self.launcher.invite_code(' 34.66.199.179 ', 'iRdoanGTXagROw1SAK4u')

@@ -18,7 +18,8 @@
  * The table and the save data are found through code that references them, and the fields
  * through code that reads them: a build whose code differs lacks those cheats, and the menu
  * says so. The addresses here are the reference build's (01.01); 01.00 has the same table and
- * records (0x79a8f0, 0x6c3f80), and its code that differs has signatures of its own. */
+ * records (0x79a8f0, 0x6c3f80), and its code that differs has signatures of its own. The European
+ * release (CUSA02058) 01.00 is that 01.00 code, with the table and records at the same addresses. */
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "signature.h"
