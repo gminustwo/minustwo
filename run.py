@@ -240,6 +240,9 @@ def main():
             fail(str(error))
         game = update_view
         print(f'Game and update combined from {env["MT_PATCH_DIR"]}', flush=True)
+    # The release (US or European), its version and the language: what a bug report needs first.
+    import game_release
+    print(game_release.log_line(patches.game_sfo(game), env.get('MT_LANGUAGE', game_release.ENGLISH)), flush=True)
     original_game = game.resolve()
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('MT_MODS_DIR', data / 'mods'),

@@ -2,10 +2,13 @@
 <!-- Minus Two: patches for the GODZILLA CUSA02046 v01.01 eboot.bin with sha256
      c2e2a6f4ff62d1c4004f80cddf1ab1dc38386540a96f77f7130a55583fc32462 (scripts/patches.py checks it).
      Each line may carry a signature (Pattern/At) so it is found in any build whose code matches;
-     all of them are also found in v01.00 (sha256 f1a6a78c9275f87be1af32bb47fe1f38d02519832f7f795cdd1c8aeb26b5db01). -->
+     all of them are also found in v01.00 (sha256 f1a6a78c9275f87be1af32bb47fe1f38d02519832f7f795cdd1c8aeb26b5db01)
+     and in the European release CUSA02058 v01.00 (sha256
+     27bf3bdc2a9a57f8bbab073e039dba20f9d287831afbe1b96c8797929c8867b5). -->
 <Patch>
     <TitleID>
         <ID>CUSA02046</ID>
+        <ID>CUSA02058</ID>
     </TitleID>
     <!-- The logo scene (scene 0x712) loads the save data and shows the first-start dialogs, then
          plays the logos in state 2 of its update (0x2b5f0). State 2 goes straight to state 0x10,

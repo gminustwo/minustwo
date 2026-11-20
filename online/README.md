@@ -188,3 +188,8 @@ server. Losing an opponent or the server has not been tried with the game yet.
   version was in the match key, a 1.00 copy that joined a 1.01 3-player room crashed loading it). The launcher's
   Online page says which version the game folder is, and the log says it when VS Mode opens
   (`Online: match group ... game version 01.01`).
+- Players only meet players with the same release: the European release (CUSA02058) has its own pool, as its
+  code and four of its stages (`map13`, `map31`, `map32`, `map51`) differ from the US release's (CUSA02046). Its
+  match key has the title ID before the version (`.../CUSA02058-01.00/...`); the US release's is unchanged, so
+  US copies of earlier builds still meet. Both sign in to the server as CUSA02046, so `worlds.cfg` needs no
+  change.

@@ -114,9 +114,9 @@ uintptr_t runtime_score_resolve(const char *name); /* NpScore leaderboards throu
 /* probe.c, before the game starts: 1 when every reciprocal estimate was rewritten to exact math. A copy
  * without it is only matched with copies without it (their fights could drift apart from the others'). */
 void runtime_np_set_exact_math(int exact);
-/* probe.c, before the game starts: the game's APP_VER ("01.01") from the param.sfo of the folder it runs
- * (with its update). A copy is only matched with copies of the same version. */
-void runtime_np_set_game_version(const char *version);
+/* probe.c, before the game starts: the game's TITLE_ID and APP_VER ("01.01") from the param.sfo of the folder
+ * it runs (with its update). A copy is only matched with copies of the same release and version. */
+void runtime_np_set_game(const char *title_id, const char *version);
 
 /* P2P sockets and Rudp between copies of the port (runtime_p2p.c), with shadNet. */
 uintptr_t runtime_p2p_resolve(const char *name);

@@ -1,8 +1,9 @@
 Minus Two - GODZILLA (PS4) for macOS
 ====================================
 
-No game files are included. You need your own copy of GODZILLA (CUSA02046) as a folder
-containing eboot.bin, sce_module and sce_sys. Tested: CUSA02046 version 01.01.
+No game files are included. You need your own copy of GODZILLA, the US release (CUSA02046)
+or the European one (CUSA02058), as a folder containing eboot.bin, sce_module and sce_sys.
+Tested: CUSA02046 versions 01.01 and 01.00, CUSA02058 version 01.00.
 
 Requirements
 - A Mac with Apple silicon (M1 or newer) and macOS 26 or newer.

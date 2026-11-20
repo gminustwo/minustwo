@@ -87,8 +87,26 @@ static Event *next_event(void) {
     return e;
 }
 
+/* FNV-1a as match_key() computes it, of the text a copy's key is made from */
+static uint32_t key_of(const char *text) {
+    uint32_t h = 2166136261u;
+    for (const char *p = text; *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
+    return (h & 0x7FFFFFFF) | 1;
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
+    /* the match key: the US release keeps the key of its version alone (copies of earlier builds still meet),
+     * the European release has its title ID before the version, so its copies meet only each other */
+    char text[128];
+    runtime_np_set_game("CUSA02046", "01.01");
+    assert(!strcmp(game_title, "") && !strcmp(game_version, "01.01"));
+    runtime_np_set_game("", "01.00");
+    assert(!strcmp(game_title, ""));
+    runtime_np_set_game("CUSA02058", "01.00");
+    runtime_np_set_exact_math(1);
+    snprintf(text, sizeof(text), "minustwo-online/%d/CUSA02058-01.00/", MT_ONLINE_PROTOCOL);
+    assert(match_key() == key_of(text));
     /* a started context, in a room with member 2 (this player is member 1) */
     contexts[0].used = 1;
     contexts[0].started = 1;

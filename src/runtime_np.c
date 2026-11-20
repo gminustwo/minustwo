@@ -1406,10 +1406,15 @@ enum { MATCH_KEY_ATTR = 0x53 };
 static int exact_math;
 void runtime_np_set_exact_math(int exact) { exact_math = exact; }
 /* The same goes for the game itself: 01.01 changed the game's code and data and added kaiju 8,
- * Godzilla (1964), whose data (ch08a_00.pac) a 01.00 copy does not have. */
-static char game_version[16];
-void runtime_np_set_game_version(const char *version) {
+ * Godzilla (1964), whose data (ch08a_00.pac) a 01.00 copy does not have. And for its release: the
+ * European one (CUSA02058) has code and stages (map13, map31, map32, map51) of its own, so its copies
+ * meet only each other. The US release (CUSA02046) keeps the key of the version alone, the one copies
+ * had before other releases were known. */
+static char game_version[16], game_title[16];
+#define FIRST_RELEASE "CUSA02046"
+void runtime_np_set_game(const char *title_id, const char *version) {
     snprintf(game_version, sizeof(game_version), "%s", version ? version : "");
+    snprintf(game_title, sizeof(game_title), "%s", title_id && strcmp(title_id, FIRST_RELEASE) ? title_id : "");
 }
 /* The version every player with the game's update has. */
 #define LATEST_GAME_VERSION "01.01"
@@ -1418,14 +1423,17 @@ static uint32_t match_key(void) {
     if (!key) {
         char text[192];
         const char *group = getenv("MT_SHADNET_GROUP");
-        snprintf(text, sizeof(text), "minustwo-online/%d%s/%s/%s", MT_ONLINE_PROTOCOL, exact_math ? "" : "-inexact",
-                 game_version, group ? group : "");
+        snprintf(text, sizeof(text), "minustwo-online/%d%s/%s%s%s/%s", MT_ONLINE_PROTOCOL, exact_math ? "" : "-inexact",
+                 game_title, *game_title ? "-" : "", game_version, group ? group : "");
         uint32_t h = 2166136261u; /* FNV-1a */
         for (const char *p = text; *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
         key = (h & 0x7FFFFFFF) | 1; /* never 0, which a proto field would leave out */
-        printf("Online: match group '%s' (protocol %d, game version %s)\n", group && *group ? group : "public",
-               MT_ONLINE_PROTOCOL, *game_version ? game_version : "unknown");
-        if (strcmp(game_version, LATEST_GAME_VERSION))
+        printf("Online: match group '%s' (protocol %d, game version %s, release %s)\n", group && *group ? group : "public",
+               MT_ONLINE_PROTOCOL, *game_version ? game_version : "unknown", *game_title ? game_title : FIRST_RELEASE);
+        if (*game_title)
+            printf("Online: this is the %s release, not the US one (" FIRST_RELEASE "): matched only with copies of "
+                   "the same release and version\n", game_title);
+        else if (strcmp(game_version, LATEST_GAME_VERSION))
             printf("Online: this game is not version " LATEST_GAME_VERSION " (the update): matched only with copies "
                    "of the same version, as copies of different versions cannot play together\n");
         if (!exact_math)
