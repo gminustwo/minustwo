@@ -139,6 +139,21 @@ def prepare_only(env):
     return 0
 
 
+def exit_line(code, seconds, now=None):
+    """The game log's last line: how long the game process ran and how it ended. A log without it was
+    cut off: this script was ended too, or the PC stopped."""
+    s = int(seconds)
+    length = (f'{s // 3600} h {s // 60 % 60:02d} min {s % 60:02d} s' if s >= 3600 else
+              f'{s // 60} min {s % 60:02d} s' if s >= 60 else f'{s} s')
+    if code < 0:
+        how = f'killed by signal {-code}'
+    elif code >= 0xC0000000:
+        how = f'Windows exception {code:#010x}'
+    else:
+        how = f'exit code {code}'
+    return f'[exit] {time.strftime("%H:%M:%S", time.localtime(now))} the game process ended after {length}, {how}'
+
+
 def main():
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == '--after':
@@ -342,8 +357,11 @@ def main():
                                                port_mapping.server_address(env['MT_SHADNET_SERVER']),
                                                log=lambda text: print(text, flush=True)).start()
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
+        started = time.monotonic()
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, creationflags=no_console())
-        return process.wait()
+        code = process.wait()
+        print(exit_line(code, time.monotonic() - started), flush=True)
+        return code
     finally:
         if mapping:
             mapping.close()
