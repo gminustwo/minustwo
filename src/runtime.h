@@ -162,6 +162,18 @@ void runtime_cheats_configure(unsigned char *image, uint64_t size);
  * game's language there. */
 unsigned char *runtime_save_block(void);
 void runtime_cheats_start(void);
+/* Where the player is (runtime_state.c): the screen or mode, from the game files opened
+ * (runtime_state_file, called by runtime_file.c) and the mode the main menu stored (configure finds
+ * it in the loaded image). [state] log lines; runtime_state_text is the Discord status. */
+enum { RUNTIME_SCENE_STARTING, RUNTIME_SCENE_TITLE, RUNTIME_SCENE_MAIN_MENU, RUNTIME_SCENE_SETTINGS, RUNTIME_SCENE_MODE };
+void runtime_state_configure(unsigned char *image, uint64_t size);
+void runtime_state_file(const char *guest);
+int runtime_state_scene_of(const char *guest, int *stage);
+const char *runtime_state_name(int scene, int mode, int online);
+void runtime_state_text(char *out, size_t size);
+/* The Discord status (runtime_discord.c): a thread that tells the Discord app on this computer that the
+ * game is played and which mode, while the menu's Discord status is on. */
+void runtime_discord_start(void);
 /* The render thread's waits for the GPU (runtime_label_wait.c): its spin loops on the GPU's label
  * in the loaded image become calls to stubs written to `stubs` (within rel32 of the image) that
  * sleep until the GPU writes the label. Returns the number of loops replaced. */

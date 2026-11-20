@@ -934,6 +934,7 @@ int main(int argc, char **argv) {
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     runtime_cheats_configure(image, size);
+    runtime_state_configure(image, size);
     if (gpu_enabled) runtime_label_wait_install(image, size, wait_stubs, wait_area);
     protect(wait_stubs, wait_area, 5);
     if (gpu_enabled) {
@@ -991,6 +992,7 @@ int main(int argc, char **argv) {
     }
     if (!executable_entry) fail("entry is not executable");
     runtime_cheats_start();
+    if (gpu_enabled) runtime_discord_start();
     printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments at %p; applied %" PRIu64 " relocations\n", size, ns, (void *)image, nr);
     GuestStart start={native_libc,ns,nb,procparam,entry,{main_tls[0],main_tls[1],main_tls[2],main_tls[3]},segments};
 #ifdef __APPLE__

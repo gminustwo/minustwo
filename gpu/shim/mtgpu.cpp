@@ -384,6 +384,14 @@ extern "C" int mtgpu_japanese_voices(void) {
     return MtSettings::Get().japanese_voices.load(std::memory_order_relaxed);
 }
 
+extern "C" int mtgpu_discord_status(void) {
+    return MtSettings::Get().discord_status.load(std::memory_order_relaxed);
+}
+
+extern "C" void mtgpu_discord_state(int state) {
+    MtSettings::Get().discord_state.store(state, std::memory_order_relaxed);
+}
+
 extern "C" void mtgpu_cheats_found(int found) {
     MtSettings::Get().cheats_found = found;
 }

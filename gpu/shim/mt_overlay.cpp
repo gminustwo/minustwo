@@ -525,6 +525,22 @@ void GameTab() {
                  "Off: the game unlocks no trophies and shows no notices. Those already unlocked stay.");
         ImGui::EndTable();
     }
+    Separator("Discord");
+    if (BeginRows("##discord")) {
+        CheckRow("Discord status", s.discord_status,
+                 "Your Discord profile shows that you are playing GODZILLA, the mode and for how long, while "
+                 "the Discord app runs on this computer.");
+        ImGui::EndTable();
+    }
+    static const char* const discord_states[] = {
+        "Off.", "Discord is not running on this computer: it is shown once Discord starts.",
+        "Shown on your Discord profile now.", "The Discord app turned Minus Two away (the log has its reason).",
+        "Not available in this build.", "Off in test runs."};
+    const int state = s.discord_state.load(std::memory_order_relaxed);
+    ImGui::PushTextWrapPos(0.0f);
+    const int states = int(sizeof(discord_states) / sizeof(*discord_states));
+    DisabledText(state >= 0 && state < states ? discord_states[state] : "");
+    ImGui::PopTextWrapPos();
 }
 
 void OverlayTab() {

@@ -55,6 +55,12 @@ int mtgpu_achievements_enabled(void);
 /* Japanese voices on (minustwo.ini japanese_voices, the menu's Game tab): the runtime opens the
  * Japanese recording of each voice line the game asks for in English. Read live. */
 int mtgpu_japanese_voices(void);
+/* Discord status on (minustwo.ini discord_status, the menu's Game tab; on by default), read live by
+ * src/runtime_discord.c, which reports where it stands for the menu to show. */
+enum { MTGPU_DISCORD_OFF, MTGPU_DISCORD_LOOKING, MTGPU_DISCORD_CONNECTED, MTGPU_DISCORD_REFUSED, MTGPU_DISCORD_NO_APP,
+       MTGPU_DISCORD_TEST };
+int mtgpu_discord_status(void);
+void mtgpu_discord_state(int state);
 /* The video decoder handed the game a picture: a cutscene is on screen (the presenter draws
  * black bars outside its 16:9 picture when the render resolution is not 16:9). */
 void mtgpu_movie_picture(void);
