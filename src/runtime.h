@@ -158,6 +158,9 @@ void runtime_ajm_report(void);
  * in the loaded image; start, called once the image has its final protections, starts the thread
  * that keeps the cheats the menu turns on applied. */
 void runtime_cheats_configure(unsigned char *image, uint64_t size);
+/* The game's save data block (the bytes of DATA.BIN) that configure found, or NULL: runtime_file.c reads the
+ * game's language there. */
+unsigned char *runtime_save_block(void);
 void runtime_cheats_start(void);
 /* The render thread's waits for the GPU (runtime_label_wait.c): its spin loops on the GPU's label
  * in the loaded image become calls to stubs written to `stubs` (within rel32 of the image) that

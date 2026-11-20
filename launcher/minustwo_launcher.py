@@ -1171,9 +1171,9 @@ class Launcher:
         self.language_var, self.language_box = self.choice(
             page, self.languages, game_release.language_for(title_id, self.values['language']), width=26)
         self.row(page, 'Game language', self.language_box,
-                 'Used when the game creates its save; the save then keeps its own language. US release: English, '
-                 'French, Latin American Spanish, Brazilian Portuguese. European: English, French, German, '
-                 'Spanish, Italian.')
+                 'Text and subtitles, also with a save made in another language. US release: English, French, '
+                 'Latin American Spanish, Brazilian Portuguese. European: English, French, German, Spanish, '
+                 'Italian.')
         self.japanese_voices_var = tk.BooleanVar(value=self.ini.get('japanese_voices', '0') == '1')
         self.row(page, 'Japanese voices', self.check(page, self.japanese_voices_var),
                  'The original Japanese voice acting, with subtitles and text in the game language.')
