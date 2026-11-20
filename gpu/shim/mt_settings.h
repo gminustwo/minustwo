@@ -91,6 +91,10 @@ struct Values {
     /// The original Japanese voice lines in place of the English ones; text keeps the game language
     /// (runtime_file.c opens VOICE_*.at9 for VOICE_*_EN.at9). Live: from the next line spoken.
     std::atomic<bool> japanese_voices{false};
+    /// The player's Discord profile shows the game and its mode (src/runtime_discord.c). Live.
+    /// discord_state: where that stands (MTGPU_DISCORD_*, set by the runtime) for the menu.
+    std::atomic<bool> discord_status{true};
+    std::atomic<int> discord_state{0};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
     std::atomic<int> engine_fps{60};

@@ -83,6 +83,16 @@
         { "label": "Japanese", "set": { "japanese_voices": "1" } }
       ],
       "defaults": { "japanese_voices": "0" }
+    },
+    {
+      "id": "discord_status",
+      "label": "Discord status",
+      "help": "Your Discord profile shows that you are playing GODZILLA and the mode, while the Discord app runs on this computer.",
+      "choices": [
+        { "label": "On", "set": { "discord_status": "1" } },
+        { "label": "Off", "set": { "discord_status": "0" } }
+      ],
+      "defaults": { "discord_status": "1" }
     }
   ],
   "saves": [

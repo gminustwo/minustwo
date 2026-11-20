@@ -103,6 +103,12 @@ infrastructure come from [SpartanPort](https://github.com/FelipePrado0/SpartanPo
 - **Achievements**: the trophies the game unlocks are kept in `trophies.dat` in the user folder, beside the saves,
   and listed on the launcher's *Achievements* page and in-game (F8, or R3 + R2). *Unlock achievements* (that page, or
   the in-game menu's *Game* tab) turns them off: the game then unlocks none and shows no notices.
+- **Discord status**: while the Discord app runs on the same computer, your Discord profile shows that you are playing
+  GODZILLA, the mode (*Main menu*, *King of Kaiju Mode*, *VS Mode (online)*) and for how long. The port talks only to
+  the Discord app on your computer, through its local pipe (`src/runtime_discord.c`). The mode comes from the files the
+  game opens for each screen and from the main menu's choice (`src/runtime_state.c`), which the log also writes as
+  `[state]` lines. On by default; *Discord status* on the launcher's *Game* page or the in-game menu's *Game* tab turns
+  it off.
 - The God of War III specific parts of SpartanPort (cheats, QTE helpers, orb multipliers, button-icon and pause-menu
   patching) are removed.
 
@@ -270,6 +276,9 @@ out/gpu/ngs2-test.exe && out/gpu/eventflag-test.exe && out/gpu/services-test.exe
   display vblank; `python tools/present_report.py <run.log> <file> <movie.mp4>` matches those frames to the movie's
   own and tells how long each movie frame stayed on screen (with `MT_AVPLAYER_TRACE=1`, only while the movie plays).
   `MT_VBLANK_LOCK=0` keeps the emulated vblank on its timer instead of the display's vblanks.
+- `MT_FILE_TRACE=1` logs every file the game opens, with the time. `python tools/fake_discord.py <name>` stands in for
+  the Discord app and prints each status the game sends; start the game with `MT_DISCORD_PIPE=<name>` and
+  `MT_DISCORD_APP_ID=<any id>` (scripted runs leave Discord alone without them).
 - `out/minustwo.exe out/boot-linked.bin --app0 <folder> --check-imports` lists the system functions the game imports
   that the runtime does not provide (none for CUSA02046 01.01).
 - `python tools/gen_import_names.py out/link.json --aerolib <shadPS4>/src/core/aerolib/aerolib.inl` names the imports

@@ -13,6 +13,7 @@ int mtgpu_japanese_voices(void) { return japanese_voices; }
 static unsigned char save_block[SAVE_SIZE];
 static int save_block_found=1;
 unsigned char *runtime_save_block(void) { return save_block_found ? save_block : NULL; }
+void runtime_state_file(const char *guest) { (void)guest; } /* runtime_state.c: tested by test_state.c */
 static void write_file(const char *dir,const char *name,const char *text) {
     char path[600]; snprintf(path,sizeof(path),"%s/%s",dir,name);
     FILE *f=fopen(path,"w"); assert(f); assert(fputs(text,f)>=0); assert(!fclose(f));

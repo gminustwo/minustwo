@@ -146,6 +146,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.achievements = value.empty() || i != 0;
     } else if (key == "japanese_voices") {
         v.japanese_voices = i != 0;
+    } else if (key == "discord_status") {
+        v.discord_status = value.empty() || i != 0;
     } else if (key == "restart_unconfirmed") {
         v.restart_unconfirmed = i != 0;
     } else if (key == "fsr4_auto_exposure") {
@@ -367,7 +369,8 @@ void Save() {
     std::fprintf(file, "cheat_no_damage=%d\ncheat_infinite_breath=%d\ncheat_all_kaiju=%d\nachievements=%d\n",
                  int(v.cheat_no_damage.load()), int(v.cheat_infinite_breath.load()), int(v.cheat_all_kaiju.load()),
                  int(v.achievements.load()));
-    std::fprintf(file, "japanese_voices=%d\n", int(v.japanese_voices.load()));
+    std::fprintf(file, "japanese_voices=%d\ndiscord_status=%d\n", int(v.japanese_voices.load()),
+                 int(v.discord_status.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

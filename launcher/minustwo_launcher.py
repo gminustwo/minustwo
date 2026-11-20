@@ -1177,6 +1177,10 @@ class Launcher:
         self.japanese_voices_var = tk.BooleanVar(value=self.ini.get('japanese_voices', '0') == '1')
         self.row(page, 'Japanese voices', self.check(page, self.japanese_voices_var),
                  'The original Japanese voice acting, with subtitles and text in the game language.')
+        self.discord_var = tk.BooleanVar(value=self.ini.get('discord_status', '1') != '0')
+        self.row(page, 'Discord status', self.check(page, self.discord_var),
+                 'Your Discord profile shows that you are playing GODZILLA, the mode and for how long, while the '
+                 'Discord app runs on this computer.')
         self.addons_var = tk.BooleanVar(value=bool(self.values['unlock_addons']))
         self.addons_var.trace_add('write', lambda *_a: self.refresh_checks())
         self.row(page, 'Unlock the add-ons', self.check(page, self.addons_var),
@@ -1838,6 +1842,7 @@ class Launcher:
                    'mouse_aim_sensitivity': self.sensitivity_var.get(), 'vibration': self.vibration_var.get(),
                    'achievements': int(self.achievements_var.get()),
                    'japanese_voices': int(self.japanese_voices_var.get()),
+                   'discord_status': int(self.discord_var.get()),
                    **{key: int(var.get()) for key, var in self.cheat_vars.items()}})
         if announce:
             self.summary.configure(text='Settings saved.', fg=ACCENT_HI)

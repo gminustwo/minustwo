@@ -229,6 +229,8 @@ static File *get(int fd) {
 }
 /* MT_AUDIO_TRACE=1: sound file opens and failed reads (missing game sounds). */
 static int audio_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("MT_AUDIO_TRACE"); v=e && e[0]=='1'; } return v; }
+/* MT_FILE_TRACE=1: every file the game opens, with the seconds since the first. */
+static int file_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("MT_FILE_TRACE"); v=e && e[0]=='1'; } return v; }
 /* Game mounts (including linked mod overlays) are read-only. Saves use other mounts. */
 static int game_path(const char *p) {
     if (!p || !*p) return 0;
@@ -344,6 +346,14 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     ++opens;
     pthread_mutex_unlock(&lock);
     if (audio_trace() && strstr(guest,"sound/")) printf("Audio trace: open(%s) -> fd %d, %lld bytes\n",guest,fd,(long long)s.st_size);
+    if (game_path(guest)) runtime_state_file(guest);
+    if (file_trace()) {
+        static struct timespec first;
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC,&now);
+        if (!first.tv_sec && !first.tv_nsec) first=now;
+        printf("File trace: %.3f open %s (fd %d)\n",(double)(now.tv_sec-first.tv_sec)+(now.tv_nsec-first.tv_nsec)/1e9,guest,fd);
+    }
     const char *mod_trace=getenv("MT_MOD_TRACE"), *mod_root=getenv("MT_MODS_DIR");
     if (mod_trace && mod_trace[0]=='1' && mod_root) {
         char actual[PATH_MAX],root[PATH_MAX];
