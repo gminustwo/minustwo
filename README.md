@@ -3,6 +3,9 @@
 [![release](https://img.shields.io/github/v/release/gminustwo/minustwo?filter=v%2A&sort=semver&display_name=tag&label=release&color=orange)](https://github.com/gminustwo/minustwo/releases/latest)
 [![downloads](https://img.shields.io/github/downloads/gminustwo/minustwo/total?label=downloads&color=brightgreen)](https://github.com/gminustwo/minustwo/releases)
 [![Discord](https://img.shields.io/discord/1563746962220523641?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/G9ZdrHJkTb)
+[![Patreon](https://img.shields.io/badge/Patreon-support-F96854?logo=patreon&logoColor=white)](https://www.patreon.com/rengar1)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/rengar12707)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/rengar)
 
 **Minus Two** is an unofficial native PC port of **GODZILLA** (PlayStation 4, Bandai Namco / Natsume Atari, 2015)
 for Windows 10 and 11, Linux and the Steam Deck, and macOS on Apple silicon (experimental:
