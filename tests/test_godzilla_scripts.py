@@ -176,6 +176,18 @@ class LauncherTest(unittest.TestCase):
             (folder / name).write_bytes(b'x')
         return folder
 
+    def test_script_output_is_utf8_whatever_the_code_page(self):
+        # A frozen launcher ignores PYTHONIOENCODING and starts with the system's code page.
+        stdout = io.TextIOWrapper(io.BytesIO(), encoding='cp1251', newline='\n')
+        stderr = io.TextIOWrapper(io.BytesIO(), encoding='cp1251', errors='backslashreplace', newline='\n')
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            self.launcher.utf8_output()
+            print('E:\\Games\\Godzilla\\Godzilla PS4\\Особое 文')
+            sys.stdout.flush()
+        self.assertEqual(stdout.buffer.getvalue().decode('utf-8'), 'E:\\Games\\Godzilla\\Godzilla PS4\\Особое 文\n')
+        self.assertEqual(stderr.encoding, 'utf-8')
+        self.assertEqual(stderr.errors, 'backslashreplace')
+
     def test_game_option_is_the_folder_after_it(self):
         self.assertEqual(self.launcher.game_option(['--game', 'D:/CUSA02046']), 'D:/CUSA02046')
 
