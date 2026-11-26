@@ -2081,10 +2081,22 @@ class Launcher:
         self.root.mainloop()
 
 
+def utf8_output():
+    """run.py and the preparation scripts write UTF-8, as the processes reading them expect. The PYTHONIOENCODING
+    they are given does not reach a frozen launcher (PyInstaller starts Python isolated, ignoring PYTHON*
+    variables), which would otherwise write the system's code page: a game folder with non-English letters
+    in its path then stopped Play on Windows."""
+    for stream, errors in ((sys.stdout, 'strict'), (sys.stderr, 'backslashreplace')):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors=errors)
+
+
 def main():
     args = sys.argv[1:]
     if len(args) == 3 and args[0] == '--install-update':
         return install_update(args[1], args[2])
+    if args and args[0] in ('--script', '--run', '--play', '--prepare'):
+        utf8_output()
     if len(args) >= 2 and args[0] == '--script':
         # The preparation scripts, run by run.py through this executable when frozen.
         sys.argv = args[1:]
